@@ -172,4 +172,3 @@ Define "bad quality" thresholds similar to utilization thresholds
 
 - Region -> Site List -> Site Detail -> Circuit Detail -> Time Series
 - Exportable "Top Offenders" tables
-

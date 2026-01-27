@@ -174,6 +174,22 @@ python -m src.main --aggregate daily
 python -m src.main --full-cycle
 ```
 
+### Run Dashboard
+
+```bash
+# Start the NOC dashboard (default: http://127.0.0.1:8050)
+python run_dashboard.py
+
+# Use a different port
+python run_dashboard.py --port 8080
+
+# Allow external connections
+python run_dashboard.py --host 0.0.0.0
+
+# Enable debug mode
+python run_dashboard.py --debug
+```
+
 ## Project Structure
 
 ```text
@@ -205,6 +221,14 @@ MistWANPerformance/
 │   │   ├── __init__.py
 │   │   ├── dimensions.py
 │   │   └── facts.py
+│   ├── views/
+│   │   ├── __init__.py
+│   │   ├── current_state.py
+│   │   └── rankings.py
+│   ├── dashboard/
+│   │   ├── __init__.py
+│   │   ├── app.py
+│   │   └── data_provider.py
 │   └── utils/
 │       ├── __init__.py
 │       ├── config.py
@@ -215,12 +239,11 @@ MistWANPerformance/
 │   ├── logs/
 │   ├── exports/
 │   └── cache/
-├── documentation/
-│   └── ...
 ├── agents.md
 ├── README.md
 ├── requirements.txt
 ├── pyproject.toml
+├── run_dashboard.py
 └── .env.example
 ```
 
@@ -228,6 +251,19 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.27.17.00": {
+    "feature-additions": [
+      "Added run_dashboard.py launcher script for NOC dashboard"
+    ],
+    "documentation": [
+      "Updated README with dashboard launch instructions",
+      "Updated project structure to include views/ and dashboard/ folders"
+    ],
+    "bug-fixes": [
+      "Fixed Pylance type errors in dashboard app.py",
+      "Fixed markdown table alignment in ProjectGoals.md"
+    ]
+  },
   "26.01.27.16.30": {
     "feature-additions": [
       "Added active_state field to DimCircuit for tracking which circuit is carrying traffic",
