@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Documentation folder (large HTML/JSON files)
+documentation/
+
 # C extensions
 *.so
 
