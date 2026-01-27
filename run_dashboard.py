@@ -42,7 +42,8 @@ def main():
     args = parser.parse_args()
     
     # Setup logging
-    setup_logging(verbose=args.debug)
+    log_level = logging.DEBUG if args.debug else logging.INFO
+    setup_logging(level=log_level)
     logger = logging.getLogger(__name__)
     
     logger.info("=" * 60)
