@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional
 import dash
 from dash import dcc, html, dash_table, callback, Input, Output, State
 from dash.exceptions import PreventUpdate
-import dash_bootstrap_components as dbc
+import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -168,7 +168,7 @@ class WANPerformanceDashboard:
                                         "backgroundColor": "#444",
                                         "fontWeight": "bold"
                                     },
-                                    style_data_conditional=[
+                                    style_data_conditional=[  # type: ignore[arg-type]
                                         {
                                             "if": {"filter_query": "{threshold_status} = critical"},
                                             "backgroundColor": "#dc3545",
@@ -417,8 +417,8 @@ class WANPerformanceDashboard:
             )
             
             # Add threshold lines for utilization
-            fig.add_hline(y=70, line_dash="dash", line_color=self.COLORS["warning"], row=1, col=1)
-            fig.add_hline(y=90, line_dash="dash", line_color=self.COLORS["critical"], row=1, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color=self.COLORS["warning"], row="1", col="1")
+            fig.add_hline(y=90, line_dash="dash", line_color=self.COLORS["critical"], row="1", col="1")
         
         fig.update_layout(
             template="plotly_dark",
@@ -503,7 +503,7 @@ class WANPerformanceDashboard:
             """Update breadcrumb navigation based on drilldown state."""
             level = state.get("level", "overview")
             
-            items = [
+            items: List[Any] = [
                 dbc.Button("Overview", id="nav-overview", color="link", className="p-0")
             ]
             
@@ -652,7 +652,7 @@ class WANPerformanceDashboard:
     def _build_alerts_list(self, alerts: List[Dict]) -> html.Div:
         """Build the alerts list component."""
         if not alerts:
-            return html.P("No active alerts", className="text-muted")
+            return html.Div(html.P("No active alerts", className="text-muted"))
         
         alert_items = []
         for alert in alerts[:10]:

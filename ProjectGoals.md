@@ -38,9 +38,9 @@ Provide reliable, historical visibility into Retail WAN circuit performance and 
 
 ## IV. Data Sources & Storage
 
-| Component | Technology |
-|-----------|------------|
-| Source | Mist APIs |
+| Component | Technology      |
+| --------- | --------------- |
+| Source    | Mist APIs       |
 | Warehouse | Snowflake (SNF) |
 
 ---
@@ -49,15 +49,15 @@ Provide reliable, historical visibility into Retail WAN circuit performance and 
 
 ### Dimensions
 
-| Dimension | Attributes |
-|-----------|------------|
-| Site | site_id, site_name, region |
-| Circuit | bandwidth_mbps, role (primary/secondary), active_state |
-| Time | hourly grain canonical; day/week/month rollups |
+| Dimension | Attributes                                             |
+| --------- | ------------------------------------------------------ |
+| Site      | site_id, site_name, region                             |
+| Circuit   | bandwidth_mbps, role (primary/secondary), active_state |
+| Time      | hourly grain canonical; day/week/month rollups         |
 
 ### Grain
 
-**Site x Circuit x Hour**
+Site x Circuit x Hour
 
 ---
 
@@ -85,10 +85,10 @@ Provide reliable, historical visibility into Retail WAN circuit performance and 
 
 Two modes (both required):
 
-| Mode | Definition |
-|------|------------|
+| Mode       | Definition                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
 | Continuous | Longest consecutive run above threshold within a period (e.g., within last 24h / day / week / month) |
-| Cumulative | Total hours above threshold within a period |
+| Cumulative | Total hours above threshold within a period                                                          |
 
 #### Rollups
 
@@ -103,11 +103,11 @@ Two modes (both required):
 
 Recommended: compute hourly status as:
 
-| Metric | Description |
-|--------|-------------|
-| up_minutes | Minutes within the hour circuit was up (0-60) |
-| down_minutes | Minutes within the hour circuit was down (0-60) |
-| status_hourly | "Up" if up_minutes > 0 |
+| Metric        | Description                                     |
+| ------------- | ----------------------------------------------- |
+| up_minutes    | Minutes within the hour circuit was up (0-60)   |
+| down_minutes  | Minutes within the hour circuit was down (0-60) |
+| status_hourly | "Up" if up_minutes > 0                          |
 
 #### Flap Count
 
@@ -151,11 +151,11 @@ Define "bad quality" thresholds similar to utilization thresholds
 
 #### By Time
 
-| Category | Windows |
-|----------|---------|
-| Operational | 3h, 12h, 24h |
-| Calendar | Daily, weekly, monthly |
-| Historic | 13 months |
+| Category    | Windows                |
+| ----------- | ---------------------- |
+| Operational | 3h, 12h, 24h           |
+| Calendar    | Daily, weekly, monthly |
+| Historic    | 13 months              |
 
 ---
 
@@ -163,10 +163,10 @@ Define "bad quality" thresholds similar to utilization thresholds
 
 ### Dashboards / Views
 
-| View | Features |
-|------|----------|
-| Executive Overview | Trends, top offenders |
-| Engineering View | Live congestion + quality, drill to site/circuit, availability + flaps + chronic offenders |
+| View               | Features                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| Executive Overview | Trends, top offenders                                                                       |
+| Engineering View   | Live congestion + quality, drill to site/circuit, availability + flaps + chronic offenders  |
 
 ### Drilldowns
 
