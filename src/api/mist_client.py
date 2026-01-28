@@ -193,7 +193,7 @@ class MistSiteOperations:
                 mistapi.api.v1.orgs.sites.listOrgSites,  # type: ignore[union-attr]
                 self.connection.session,
                 self.connection.config.org_id,
-                limit=self.connection.ops_config.page_limit,
+                limit=1000,
                 page=page
             )
             
@@ -202,12 +202,51 @@ class MistSiteOperations:
             
             logger.debug(f"Retrieved {len(batch)} sites from page {page}")
             
-            if len(batch) < self.connection.ops_config.page_limit:
+            if len(batch) < 1000:
                 break
             page += 1
         
         logger.info(f"[OK] Retrieved {len(sites)} total sites")
         return sites
+    
+    def get_site_groups(self) -> Dict[str, str]:
+        """
+        Get all site groups in the organization with their human-readable names.
+        
+        Returns:
+            Dictionary mapping sitegroup_id to sitegroup_name
+        """
+        logger.info("[...] Retrieving organization site groups")
+        
+        sitegroup_map = {}
+        page = 1
+        
+        while True:
+            response = self.connection.execute_with_retry(
+                f"Get site groups (page {page})",
+                mistapi.api.v1.orgs.sitegroups.listOrgSiteGroups,  # type: ignore[union-attr]
+                self.connection.session,
+                self.connection.config.org_id,
+                limit=1000,
+                page=page
+            )
+            
+            batch = response.data if hasattr(response, 'data') else []
+            
+            for group in batch:
+                group_id = group.get('id', '')
+                group_name = group.get('name', 'Unknown')
+                if group_id:
+                    sitegroup_map[group_id] = group_name
+            
+            logger.debug(f"Retrieved {len(batch)} site groups from page {page}")
+            
+            if len(batch) < 1000:
+                break
+            page += 1
+        
+        logger.info(f"[OK] Retrieved {len(sitegroup_map)} site groups")
+        return sitegroup_map
     
     def get_site_wan_edges(self, site_id: str) -> List[Dict[str, Any]]:
         """
@@ -226,7 +265,8 @@ class MistSiteOperations:
             mistapi.api.v1.sites.devices.listSiteDevices,  # type: ignore[union-attr]
             self.connection.session,
             site_id,
-            type="gateway"  # CRITICAL: Must specify type=gateway for WAN devices
+            type="gateway",  # CRITICAL: Must specify type=gateway for WAN devices
+            limit=1000
         )
         
         devices = response.data if hasattr(response, 'data') else []
@@ -240,8 +280,9 @@ class MistStatsOperations:
     
     Responsibilities:
     - Get WAN edge device stats
+    - Get WAN port stats (rx_bytes, tx_bytes, utilization)
     - Get WAN edge device events
-    - Get organization WAN client stats
+    - Get organization device stats
     """
     
     def __init__(self, connection: MistConnection):
@@ -252,6 +293,88 @@ class MistStatsOperations:
             connection: MistConnection instance for API access
         """
         self.connection = connection
+    
+    def get_org_gateway_port_stats(self) -> List[Dict[str, Any]]:
+        """
+        Get organization-wide gateway port statistics.
+        
+        This is the primary method for getting real WAN utilization data.
+        Returns rx_bytes, tx_bytes, speed, and status for all WAN ports.
+        Fetches ALL available data with no batch limits.
+        
+        Returns:
+            List of port statistics dictionaries
+        """
+        logger.info("[...] Retrieving organization gateway port stats (no limit)")
+        
+        all_ports = []
+        search_after = None
+        batch_count = 0
+        
+        while True:
+            batch_count += 1
+            response = self.connection.execute_with_retry(
+                f"Get gateway port stats (batch {batch_count})",
+                mistapi.api.v1.orgs.stats.searchOrgSwOrGwPorts,  # type: ignore[union-attr]
+                self.connection.session,
+                self.connection.config.org_id,
+                type="gateway",  # CRITICAL: Filter to gateway devices only
+                limit=1000,
+                duration="1h",  # Last hour of data
+                search_after=search_after
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            batch = data.get("results", [])
+            all_ports.extend(batch)
+            
+            logger.debug(f"Retrieved {len(batch)} port stats in batch {batch_count}")
+            
+            # Check for more results (cursor-based pagination)
+            next_cursor = data.get("next")
+            if not next_cursor or len(batch) < 1000:
+                break
+            search_after = next_cursor
+        
+        logger.info(f"[OK] Retrieved {len(all_ports)} gateway port stats ({batch_count} batches, complete)")
+        return all_ports
+    
+    def get_org_device_stats(self) -> List[Dict[str, Any]]:
+        """
+        Get organization-wide gateway device statistics.
+        
+        Returns basic gateway info: id, mac, name, site_id, status, uptime.
+        
+        Returns:
+            List of device statistics dictionaries
+        """
+        logger.info("[...] Retrieving organization gateway device stats")
+        
+        all_devices = []
+        page = 1
+        
+        while True:
+            response = self.connection.execute_with_retry(
+                f"Get gateway device stats (page {page})",
+                mistapi.api.v1.orgs.stats.listOrgDevicesStats,  # type: ignore[union-attr]
+                self.connection.session,
+                self.connection.config.org_id,
+                page=page,
+                limit=1000,
+                type="gateway"  # CRITICAL: Filter to gateway devices only
+            )
+            
+            batch = response.data if hasattr(response, 'data') else []
+            all_devices.extend(batch)
+            
+            logger.debug(f"Retrieved {len(batch)} device stats from page {page}")
+            
+            if len(batch) < 1000:
+                break
+            page += 1
+        
+        logger.info(f"[OK] Retrieved {len(all_devices)} gateway device stats")
+        return all_devices
     
     def get_wan_edge_stats(
         self, 
@@ -434,9 +557,21 @@ class MistAPIClient:
         """Get all sites in the organization."""
         return self.site_ops.get_sites()
     
+    def get_site_groups(self) -> Dict[str, str]:
+        """Get all site groups with human-readable names."""
+        return self.site_ops.get_site_groups()
+    
     def get_site_wan_edges(self, site_id: str) -> List[Dict[str, Any]]:
         """Get WAN edge devices (gateways) for a specific site."""
         return self.site_ops.get_site_wan_edges(site_id)
+    
+    def get_org_gateway_port_stats(self) -> List[Dict[str, Any]]:
+        """Get organization-wide gateway port statistics (rx_bytes, tx_bytes, speed)."""
+        return self.stats_ops.get_org_gateway_port_stats()
+    
+    def get_org_device_stats(self) -> List[Dict[str, Any]]:
+        """Get organization-wide gateway device statistics."""
+        return self.stats_ops.get_org_device_stats()
     
     def get_wan_edge_stats(
         self, 

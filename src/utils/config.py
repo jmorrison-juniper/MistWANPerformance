@@ -58,6 +58,15 @@ class ThresholdConfig:
 
 
 @dataclass
+class RedisConfig:
+    """Configuration for Redis caching."""
+    url: str = "redis://localhost:6379"
+    enabled: bool = True
+    cache_ttl: int = 300  # Default 5 minutes
+    stale_threshold: int = 300  # Re-fetch if older than this
+
+
+@dataclass
 class OperationalConfig:
     """Configuration for operational parameters."""
     page_limit: int = 1000
@@ -75,6 +84,7 @@ class Config:
     """
     mist: MistConfig = field(default_factory=lambda: None)
     snowflake: SnowflakeConfig = field(default_factory=lambda: None)
+    redis: RedisConfig = field(default_factory=RedisConfig)
     thresholds: ThresholdConfig = field(default_factory=ThresholdConfig)
     operational: OperationalConfig = field(default_factory=OperationalConfig)
     
@@ -135,6 +145,14 @@ class Config:
             rate_limit_delay=float(os.getenv("RATE_LIMIT_DELAY", "0.1")),
             max_retries=int(os.getenv("MAX_RETRIES", "3")),
             retry_delay=float(os.getenv("RETRY_DELAY", "1.0"))
+        )
+        
+        # Load Redis configuration
+        self.redis = RedisConfig(
+            url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+            enabled=os.getenv("REDIS_ENABLED", "true").lower() == "true",
+            cache_ttl=int(os.getenv("REDIS_CACHE_TTL", "300")),
+            stale_threshold=int(os.getenv("REDIS_STALE_THRESHOLD", "300"))
         )
         
         # Ensure data directories exist

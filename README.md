@@ -251,6 +251,21 @@ MistWANPerformance/
 
 ```json
 {
+  "25.01.28.12.15": {
+    "feature-additions": [
+      "Redis caching layer for Mist API data (src/cache/redis_cache.py)",
+      "Cache freshness checking with configurable stale threshold",
+      "Automatic cache-first loading in dashboard startup"
+    ],
+    "performance": [
+      "Dashboard startup uses cached data when fresh, reducing API load",
+      "Removed API batch limits (max_batches=100) for complete data retrieval"
+    ],
+    "documentation": [
+      "Added Redis configuration options to .env.example",
+      "Added redis>=5.0.0 to requirements.txt"
+    ]
+  },
   "26.01.27.17.00": {
     "feature-additions": [
       "Added run_dashboard.py launcher script for NOC dashboard"

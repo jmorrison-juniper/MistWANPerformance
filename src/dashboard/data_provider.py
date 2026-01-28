@@ -110,7 +110,18 @@ class DashboardDataProvider:
         
         Returns:
             Dictionary with all dashboard data structures
+            
+        Raises:
+            ValueError: If no real utilization data has been loaded
         """
+        # CRITICAL: Require real data - no simulated fallback
+        if not self.utilization_records:
+            raise ValueError(
+                "No utilization data available. "
+                "Load real data using update_utilization() before calling get_dashboard_data(). "
+                "Check that the Mist API connection is working and returning port statistics."
+            )
+        
         # Calculate site status counts
         site_statuses = self._calculate_site_statuses()
         
@@ -334,7 +345,8 @@ class DashboardDataProvider:
                 "max_utilization": round(max(values), 1) if values else 0
             })
         
-        return trends    
+        return trends
+    
     def get_region_sites(self, region: str) -> List[Dict[str, Any]]:
         """
         Get all sites in a region for drilldown view.

@@ -42,15 +42,28 @@ class WANPerformanceDashboard:
     # Refresh interval in milliseconds
     REFRESH_INTERVAL_MS = 60000  # 1 minute
     
-    # Color scheme for status
+    # T-Mobile Magenta color scheme (from MistCircuitStats-Redis)
     COLORS = {
-        "healthy": "#28a745",
-        "degraded": "#ffc107",
-        "critical": "#dc3545",
-        "normal": "#6c757d",
-        "warning": "#ffc107",
-        "high": "#fd7e14",
-        "info": "#17a2b8"
+        # Primary brand color
+        "primary": "#E20074",         # T-Mobile Magenta
+        "primary_hover": "#C00062",   # Darker magenta for hover
+        "primary_light": "#FF3399",   # Lighter magenta
+        # Status colors
+        "healthy": "#28a745",         # Green - connected/up/good
+        "degraded": "#ffc107",        # Yellow/amber - warning
+        "critical": "#dc3545",        # Red - error/down/critical
+        "normal": "#6c757d",          # Gray - neutral/inactive
+        "warning": "#ffc107",         # Yellow - warning
+        "high": "#fd7e14",            # Orange - high severity
+        "info": "#17a2b8",            # Cyan - informational
+        # Background colors (dark theme)
+        "bg_primary": "#1a1a1a",      # Main background
+        "bg_secondary": "#2d2d2d",    # Card/component background
+        "bg_card": "#363636",         # Card header background
+        "bg_border": "#404040",       # Border color
+        # Text colors
+        "text_primary": "#e0e0e0",    # Primary text
+        "text_secondary": "#a0a0a0",  # Secondary/muted text
     }
     
     def __init__(
@@ -76,6 +89,9 @@ class WANPerformanceDashboard:
             suppress_callback_exceptions=True
         )
         
+        # Apply custom T-Mobile Magenta CSS
+        self.app.index_string = self._get_custom_index_string()
+        
         # Build layout
         self.app.layout = self._build_layout()
         
@@ -83,6 +99,268 @@ class WANPerformanceDashboard:
         self._register_callbacks()
         
         logger.info(f"[OK] Dashboard initialized: {app_name}")
+    
+    def _get_custom_index_string(self) -> str:
+        """
+        Get custom HTML index template with T-Mobile Magenta styling.
+        
+        Returns:
+            Custom HTML template string
+        """
+        return '''
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <style>
+            /* T-Mobile Magenta Theme - Dark Background */
+            :root {
+                --tmobile-magenta: #E20074;
+                --tmobile-magenta-hover: #C00062;
+                --tmobile-magenta-light: #FF3399;
+                --bg-dark: #1a1a1a;
+                --bg-card: #2d2d2d;
+                --bg-card-header: #363636;
+                --border-color: #404040;
+                --text-primary: #e0e0e0;
+                --text-muted: #a0a0a0;
+            }
+            
+            /* Base body styling */
+            body {
+                background-color: var(--bg-dark) !important;
+                color: var(--text-primary) !important;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            }
+            
+            /* Container background */
+            .container-fluid, .container {
+                background-color: var(--bg-dark) !important;
+            }
+            
+            /* Override Bootstrap primary with T-Mobile Magenta */
+            .text-primary, h1.text-primary, .h1.text-primary {
+                color: var(--tmobile-magenta) !important;
+            }
+            
+            .text-muted {
+                color: var(--text-muted) !important;
+            }
+            
+            /* Button styling */
+            .btn-primary {
+                background-color: var(--tmobile-magenta) !important;
+                border-color: var(--tmobile-magenta) !important;
+                color: #fff !important;
+            }
+            
+            .btn-primary:hover, .btn-primary:focus {
+                background-color: var(--tmobile-magenta-hover) !important;
+                border-color: var(--tmobile-magenta-hover) !important;
+            }
+            
+            .btn-secondary {
+                background-color: #404040 !important;
+                border-color: #505050 !important;
+            }
+            
+            .btn-secondary:hover {
+                background-color: #505050 !important;
+                border-color: #606060 !important;
+            }
+            
+            /* Card styling */
+            .card {
+                background-color: var(--bg-card) !important;
+                border: 1px solid var(--border-color) !important;
+                border-radius: 8px;
+            }
+            
+            .card-header {
+                background-color: var(--bg-card-header) !important;
+                border-bottom: 2px solid var(--tmobile-magenta) !important;
+                font-weight: 600;
+                color: var(--text-primary) !important;
+            }
+            
+            .card-body {
+                background-color: var(--bg-card) !important;
+                color: var(--text-primary) !important;
+            }
+            
+            /* Stats cards - large numbers in magenta */
+            .display-4, .display-5, .display-6 {
+                color: var(--tmobile-magenta) !important;
+                font-weight: bold;
+            }
+            
+            /* Row backgrounds */
+            .row {
+                background-color: transparent !important;
+            }
+            
+            /* Dash DataTable styling */
+            .dash-table-container {
+                background-color: var(--bg-card) !important;
+            }
+            
+            .dash-spreadsheet-container {
+                background-color: var(--bg-card) !important;
+            }
+            
+            .dash-spreadsheet {
+                background-color: var(--bg-card) !important;
+            }
+            
+            .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner th {
+                background-color: var(--bg-card-header) !important;
+                color: var(--text-primary) !important;
+                border-bottom: 2px solid var(--tmobile-magenta) !important;
+                font-weight: 600;
+            }
+            
+            .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td {
+                background-color: var(--bg-card) !important;
+                color: var(--text-primary) !important;
+                border-color: var(--border-color) !important;
+            }
+            
+            .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner tr:hover td {
+                background-color: var(--bg-card-header) !important;
+            }
+            
+            /* Selected row in table */
+            .dash-table-container .dash-spreadsheet-container .dash-spreadsheet-inner td.focused {
+                background-color: var(--tmobile-magenta) !important;
+                color: #fff !important;
+            }
+            
+            /* Alert/Badge styling */
+            .alert-danger, .bg-danger {
+                background-color: #dc3545 !important;
+            }
+            
+            .alert-warning, .bg-warning {
+                background-color: #ffc107 !important;
+                color: #000 !important;
+            }
+            
+            .alert-success, .bg-success {
+                background-color: #28a745 !important;
+            }
+            
+            .badge {
+                font-size: 0.8rem;
+                padding: 0.35em 0.65em;
+            }
+            
+            /* Status indicator colors */
+            .status-healthy, .text-success {
+                color: #28a745 !important;
+            }
+            
+            .status-degraded, .text-warning {
+                color: #ffc107 !important;
+            }
+            
+            .status-critical, .text-danger {
+                color: #dc3545 !important;
+            }
+            
+            /* Graph/Chart container */
+            .js-plotly-plot {
+                background-color: transparent !important;
+            }
+            
+            .js-plotly-plot .plotly .modebar {
+                background-color: transparent !important;
+            }
+            
+            .js-plotly-plot .plotly .bg {
+                fill: var(--bg-card) !important;
+            }
+            
+            /* Links */
+            a {
+                color: var(--tmobile-magenta);
+            }
+            
+            a:hover {
+                color: var(--tmobile-magenta-light);
+            }
+            
+            /* Breadcrumb */
+            .breadcrumb {
+                background-color: transparent !important;
+            }
+            
+            .breadcrumb-item a {
+                color: var(--tmobile-magenta) !important;
+            }
+            
+            .breadcrumb-item.active {
+                color: var(--text-muted) !important;
+            }
+            
+            /* Dropdown menus */
+            .dropdown-menu {
+                background-color: var(--bg-card) !important;
+                border-color: var(--border-color) !important;
+            }
+            
+            .dropdown-item {
+                color: var(--text-primary) !important;
+            }
+            
+            .dropdown-item:hover {
+                background-color: var(--bg-card-header) !important;
+            }
+            
+            /* Form controls */
+            .form-control, .form-select {
+                background-color: var(--bg-card) !important;
+                border-color: var(--border-color) !important;
+                color: var(--text-primary) !important;
+            }
+            
+            .form-control:focus, .form-select:focus {
+                border-color: var(--tmobile-magenta) !important;
+                box-shadow: 0 0 0 0.2rem rgba(226, 0, 116, 0.25) !important;
+            }
+            
+            /* Scrollbar styling for dark theme */
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            
+            ::-webkit-scrollbar-track {
+                background: var(--bg-dark);
+            }
+            
+            ::-webkit-scrollbar-thumb {
+                background: var(--border-color);
+                border-radius: 4px;
+            }
+            
+            ::-webkit-scrollbar-thumb:hover {
+                background: var(--tmobile-magenta);
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
     
     def _build_layout(self) -> dbc.Container:
         """
@@ -98,10 +376,13 @@ class WANPerformanceDashboard:
             # Header
             dbc.Row([
                 dbc.Col([
-                    html.H1(self.app_name, className="text-primary"),
+                    html.H1(
+                        self.app_name,
+                        style={"color": self.COLORS["primary"], "fontWeight": "bold"}
+                    ),
                     html.P(
                         "Real-time WAN circuit monitoring for NOC operations",
-                        className="text-muted"
+                        style={"color": self.COLORS["text_secondary"]}
                     )
                 ], width=7),
                 dbc.Col([
@@ -159,14 +440,17 @@ class WANPerformanceDashboard:
                                         {"name": "Status", "id": "threshold_status"}
                                     ],
                                     style_cell={
-                                        "backgroundColor": "#303030",
-                                        "color": "white",
+                                        "backgroundColor": self.COLORS["bg_secondary"],
+                                        "color": self.COLORS["text_primary"],
                                         "textAlign": "left",
-                                        "cursor": "pointer"
+                                        "cursor": "pointer",
+                                        "border": f"1px solid {self.COLORS['bg_border']}",
+                                        "padding": "8px"
                                     },
                                     style_header={
-                                        "backgroundColor": "#444",
-                                        "fontWeight": "bold"
+                                        "backgroundColor": self.COLORS["bg_card"],
+                                        "fontWeight": "bold",
+                                        "borderBottom": f"2px solid {self.COLORS['primary']}"
                                     },
                                     style_data_conditional=[  # type: ignore[arg-type]
                                         {
@@ -290,14 +574,17 @@ class WANPerformanceDashboard:
                         ],
                         data=sites,
                         style_cell={
-                            "backgroundColor": "#303030",
-                            "color": "white",
+                            "backgroundColor": self.COLORS["bg_secondary"],
+                            "color": self.COLORS["text_primary"],
                             "textAlign": "left",
-                            "cursor": "pointer"
+                            "cursor": "pointer",
+                            "border": f"1px solid {self.COLORS['bg_border']}",
+                            "padding": "8px"
                         },
                         style_header={
-                            "backgroundColor": "#444",
-                            "fontWeight": "bold"
+                            "backgroundColor": self.COLORS["bg_card"],
+                            "fontWeight": "bold",
+                            "borderBottom": f"2px solid {self.COLORS['primary']}"
                         },
                         page_size=15,
                         row_selectable="single"
@@ -338,14 +625,17 @@ class WANPerformanceDashboard:
                         ],
                         data=circuits,
                         style_cell={
-                            "backgroundColor": "#303030",
-                            "color": "white",
+                            "backgroundColor": self.COLORS["bg_secondary"],
+                            "color": self.COLORS["text_primary"],
                             "textAlign": "left",
-                            "cursor": "pointer"
+                            "cursor": "pointer",
+                            "border": f"1px solid {self.COLORS['bg_border']}",
+                            "padding": "8px"
                         },
                         style_header={
-                            "backgroundColor": "#444",
-                            "fontWeight": "bold"
+                            "backgroundColor": self.COLORS["bg_card"],
+                            "fontWeight": "bold",
+                            "borderBottom": f"2px solid {self.COLORS['primary']}"
                         },
                         page_size=10,
                         row_selectable="single"
@@ -454,11 +744,14 @@ class WANPerformanceDashboard:
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
             
-            # Get data from provider or use sample data
-            if self.data_provider:
-                data = self.data_provider.get_dashboard_data()
-            else:
-                data = self._get_sample_data()
+            # CRITICAL: Require data provider - no sample data fallback
+            if not self.data_provider:
+                raise ValueError(
+                    "Dashboard requires a data provider with real data. "
+                    "Pass data_provider when creating WANPerformanceDashboard."
+                )
+            
+            data = self.data_provider.get_dashboard_data()
             
             # Overview counts
             total_sites = data.get("total_sites", 0)
@@ -605,10 +898,10 @@ class WANPerformanceDashboard:
             if not n_clicks:
                 raise PreventUpdate
             
-            if self.data_provider:
-                data = self.data_provider.get_dashboard_data()
-            else:
-                data = self._get_sample_data()
+            if not self.data_provider:
+                raise ValueError("Dashboard requires a data provider with real data.")
+            
+            data = self.data_provider.get_dashboard_data()
             
             alerts = data.get("alerts", [])
             
@@ -654,9 +947,23 @@ class WANPerformanceDashboard:
         if not alerts:
             return html.Div(html.P("No active alerts", className="text-muted"))
         
+        # Map numeric severity values to string labels
+        severity_map = {
+            1: "info",
+            2: "warning",
+            3: "high",
+            4: "critical"
+        }
+        
         alert_items = []
         for alert in alerts[:10]:
-            severity = alert.get("severity", "info")
+            severity_value = alert.get("severity", 1)
+            # Convert numeric severity to string if needed
+            if isinstance(severity_value, int):
+                severity = severity_map.get(severity_value, "info")
+            else:
+                severity = str(severity_value).lower()
+            
             color = self.COLORS.get(severity, self.COLORS["info"])
             
             alert_items.append(
@@ -759,51 +1066,6 @@ class WANPerformanceDashboard:
         )
         
         return fig
-    
-    def _get_sample_data(self) -> Dict[str, Any]:
-        """Generate sample data for dashboard demonstration."""
-        return {
-            "total_sites": 150,
-            "healthy_sites": 135,
-            "degraded_sites": 12,
-            "critical_sites": 3,
-            "active_failovers": 2,
-            "alert_count": 8,
-            "top_congested": [
-                {"rank": 1, "site_name": "Store NYC-001", "site_id": "site-001", "circuit_id": "wan0", "region": "East", "metric_value": 94.5, "threshold_status": "critical"},
-                {"rank": 2, "site_name": "Store LA-042", "site_id": "site-002", "circuit_id": "wan0", "region": "West", "metric_value": 91.2, "threshold_status": "critical"},
-                {"rank": 3, "site_name": "Store CHI-015", "site_id": "site-003", "circuit_id": "wan0", "region": "Central", "metric_value": 87.8, "threshold_status": "high"},
-                {"rank": 4, "site_name": "Store DAL-008", "site_id": "site-004", "circuit_id": "wan0", "region": "South", "metric_value": 85.3, "threshold_status": "high"},
-                {"rank": 5, "site_name": "Store SEA-023", "site_id": "site-005", "circuit_id": "wan0", "region": "West", "metric_value": 82.1, "threshold_status": "high"},
-            ],
-            "alerts": [
-                {"severity": "critical", "site_name": "Store NYC-001", "circuit_id": "wan0", "message": "Critical utilization: 94.5%", "timestamp": "2026-01-27T14:30:00Z"},
-                {"severity": "critical", "site_name": "Store MIA-007", "circuit_id": "wan0", "message": "Circuit is DOWN", "timestamp": "2026-01-27T14:28:00Z"},
-                {"severity": "high", "site_name": "Store LA-042", "circuit_id": "wan0", "message": "High utilization: 91.2%", "timestamp": "2026-01-27T14:25:00Z"},
-                {"severity": "warning", "site_name": "Store CHI-015", "circuit_id": "wan0", "message": "Elevated utilization: 87.8%", "timestamp": "2026-01-27T14:20:00Z"},
-            ],
-            "utilization_dist": {
-                "0-50%": 85,
-                "50-70%": 42,
-                "70-80%": 15,
-                "80-90%": 6,
-                "90-100%": 2
-            },
-            "region_summary": [
-                {"region": "East", "avg_utilization": 62.5, "circuit_count": 45},
-                {"region": "West", "avg_utilization": 58.3, "circuit_count": 38},
-                {"region": "Central", "avg_utilization": 71.2, "circuit_count": 42},
-                {"region": "South", "avg_utilization": 55.8, "circuit_count": 25},
-            ],
-            "trends": [
-                {"timestamp": "00:00", "avg_utilization": 35, "max_utilization": 65},
-                {"timestamp": "04:00", "avg_utilization": 28, "max_utilization": 55},
-                {"timestamp": "08:00", "avg_utilization": 55, "max_utilization": 78},
-                {"timestamp": "12:00", "avg_utilization": 68, "max_utilization": 89},
-                {"timestamp": "16:00", "avg_utilization": 72, "max_utilization": 94},
-                {"timestamp": "20:00", "avg_utilization": 58, "max_utilization": 82},
-            ]
-        }
     
     def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
         """
