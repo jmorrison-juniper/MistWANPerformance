@@ -156,6 +156,67 @@ SNF_SCHEMA=RETAIL_WAN
 SNF_WAREHOUSE=COMPUTE_WH
 ```
 
+## Container Deployment (Recommended)
+
+Run the entire stack in containers using Podman or Docker:
+
+### Quick Start
+
+```bash
+# Configure credentials
+copy .env.example .env
+# Edit .env with your Mist API credentials
+
+# Build and start all services
+podman-compose up -d
+
+# View dashboard at http://localhost:8050
+```
+
+### Container Commands
+
+```bash
+# Start services (builds if needed)
+podman-compose up -d
+
+# Rebuild after code changes
+podman-compose build
+podman-compose up -d
+
+# View logs
+podman-compose logs -f dashboard    # Dashboard logs
+podman-compose logs -f redis        # Redis logs
+
+# Stop services (data persists)
+podman-compose down
+
+# Stop and remove all data
+podman-compose down -v
+```
+
+### Container Architecture
+
+The stack includes two services:
+
+| Service   | Port | Description                        |
+|-----------|------|------------------------------------|
+| dashboard | 8050 | Dash web application               |
+| redis     | 6379 | Data cache with 31-day persistence |
+
+Data is stored in persistent Docker volumes:
+
+- `mistwan-app-data`: Application logs and exports
+- `mistwan-redis-data`: Redis cache (31-day retention)
+
+### Docker Users
+
+Replace `podman-compose` with `docker-compose`:
+
+```bash
+docker-compose up -d
+docker-compose down
+```
+
 ## Usage
 
 ### Run Data Collection
@@ -251,6 +312,85 @@ MistWANPerformance/
 
 ```json
 {
+  "25.01.30.14.30": {
+    "feature-additions": [
+      "ProcessPoolExecutor support for bulk KPI calculations (calculate_availability_bulk, create_daily_aggregates_parallel)",
+      "Port filtering now excludes disabled and down WAN ports from utilization data"
+    ],
+    "performance": [
+      "Parallel availability calculation for multiple circuits using CPU_COUNT workers",
+      "Parallel daily aggregate creation with serializable dict inputs/outputs"
+    ],
+    "api-changes": [
+      "KPICalculator.calculate_availability_bulk() - parallel availability for circuit batches",
+      "KPICalculator.create_daily_aggregates_parallel() - parallel daily aggregates",
+      "Worker functions use serializable dicts to avoid pickling issues"
+    ],
+    "bug-fixes": [
+      "Disabled WAN ports (disabled=true) now excluded from port stats processing",
+      "Down WAN ports (up=false) now excluded from port stats processing",
+      "Added wan_down_count and wan_disabled_count tracking in port batch processing"
+    ]
+  },
+  "25.01.28.18.15": {
+    "feature-additions": [
+      "Full containerized deployment with Dockerfile and updated docker-compose.yml",
+      "Multi-stage Docker build for smaller production images",
+      "Container-friendly Redis connection using REDIS_HOST/REDIS_PORT env vars"
+    ],
+    "documentation": [
+      "Container deployment section added to README",
+      "Podman-compose and docker-compose usage instructions"
+    ],
+    "compatibility": [
+      "RedisCache supports REDIS_URL, REDIS_HOST/PORT, or localhost fallback",
+      ".dockerignore for clean container builds"
+    ]
+  },
+  "25.01.28.16.30": {
+    "feature-additions": [
+      "Incremental cache saves during API fetch - data saved as each batch arrives",
+      "Fetch session tracking with resume capability on restart",
+      "on_batch callback parameter for MistAPIClient.get_org_gateway_port_stats()"
+    ],
+    "api-changes": [
+      "MistStatsOperations.get_org_gateway_port_stats() accepts on_batch callback",
+      "MistAPIClient facade passes through on_batch parameter"
+    ],
+    "data-model-changes": [
+      "RedisCache.start_fetch_session() - tracks fetch progress",
+      "RedisCache.save_batch_incrementally() - saves batches as they arrive",
+      "RedisCache.get_incomplete_fetch_session() - checks for resumable sessions",
+      "RedisCache._append_site_port_stats() - merges data across batches"
+    ],
+    "performance": [
+      "Interrupted fetches preserve all completed batches",
+      "Restart recovers data from partial fetch sessions"
+    ]
+  },
+  "25.01.28.15.00": {
+    "feature-additions": [
+      "Redis 31-day historical data retention with HISTORY_TTL constant",
+      "Historical time-series methods: append_historical_record(), get_historical_records(), prune_old_history(), get_history_stats()",
+      "Redis persistence configuration methods: get_persistence_config(), force_save()",
+      "Startup persistence check with warnings if AOF/RDB not configured",
+      "Background refresh worker triggers force_save after each refresh cycle"
+    ],
+    "data-model-changes": [
+      "Added PREFIX_HISTORY for time-series data using Redis Sorted Sets",
+      "Historical records stored with timestamp score for efficient range queries"
+    ],
+    "documentation": [
+      "docker-compose.yml for Redis with persistence volume",
+      "redis.conf with AOF (appendfsync everysec) and RDB persistence",
+      "Updated .env.example with REDIS_HISTORY_TTL documentation",
+      "Updated ProjectGoals.md with Mist API WAN SLE and health endpoints"
+    ],
+    "performance": [
+      "Data persists across Redis restarts using AOF + RDB backup",
+      "31-day retention window for historical analysis"
+    ]
+  },
   "25.01.28.12.15": {
     "feature-additions": [
       "Redis caching layer for Mist API data (src/cache/redis_cache.py)",

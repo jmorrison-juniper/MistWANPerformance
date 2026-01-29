@@ -372,6 +372,54 @@ class WANPerformanceDashboard:
         return dbc.Container([
             # Hidden stores for drilldown state
             dcc.Store(id="drilldown-state", data={"level": "overview", "region": None, "site": None, "circuit": None}),
+            dcc.Store(id="refresh-activity-store", data={"sites": [], "interfaces": [], "status": "idle"}),
+            
+            # Backend Status Bar (top of page) - prominent styling
+            dbc.Row([
+                dbc.Col([
+                    html.Div([
+                        # Backend connection status indicator
+                        html.Span(
+                            id="backend-status-indicator",
+                            children=[
+                                html.Span(
+                                    "[*]",
+                                    style={"color": self.COLORS["healthy"], "fontFamily": "monospace", "marginRight": "8px", "fontSize": "1.1rem"}
+                                ),
+                                html.Span("Backend Connected", style={"color": self.COLORS["text_primary"], "fontWeight": "500"})
+                            ]
+                        ),
+                        html.Span(" | ", style={"color": self.COLORS["primary"], "margin": "0 12px", "fontWeight": "bold"}),
+                        # API Rate Limit Status (critical - show prominently when limited)
+                        html.Span(
+                            id="rate-limit-status-display",
+                            children="API: OK",
+                            style={"color": self.COLORS["healthy"], "fontSize": "0.9rem", "fontWeight": "500"}
+                        ),
+                        html.Span(" | ", style={"color": self.COLORS["primary"], "margin": "0 12px", "fontWeight": "bold"}),
+                        # Cache status
+                        html.Span(
+                            id="cache-status-display",
+                            children="Cache: Loading...",
+                            style={"color": self.COLORS["text_primary"], "fontSize": "0.9rem"}
+                        ),
+                        html.Span(" | ", style={"color": self.COLORS["primary"], "margin": "0 12px", "fontWeight": "bold"}),
+                        # Refresh activity
+                        html.Span(
+                            id="refresh-activity-display",
+                            children="Refresh: Idle",
+                            style={"color": self.COLORS["text_primary"], "fontSize": "0.9rem"}
+                        ),
+                    ], style={
+                        "backgroundColor": "#1e1e1e",
+                        "padding": "12px 20px",
+                        "borderRadius": "6px",
+                        "border": f"2px solid {self.COLORS['primary']}",
+                        "fontSize": "0.95rem",
+                        "boxShadow": f"0 2px 8px rgba(226, 0, 116, 0.2)"
+                    })
+                ], width=12)
+            ], className="mb-3 mt-2"),
             
             # Header
             dbc.Row([
@@ -393,11 +441,17 @@ class WANPerformanceDashboard:
                         id="refresh-interval",
                         interval=self.REFRESH_INTERVAL_MS,
                         n_intervals=0
+                    ),
+                    # Faster interval for status updates
+                    dcc.Interval(
+                        id="status-interval",
+                        interval=5000,  # 5 seconds
+                        n_intervals=0
                     )
                 ], width=5)
             ], className="mb-4 mt-3"),
             
-            # Overview Cards Row
+            # Site Overview Cards Row
             dbc.Row([
                 dbc.Col(self._build_status_card("total-sites", "Total Sites", "0"), width=2),
                 dbc.Col(self._build_status_card("healthy-sites", "Healthy", "0", "healthy"), width=2),
@@ -405,6 +459,16 @@ class WANPerformanceDashboard:
                 dbc.Col(self._build_status_card("critical-sites", "Critical", "0", "critical"), width=2),
                 dbc.Col(self._build_status_card("active-failovers", "Failovers", "0", "warning"), width=2),
                 dbc.Col(self._build_status_card("active-alerts", "Alerts", "0", "high"), width=2),
+            ], className="mb-3"),
+            
+            # WAN Circuit Summary Cards Row
+            dbc.Row([
+                dbc.Col(self._build_status_card("total-circuits", "Total Circuits", "0"), width=2),
+                dbc.Col(self._build_status_card("circuits-up", "Circuits Up", "0", "healthy"), width=2),
+                dbc.Col(self._build_status_card("circuits-down", "Circuits Down", "0", "critical"), width=2),
+                dbc.Col(self._build_status_card("circuits-above-80", "Above 80%", "0", "high"), width=2),
+                dbc.Col(self._build_status_card("avg-utilization", "Avg Util %", "0.0", "info"), width=2),
+                dbc.Col(self._build_status_card("total-bandwidth", "Total BW (Gbps)", "0.0", "info"), width=2),
             ], className="mb-4"),
             
             # Drilldown Content Area
@@ -434,9 +498,9 @@ class WANPerformanceDashboard:
                                     columns=[
                                         {"name": "Rank", "id": "rank"},
                                         {"name": "Site", "id": "site_name"},
-                                        {"name": "Circuit", "id": "circuit_id"},
-                                        {"name": "Region", "id": "region"},
-                                        {"name": "Utilization", "id": "metric_value"},
+                                        {"name": "Port ID", "id": "port_id"},
+                                        {"name": "Speed (Mbps)", "id": "bandwidth_mbps"},
+                                        {"name": "Utilization %", "id": "metric_value"},
                                         {"name": "Status", "id": "threshold_status"}
                                     ],
                                     style_cell={
@@ -500,7 +564,11 @@ class WANPerformanceDashboard:
                         dbc.Card([
                             dbc.CardHeader("Region Summary (click to drill down)"),
                             dbc.CardBody([
-                                dcc.Graph(id="region-chart", style={"height": "300px"})
+                                dcc.Graph(
+                                    id="region-chart",
+                                    style={"height": "300px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
                             ])
                         ], className="mb-4"),
                         
@@ -508,22 +576,56 @@ class WANPerformanceDashboard:
                         dbc.Card([
                             dbc.CardHeader("Utilization Distribution"),
                             dbc.CardBody([
-                                dcc.Graph(id="utilization-chart", style={"height": "300px"})
+                                dcc.Graph(
+                                    id="utilization-chart",
+                                    style={"height": "300px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
                             ])
                         ])
                     ], width=6)
                 ], className="mb-4"),
                 
-                # Bottom Row - Trends
+                # Bottom Row - Trends (Real-time Utilization % and Cumulative Throughput)
                 dbc.Row([
+                    # Real-time Utilization Trends (instantaneous %)
                     dbc.Col([
                         dbc.Card([
-                            dbc.CardHeader("Utilization Trends (24h)"),
+                            dbc.CardHeader([
+                                html.Span("Real-Time Utilization Trends (24h)"),
+                                html.Small(
+                                    " - instantaneous % of capacity",
+                                    className="text-muted ms-2"
+                                )
+                            ]),
                             dbc.CardBody([
-                                dcc.Graph(id="trends-chart", style={"height": "250px"})
+                                dcc.Graph(
+                                    id="trends-chart",
+                                    style={"height": "250px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
                             ])
                         ])
-                    ])
+                    ], width=6),
+                    # Cumulative Throughput (total traffic over time)
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("Aggregate Throughput (24h)"),
+                                html.Small(
+                                    " - total Mbps across all circuits",
+                                    className="text-muted ms-2"
+                                )
+                            ]),
+                            dbc.CardBody([
+                                dcc.Graph(
+                                    id="throughput-chart",
+                                    style={"height": "250px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
+                            ])
+                        ])
+                    ], width=6)
                 ])
             ])
         ], fluid=True)
@@ -719,6 +821,68 @@ class WANPerformanceDashboard:
         
         return fig
     
+    def _get_loading_state(self, timestamp: str) -> list:
+        """
+        Return loading state values for all dashboard components.
+        
+        Args:
+            timestamp: Current timestamp string
+            
+        Returns:
+            List of loading state values for all dashboard outputs
+        """
+        # Empty chart with loading message
+        empty_chart = go.Figure()
+        empty_chart.update_layout(
+            template="plotly_dark",
+            height=300,
+            annotations=[{
+                "text": "Loading data from Mist API...",
+                "xref": "paper",
+                "yref": "paper",
+                "x": 0.5,
+                "y": 0.5,
+                "showarrow": False,
+                "font": {"size": 16, "color": self.COLORS["text_secondary"]}
+            }]
+        )
+        
+        # Loading alert message
+        loading_alert = [
+            dbc.Alert(
+                [
+                    html.I(className="bi bi-hourglass-split me-2"),
+                    "Loading data from Mist API... Dashboard will update automatically."
+                ],
+                color="info",
+                className="mb-2"
+            )
+        ]
+        
+        return [
+            f"Loading... ({timestamp})",
+            "...",  # total sites
+            "...",  # healthy
+            "...",  # degraded
+            "...",  # critical
+            "...",  # failovers
+            "...",  # alerts
+            # Circuit summary cards
+            "...",  # total circuits
+            "...",  # circuits up
+            "...",  # circuits down
+            "...",  # circuits above 80%
+            "...",  # avg utilization
+            "...",  # total bandwidth
+            # Tables and charts
+            [],     # congested table data
+            loading_alert,
+            empty_chart,
+            empty_chart,
+            empty_chart,
+            empty_chart  # throughput chart
+        ]
+    
     def _register_callbacks(self):
         """Register all dashboard callbacks including drilldowns and exports."""
         
@@ -731,11 +895,20 @@ class WANPerformanceDashboard:
                 Output("critical-sites", "children"),
                 Output("active-failovers", "children"),
                 Output("active-alerts", "children"),
+                # Circuit summary cards
+                Output("total-circuits", "children"),
+                Output("circuits-up", "children"),
+                Output("circuits-down", "children"),
+                Output("circuits-above-80", "children"),
+                Output("avg-utilization", "children"),
+                Output("total-bandwidth", "children"),
+                # Tables and charts
                 Output("top-congested-table", "data"),
                 Output("alerts-list", "children"),
                 Output("utilization-chart", "figure"),
                 Output("region-chart", "figure"),
-                Output("trends-chart", "figure")
+                Output("trends-chart", "figure"),
+                Output("throughput-chart", "figure")
             ],
             [Input("refresh-interval", "n_intervals")]
         )
@@ -744,14 +917,15 @@ class WANPerformanceDashboard:
             now = datetime.now(timezone.utc)
             timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
             
-            # CRITICAL: Require data provider - no sample data fallback
+            # Handle case where data provider is not yet available
             if not self.data_provider:
-                raise ValueError(
-                    "Dashboard requires a data provider with real data. "
-                    "Pass data_provider when creating WANPerformanceDashboard."
-                )
+                return self._get_loading_state(timestamp)
             
             data = self.data_provider.get_dashboard_data()
+            
+            # Handle loading state - data still being fetched
+            if data.get("loading", False):
+                return self._get_loading_state(timestamp)
             
             # Overview counts
             total_sites = data.get("total_sites", 0)
@@ -761,16 +935,36 @@ class WANPerformanceDashboard:
             failovers = data.get("active_failovers", 0)
             alerts = data.get("alert_count", 0)
             
+            # Circuit summary stats
+            circuit_summary = self.data_provider.get_circuit_summary()
+            total_circuits = circuit_summary.get("total_circuits", 0)
+            circuits_up = circuit_summary.get("circuits_up", 0)
+            circuits_down = circuit_summary.get("circuits_down", 0)
+            circuits_above_80 = circuit_summary.get("circuits_above_80", 0)
+            avg_utilization = circuit_summary.get("avg_utilization", 0.0)
+            total_bandwidth = circuit_summary.get("total_bandwidth_gbps", 0.0)
+            
             # Top congested table
             congested_data = data.get("top_congested", [])
             
             # Alerts list
             alerts_list = self._build_alerts_list(data.get("alerts", []))
             
-            # Charts
-            util_chart = self._build_utilization_chart(data.get("utilization_dist", {}))
-            region_chart = self._build_region_chart(data.get("region_summary", []))
-            trends_chart = self._build_trends_chart(data.get("trends", []))
+            # Charts - log what data we're passing
+            util_dist = data.get("utilization_dist", {})
+            region_summary = data.get("region_summary", [])
+            trends_data = data.get("trends", [])
+            throughput_data = data.get("throughput", [])
+            
+            logger.info(f"[CHART] Utilization dist: {util_dist}")
+            logger.info(f"[CHART] Region summary: {len(region_summary)} regions")
+            logger.info(f"[CHART] Trends: {len(trends_data)} points")
+            logger.info(f"[CHART] Throughput: {len(throughput_data)} points")
+            
+            util_chart = self._build_utilization_chart(util_dist)
+            region_chart = self._build_region_chart(region_summary)
+            trends_chart = self._build_trends_chart(trends_data)
+            throughput_chart = self._build_throughput_chart(throughput_data)
             
             return [
                 f"Last updated: {timestamp}",
@@ -780,12 +974,143 @@ class WANPerformanceDashboard:
                 str(critical),
                 str(failovers),
                 str(alerts),
+                # Circuit summary
+                str(total_circuits),
+                str(circuits_up),
+                str(circuits_down),
+                str(circuits_above_80),
+                f"{avg_utilization:.1f}",
+                f"{total_bandwidth:.1f}",
+                # Tables and charts
                 congested_data,
                 alerts_list,
                 util_chart,
                 region_chart,
-                trends_chart
+                trends_chart,
+                throughput_chart
             ]
+        
+        # Status bar update callback (runs every 5 seconds)
+        @self.app.callback(
+            [
+                Output("backend-status-indicator", "children"),
+                Output("rate-limit-status-display", "children"),
+                Output("rate-limit-status-display", "style"),
+                Output("cache-status-display", "children"),
+                Output("refresh-activity-display", "children")
+            ],
+            [Input("status-interval", "n_intervals")]
+        )
+        def update_status_bar(n_intervals):
+            """Update backend status bar indicators."""
+            from src.cache.redis_cache import RedisCache
+            from src.api.mist_client import get_rate_limit_status
+            
+            # Backend connection status
+            backend_connected = self.data_provider is not None
+            if backend_connected:
+                backend_indicator = [
+                    html.Span(
+                        "[*]",
+                        style={"color": self.COLORS["healthy"], "fontFamily": "monospace", "marginRight": "8px", "fontSize": "1.1rem"}
+                    ),
+                    html.Span("Backend Connected", style={"color": self.COLORS["text_primary"], "fontWeight": "500"})
+                ]
+            else:
+                backend_indicator = [
+                    html.Span(
+                        "[X]",
+                        style={"color": self.COLORS["critical"], "fontFamily": "monospace", "marginRight": "8px", "fontSize": "1.1rem"}
+                    ),
+                    html.Span("Backend Disconnected", style={"color": self.COLORS["critical"], "fontWeight": "500"})
+                ]
+            
+            # API Rate Limit Status - critical indicator
+            rate_status = get_rate_limit_status()
+            if rate_status.get("rate_limited", False):
+                # RATE LIMITED - show prominently in red
+                rate_text = f"API: {rate_status.get('status_text', 'RATE LIMITED')}"
+                rate_style = {
+                    "color": self.COLORS["critical"],
+                    "fontSize": "0.9rem",
+                    "fontWeight": "bold",
+                    "backgroundColor": "#3d0000",
+                    "padding": "2px 8px",
+                    "borderRadius": "4px",
+                    "animation": "pulse 1s infinite"
+                }
+            else:
+                rate_text = "API: OK"
+                rate_style = {"color": self.COLORS["healthy"], "fontSize": "0.9rem", "fontWeight": "500"}
+            
+            # Cache status - try to get from data provider
+            cache_status = "Cache: Initializing..."
+            refresh_activity = "Refresh: Starting..."
+            
+            if self.data_provider:
+                # Determine data load state
+                data_loaded = hasattr(self.data_provider, 'data_load_complete') and self.data_provider.data_load_complete
+                has_records = len(self.data_provider.utilization_records) > 0 if hasattr(self.data_provider, 'utilization_records') else False
+                
+                # Get cache info
+                try:
+                    if hasattr(self.data_provider, 'cache_status'):
+                        cs = self.data_provider.cache_status
+                        fresh = cs.get('fresh_sites', 0)
+                        stale = cs.get('stale_sites', 0)
+                        missing = cs.get('missing_sites', 0)
+                        total = fresh + stale + missing
+                        if total > 0:
+                            cache_status = f"Cache: {fresh}/{total} fresh, {stale} stale"
+                        else:
+                            cache_status = "Cache: Loading sites..."
+                    else:
+                        # Fallback to record count
+                        records = len(self.data_provider.utilization_records) if has_records else 0
+                        sites = len(self.data_provider.sites) if hasattr(self.data_provider, 'sites') else 0
+                        if records > 0:
+                            cache_status = f"Cache: {sites} sites, {records} records"
+                        elif sites > 0:
+                            cache_status = f"Cache: {sites} sites (loading data...)"
+                        else:
+                            cache_status = "Cache: Loading..."
+                    
+                    # Refresh activity - be more descriptive about current state
+                    if hasattr(self.data_provider, 'refresh_activity'):
+                        ra = self.data_provider.refresh_activity
+                        status = ra.get('status', 'initializing')
+                        
+                        if status == 'initializing':
+                            refresh_activity = "Refresh: Initializing..."
+                        elif status == 'loading':
+                            refresh_activity = "Refresh: Loading initial data..."
+                        elif ra.get('active', False):
+                            sites_list = ra.get('current_sites', [])
+                            if sites_list:
+                                refresh_activity = f"Refreshing: {len(sites_list)} sites..."
+                            else:
+                                refresh_activity = "Refresh: Active"
+                        else:
+                            refresh_activity = "Refresh: Idle"
+                    
+                    # Check background worker status
+                    if hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
+                        status = self.data_provider.background_worker.get_status()
+                        cycles = status.get('refresh_cycles', 0)
+                        refreshed = status.get('total_sites_refreshed', 0)
+                        if status.get('running', False):
+                            refresh_activity = f"Refresh: Cycle {cycles} ({refreshed} sites updated)"
+                        else:
+                            refresh_activity = f"Refresh: Paused (completed {cycles} cycles)"
+                    elif not data_loaded and not has_records:
+                        # Initial load in progress
+                        refresh_activity = "Refresh: Loading from Mist API..."
+                        
+                except Exception as error:
+                    logger.debug(f"Status bar error: {error}")
+                    cache_status = "Cache: Error reading status"
+            
+            return [backend_indicator, rate_text, rate_style, cache_status, refresh_activity]
         
         # Breadcrumb navigation callback
         @self.app.callback(
@@ -977,25 +1302,56 @@ class WANPerformanceDashboard:
         return html.Div(alert_items)
     
     def _build_utilization_chart(self, distribution: Dict) -> go.Figure:
-        """Build utilization distribution chart."""
+        """Build utilization distribution chart with log-scaled Y-axis."""
         if not distribution:
-            distribution = {"0-50%": 0, "50-70%": 0, "70-80%": 0, "80-90%": 0, "90-100%": 0}
+            distribution = {
+                "0-1%": 0, "1-5%": 0, "5-10%": 0, "10-25%": 0,
+                "25-50%": 0, "50-70%": 0, "70-90%": 0, "90-100%": 0
+            }
         
-        colors = ["#28a745", "#6c757d", "#ffc107", "#fd7e14", "#dc3545"]
+        # Color gradient: green for healthy low util, yellow/orange/red for high
+        colors = [
+            "#28a745",  # 0-1%: healthy green
+            "#28a745",  # 1-5%: healthy green
+            "#28a745",  # 5-10%: healthy green
+            "#6c757d",  # 10-25%: gray (normal)
+            "#6c757d",  # 25-50%: gray (normal)
+            "#ffc107",  # 50-70%: yellow (watch)
+            "#fd7e14",  # 70-90%: orange (warning)
+            "#dc3545"   # 90-100%: red (critical)
+        ]
+        
+        # Log what we're building
+        logger.info(f"[CHART] Building utilization chart with data: {distribution}")
+        
+        # Add 1 to values for log scale (log(0) is undefined)
+        values = list(distribution.values())
+        display_values = [max(v, 0) for v in values]  # Ensure no negatives
         
         fig = go.Figure(data=[
             go.Bar(
                 x=list(distribution.keys()),
-                y=list(distribution.values()),
-                marker_color=colors
+                y=display_values,
+                marker_color=colors[:len(distribution)],
+                text=[f"{v:,}" for v in values],
+                textposition='outside',
+                hovertemplate="<b>%{x}</b><br>Circuits: %{text}<extra></extra>"
             )
         ])
         
+        # Use log scale if there's a large range in values
+        max_val = max(values) if values else 1
+        min_nonzero = min((v for v in values if v > 0), default=1)
+        use_log_scale = max_val > 0 and (max_val / max(min_nonzero, 1)) > 100
+        
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin=dict(l=40, r=20, t=40, b=60),
             xaxis_title="Utilization Range",
-            yaxis_title="Circuit Count"
+            yaxis_title="Circuit Count" + (" (log scale)" if use_log_scale else ""),
+            yaxis_type="log" if use_log_scale else "linear",
+            showlegend=False,
+            xaxis_tickangle=-45
         )
         
         return fig
@@ -1029,7 +1385,7 @@ class WANPerformanceDashboard:
         return fig
     
     def _build_trends_chart(self, trends: List[Dict]) -> go.Figure:
-        """Build trends line chart."""
+        """Build trends line chart for real-time utilization %."""
         fig = go.Figure()
         
         if trends:
@@ -1042,7 +1398,8 @@ class WANPerformanceDashboard:
                 y=avg_util,
                 mode="lines",
                 name="Avg Utilization",
-                line=dict(color=self.COLORS["healthy"])
+                line=dict(color=self.COLORS["healthy"]),
+                hovertemplate="Time: %{x}<br>Avg: %{y:.1f}%<extra></extra>"
             ))
             
             fig.add_trace(go.Scatter(
@@ -1050,18 +1407,77 @@ class WANPerformanceDashboard:
                 y=max_util,
                 mode="lines",
                 name="Max Utilization",
-                line=dict(color=self.COLORS["warning"])
+                line=dict(color=self.COLORS["warning"]),
+                hovertemplate="Time: %{x}<br>Max: %{y:.1f}%<extra></extra>"
             ))
             
             fig.add_hline(y=70, line_dash="dash", line_color=self.COLORS["warning"], annotation_text="70%")
             fig.add_hline(y=80, line_dash="dash", line_color=self.COLORS["high"], annotation_text="80%")
             fig.add_hline(y=90, line_dash="dash", line_color=self.COLORS["critical"], annotation_text="90%")
+        else:
+            # Show message when no historical data available
+            fig.add_annotation(
+                text="Collecting data... Trends will appear after multiple refresh cycles.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=12, color=self.COLORS["text_secondary"])
+            )
         
         fig.update_layout(
             template="plotly_dark",
             margin=dict(l=40, r=20, t=20, b=40),
             xaxis_title="Time",
             yaxis_title="Utilization %",
+            yaxis=dict(range=[0, 100]),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        return fig
+    
+    def _build_throughput_chart(self, throughput: List[Dict]) -> go.Figure:
+        """Build throughput line chart for aggregate traffic (Mbps)."""
+        fig = go.Figure()
+        
+        if throughput and len(throughput) > 1:
+            timestamps = [t.get("timestamp") for t in throughput]
+            rx_mbps = [t.get("rx_mbps", 0) for t in throughput]
+            tx_mbps = [t.get("tx_mbps", 0) for t in throughput]
+            
+            fig.add_trace(go.Scatter(
+                x=timestamps,
+                y=rx_mbps,
+                mode="lines",
+                name="RX (Download)",
+                line=dict(color=self.COLORS["info"]),
+                fill="tozeroy",
+                fillcolor="rgba(23, 162, 184, 0.2)",
+                hovertemplate="Time: %{x}<br>RX: %{y:.1f} Mbps<extra></extra>"
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=timestamps,
+                y=tx_mbps,
+                mode="lines",
+                name="TX (Upload)",
+                line=dict(color=self.COLORS["primary"]),
+                fill="tozeroy",
+                fillcolor="rgba(226, 0, 116, 0.2)",
+                hovertemplate="Time: %{x}<br>TX: %{y:.1f} Mbps<extra></extra>"
+            ))
+        else:
+            # Show message when no historical data available
+            fig.add_annotation(
+                text="Collecting data... Throughput history will appear after multiple refresh cycles.",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=12, color=self.COLORS["text_secondary"])
+            )
+        
+        fig.update_layout(
+            template="plotly_dark",
+            margin=dict(l=40, r=20, t=20, b=40),
+            xaxis_title="Time",
+            yaxis_title="Throughput (Mbps)",
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         

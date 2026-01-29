@@ -216,19 +216,23 @@ def test_utilization_calculation():
         if not is_wan:
             continue
         
+        # Use real-time bps rates from API, not cumulative byte counters
+        rx_bps = port.get("rx_bps", 0) or 0
+        tx_bps = port.get("tx_bps", 0) or 0
         rx_bytes = port.get("rx_bytes", 0) or 0
         tx_bytes = port.get("tx_bytes", 0) or 0
         speed = port.get("speed", 1000) or 1000
         
         util_pct = calculate_utilization_pct(
-            rx_bytes=rx_bytes,
-            tx_bytes=tx_bytes,
-            speed_mbps=speed,
-            interval_seconds=300
+            rx_bps=rx_bps,
+            tx_bps=tx_bps,
+            speed_mbps=speed
         )
         
         calculations.append({
             "port_id": port_id,
+            "rx_bps": rx_bps,
+            "tx_bps": tx_bps,
             "rx_bytes": rx_bytes,
             "tx_bytes": tx_bytes,
             "speed_mbps": speed,
@@ -257,15 +261,14 @@ def test_utilization_calculation():
     print(f"\nTop 5 highest utilization ports:")
     for calc in calculations[:5]:
         print(f"  - {calc['port_id']}: {calc['utilization_pct']:.2f}% "
-              f"(RX: {calc['rx_bytes']:,}, TX: {calc['tx_bytes']:,}, Speed: {calc['speed_mbps']} Mbps)")
+              f"(rx_bps: {calc['rx_bps']:,}, tx_bps: {calc['tx_bps']:,}, Speed: {calc['speed_mbps']} Mbps)")
     
     # Verify calculations are mathematically correct
     test_calc = calculations[0]
     expected = calculate_utilization_pct(
-        test_calc["rx_bytes"], 
-        test_calc["tx_bytes"],
-        test_calc["speed_mbps"],
-        300
+        test_calc["rx_bps"], 
+        test_calc["tx_bps"],
+        test_calc["speed_mbps"]
     )
     if abs(expected - test_calc["utilization_pct"]) < 0.01:
         print(f"\n[OK] Utilization calculation formula verified")

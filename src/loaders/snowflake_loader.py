@@ -7,14 +7,24 @@ Organized per 5-item rule into focused classes.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+# Handle optional snowflake dependency
+SNOWFLAKE_AVAILABLE = False
+snowflake_connector = None
+DictCursor = None
 
 try:
-    import snowflake.connector
+    import snowflake.connector as snowflake_connector
     from snowflake.connector import DictCursor
+    SNOWFLAKE_AVAILABLE = True
 except ImportError:
-    snowflake = None
-    DictCursor = None
+    pass
+
+# For type checking only (IDE support)
+if TYPE_CHECKING:
+    import snowflake.connector as snowflake_connector
+    from snowflake.connector import DictCursor
 
 from src.utils.config import SnowflakeConfig
 from src.models.dimensions import DimSite, DimCircuit, DimTime
@@ -49,7 +59,7 @@ class SnowflakeConnection:
         Raises:
             ImportError: If snowflake-connector-python is not installed
         """
-        if snowflake is None:
+        if not SNOWFLAKE_AVAILABLE:
             raise ImportError(
                 "snowflake-connector-python is required. "
                 "Install with: pip install snowflake-connector-python"
@@ -64,7 +74,10 @@ class SnowflakeConnection:
         try:
             logger.info("[...] Connecting to Snowflake")
             
-            self.connection = snowflake.connector.connect(
+            if snowflake_connector is None:
+                raise ImportError("Snowflake connector not available")
+            
+            self.connection = snowflake_connector.connect(
                 account=self.config.account,
                 user=self.config.user,
                 password=self.config.password,
@@ -106,6 +119,9 @@ class SnowflakeConnection:
         if not self.connection:
             raise RuntimeError("Not connected to Snowflake. Call connect() first.")
         
+        if DictCursor is None:
+            raise RuntimeError("Snowflake connector not properly initialized")
+        
         cursor = self.connection.cursor(DictCursor)
         try:
             if params:
@@ -113,7 +129,7 @@ class SnowflakeConnection:
             else:
                 cursor.execute(sql)
             
-            results = cursor.fetchall()
+            results: List[Dict[str, Any]] = cursor.fetchall()
             return results
         finally:
             cursor.close()
@@ -121,14 +137,14 @@ class SnowflakeConnection:
     def execute_many(
         self,
         sql: str,
-        data: List[Dict[str, Any]]
+        data: List[Any]
     ) -> int:
         """
         Execute SQL statement for multiple records.
         
         Args:
             sql: SQL statement with placeholders
-            data: List of parameter dictionaries
+            data: List of parameter tuples or dictionaries
         
         Returns:
             Number of rows affected
@@ -142,7 +158,7 @@ class SnowflakeConnection:
         cursor = self.connection.cursor()
         try:
             cursor.executemany(sql, data)
-            return cursor.rowcount
+            return cursor.rowcount or 0
         finally:
             cursor.close()
     

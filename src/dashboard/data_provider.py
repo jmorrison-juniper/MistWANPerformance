@@ -68,6 +68,24 @@ class DashboardDataProvider:
         self.utilization_records: List[CircuitUtilizationRecord] = []
         self.status_records: List[CircuitStatusRecord] = []
         self.quality_records: List[CircuitQualityRecord] = []
+        
+        # Status tracking for UI display
+        self.cache_status: Dict[str, Any] = {
+            "fresh_sites": 0,
+            "stale_sites": 0,
+            "missing_sites": 0,
+            "total_records": 0,
+            "last_update": None
+        }
+        self.refresh_activity: Dict[str, Any] = {
+            "active": False,
+            "current_sites": [],
+            "current_interfaces": [],
+            "last_refresh_time": None,
+            "status": "initializing"  # initializing, loading, running, idle
+        }
+        self.background_worker: Optional[Any] = None  # Set externally
+        self.data_load_complete: bool = False  # Tracks if initial load finished
         self.failover_records: List[FailoverEventRecord] = []
         self.daily_aggregates: List[AggregatedMetrics] = []
         self.region_aggregates: List[AggregatedMetrics] = []
@@ -109,18 +127,26 @@ class DashboardDataProvider:
         Get all data needed for dashboard rendering.
         
         Returns:
-            Dictionary with all dashboard data structures
-            
-        Raises:
-            ValueError: If no real utilization data has been loaded
+            Dictionary with all dashboard data structures.
+            Returns loading state if no data available yet.
         """
-        # CRITICAL: Require real data - no simulated fallback
+        # Return loading state if no data yet (async loading in progress)
         if not self.utilization_records:
-            raise ValueError(
-                "No utilization data available. "
-                "Load real data using update_utilization() before calling get_dashboard_data(). "
-                "Check that the Mist API connection is working and returning port statistics."
-            )
+            return {
+                "loading": True,
+                "total_sites": 0,
+                "healthy_sites": 0,
+                "degraded_sites": 0,
+                "critical_sites": 0,
+                "active_failovers": 0,
+                "alert_count": 0,
+                "top_congested": [],
+                "alerts": [],
+                "utilization_dist": {},
+                "region_summary": [],
+                "trends": [],
+                "throughput": []
+            }
         
         # Calculate site status counts
         site_statuses = self._calculate_site_statuses()
@@ -140,8 +166,11 @@ class DashboardDataProvider:
         # Get region summary
         region_summary = self._calculate_region_summary()
         
-        # Get trends data
+        # Get trends data (real-time utilization %)
         trends = self._calculate_trends()
+        
+        # Get throughput data (cumulative bytes converted to rates)
+        throughput = self._calculate_throughput()
         
         # Get active failovers
         active_failovers = self.current_state_views.get_failover_status(
@@ -159,7 +188,8 @@ class DashboardDataProvider:
             "alerts": alerts,
             "utilization_dist": util_dist,
             "region_summary": region_summary,
-            "trends": trends
+            "trends": trends,
+            "throughput": throughput
         }
     
     def _calculate_site_statuses(self) -> Dict[str, int]:
@@ -256,8 +286,11 @@ class DashboardDataProvider:
         """
         Calculate distribution of circuits across utilization buckets.
         
+        Uses finer granularity for low utilization (where most circuits live)
+        and coarser buckets for high utilization (alert conditions).
+        
         Returns:
-            Dictionary with bucket counts
+            Dictionary with bucket counts (ordered for display)
         """
         # Get latest utilization per circuit
         circuit_latest = {}
@@ -266,25 +299,35 @@ class DashboardDataProvider:
             if key not in circuit_latest or record.hour_key > circuit_latest[key].hour_key:
                 circuit_latest[key] = record
         
-        # Bucket the values
+        # Buckets with finer granularity at low end, coarser at high end
+        # Most WAN circuits operate well below 10% utilization
         buckets = {
-            "0-50%": 0,
+            "0-1%": 0,
+            "1-5%": 0,
+            "5-10%": 0,
+            "10-25%": 0,
+            "25-50%": 0,
             "50-70%": 0,
-            "70-80%": 0,
-            "80-90%": 0,
+            "70-90%": 0,
             "90-100%": 0
         }
         
         for record in circuit_latest.values():
             util = record.utilization_pct
-            if util < 50:
-                buckets["0-50%"] += 1
+            if util < 1:
+                buckets["0-1%"] += 1
+            elif util < 5:
+                buckets["1-5%"] += 1
+            elif util < 10:
+                buckets["5-10%"] += 1
+            elif util < 25:
+                buckets["10-25%"] += 1
+            elif util < 50:
+                buckets["25-50%"] += 1
             elif util < 70:
                 buckets["50-70%"] += 1
-            elif util < 80:
-                buckets["70-80%"] += 1
             elif util < 90:
-                buckets["80-90%"] += 1
+                buckets["70-90%"] += 1
             else:
                 buckets["90-100%"] += 1
         
@@ -325,10 +368,24 @@ class DashboardDataProvider:
         """
         Calculate trend data for the last 24 hours.
         
+        First tries to load historical trends from Redis cache.
+        Falls back to current snapshot data if no historical data available.
+        
         Returns:
-            List of trend data points
+            List of trend data points for real-time utilization chart
         """
-        # Group by hour
+        # Try to get historical trends from Redis if cache is available
+        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            try:
+                trends = self.redis_cache.get_utilization_trends(hours=24)
+                if trends and len(trends) > 1:
+                    logger.debug(f"[TRENDS] Loaded {len(trends)} historical points from Redis")
+                    return trends
+            except Exception as error:
+                logger.warning(f"[TRENDS] Redis trends unavailable: {error}")
+        
+        # Fallback: Use current snapshot grouped by hour_key
+        # (only useful if we have data from multiple hours)
         hour_data = defaultdict(list)
         
         for record in self.utilization_records:
@@ -347,6 +404,81 @@ class DashboardDataProvider:
         
         return trends
     
+    def _calculate_throughput(self) -> List[Dict[str, Any]]:
+        """
+        Calculate cumulative throughput data for the last 24 hours.
+        
+        Uses historical byte counters from Redis to show actual throughput
+        over time (delta between snapshots).
+        
+        Returns:
+            List of throughput data points (rx_mbps, tx_mbps)
+        """
+        # Try to get throughput history from Redis
+        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            try:
+                throughput = self.redis_cache.get_throughput_history(hours=24)
+                if throughput and len(throughput) > 1:
+                    logger.debug(f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis")
+                    return throughput
+            except Exception as error:
+                logger.warning(f"[THROUGHPUT] Redis throughput unavailable: {error}")
+        
+        # Fallback: Return current snapshot totals as single point
+        total_rx = sum(r.rx_bytes for r in self.utilization_records)
+        total_tx = sum(r.tx_bytes for r in self.utilization_records)
+        
+        return [{
+            "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+            "datetime": datetime.now(timezone.utc).isoformat(),
+            "rx_mbps": 0,  # Can't calculate rate from single snapshot
+            "tx_mbps": 0,
+            "total_rx_gb": round(total_rx / (1024 ** 3), 2),
+            "total_tx_gb": round(total_tx / (1024 ** 3), 2)
+        }]
+    
+    def store_snapshot_for_trends(self) -> bool:
+        """
+        Store current utilization snapshot for trends history.
+        
+        Should be called after each data refresh to build up historical data.
+        
+        Returns:
+            True if snapshot was stored successfully
+        """
+        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+            return False
+        
+        if not self.utilization_records:
+            return False
+        
+        try:
+            # Calculate summary metrics
+            utils = [r.utilization_pct for r in self.utilization_records]
+            total_rx = sum(r.rx_bytes for r in self.utilization_records)
+            total_tx = sum(r.tx_bytes for r in self.utilization_records)
+            
+            avg_util = sum(utils) / len(utils) if utils else 0
+            max_util = max(utils) if utils else 0
+            circuit_count = len(set((r.site_id, r.circuit_id) for r in self.utilization_records))
+            
+            # Store snapshot
+            success = self.redis_cache.store_utilization_snapshot(
+                avg_utilization=avg_util,
+                max_utilization=max_util,
+                circuit_count=circuit_count,
+                total_rx_bytes=total_rx,
+                total_tx_bytes=total_tx
+            )
+            
+            if success:
+                logger.debug(f"[TRENDS] Stored snapshot: avg={avg_util:.1f}%, max={max_util:.1f}%, circuits={circuit_count}")
+            
+            return success
+        except Exception as error:
+            logger.error(f"[TRENDS] Failed to store snapshot: {error}")
+            return False
+
     def get_region_sites(self, region: str) -> List[Dict[str, Any]]:
         """
         Get all sites in a region for drilldown view.
@@ -488,6 +620,72 @@ class DashboardDataProvider:
         
         return time_series
     
+    def get_circuit_summary(self) -> Dict[str, Any]:
+        """
+        Get summary statistics for WAN circuits.
+        
+        Returns:
+            Dictionary with circuit counts and utilization summaries
+        """
+        if not self.utilization_records:
+            return {
+                "total_circuits": 0,
+                "circuits_up": 0,
+                "circuits_down": 0,
+                "avg_utilization": 0.0,
+                "max_utilization": 0.0,
+                "circuits_above_70": 0,
+                "circuits_above_80": 0,
+                "circuits_above_90": 0,
+                "primary_circuits": 0,
+                "secondary_circuits": 0,
+                "total_bandwidth_gbps": 0.0
+            }
+        
+        # Get unique circuits from records
+        circuit_ids = set(r.circuit_id for r in self.utilization_records)
+        
+        # Calculate per-circuit max utilization
+        circuit_max_util: Dict[str, float] = {}
+        circuit_bandwidth: Dict[str, int] = {}
+        for record in self.utilization_records:
+            circuit_max_util[record.circuit_id] = max(
+                circuit_max_util.get(record.circuit_id, 0.0),
+                record.utilization_pct
+            )
+            circuit_bandwidth[record.circuit_id] = record.bandwidth_mbps
+        
+        # Count circuits in status thresholds
+        above_70 = sum(1 for util in circuit_max_util.values() if util >= 70)
+        above_80 = sum(1 for util in circuit_max_util.values() if util >= 80)
+        above_90 = sum(1 for util in circuit_max_util.values() if util >= 90)
+        
+        # Circuit status from status records (most recent)
+        circuits_down = len(set(
+            r.circuit_id for r in self.status_records if r.status_code == 0
+        ))
+        
+        # Count by role from circuit dimension
+        primary_count = sum(1 for c in self.circuits if c.role == "primary")
+        secondary_count = sum(1 for c in self.circuits if c.role in ("secondary", "backup"))
+        
+        # Total bandwidth
+        total_bandwidth_mbps = sum(circuit_bandwidth.values())
+        
+        return {
+            "total_circuits": len(circuit_ids),
+            "circuits_up": len(circuit_ids) - circuits_down,
+            "circuits_down": circuits_down,
+            "avg_utilization": sum(circuit_max_util.values()) / len(circuit_max_util) if circuit_max_util else 0.0,
+            "max_utilization": max(circuit_max_util.values()) if circuit_max_util else 0.0,
+            "circuits_above_70": above_70,
+            "circuits_above_80": above_80,
+            "circuits_above_90": above_90,
+            "primary_circuits": primary_count,
+            "secondary_circuits": secondary_count,
+            "total_bandwidth_gbps": total_bandwidth_mbps / 1000.0
+        }
+
     def get_primary_secondary_comparison(self, site_id: str) -> Dict[str, Any]:
         """
         Get primary vs secondary comparison data for a site.

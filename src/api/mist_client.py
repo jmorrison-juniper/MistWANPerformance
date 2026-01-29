@@ -8,8 +8,7 @@ Split into focused classes per 5-item rule:
 - MistConnection: Session management and rate limiting
 - MistSiteOperations: Site and device retrieval
 - MistStatsOperations: Statistics and events retrieval
-- MistAPIClient: Facade maintaining backward compatibility
-"""
+- MistAPIClient: Facade maintaining backward compatibility- RateLimitState: Global rate limit tracking (429 handling)"""
 
 import logging
 import time
@@ -30,6 +29,154 @@ from src.utils.config import MistConfig, OperationalConfig
 
 
 logger = logging.getLogger(__name__)
+
+
+class RateLimitState:
+    """
+    Global rate limit state tracking for 429 handling.
+    
+    Mist API rate limits reset at the top of each hour.
+    When a 429 is detected, all API calls pause until reset.
+    
+    Thread-safe singleton pattern for use across all API clients.
+    """
+    _instance = None
+    _lock = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            import threading
+            cls._lock = threading.Lock()
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+    
+    def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+        self.rate_limited = False
+        self.rate_limit_hit_time: Optional[float] = None
+        self.rate_limit_reset_time: Optional[float] = None
+        self._hit_count = 0
+    
+    def set_rate_limited(self) -> float:
+        """
+        Mark that we hit a 429 rate limit.
+        
+        Returns:
+            Seconds until the top of the next hour (reset time)
+        """
+        with self._lock:
+            self.rate_limited = True
+            self.rate_limit_hit_time = time.time()
+            self._hit_count += 1
+            
+            # Calculate seconds until top of next hour
+            now = datetime.now()
+            minutes_until_reset = 60 - now.minute
+            seconds_until_reset = (minutes_until_reset * 60) - now.second
+            
+            # Add small buffer to ensure we're past the reset
+            seconds_until_reset = max(seconds_until_reset, 60) + 5
+            
+            self.rate_limit_reset_time = time.time() + seconds_until_reset
+            
+            logger.error(
+                f"[RATE LIMIT] API rate limit (429) hit! "
+                f"Count: {self._hit_count}. "
+                f"Pausing ALL API calls for {seconds_until_reset // 60:.0f} min "
+                f"{seconds_until_reset % 60:.0f} sec until top of hour."
+            )
+            
+            return seconds_until_reset
+    
+    def check_and_clear(self) -> bool:
+        """
+        Check if rate limit has expired and clear if so.
+        
+        Returns:
+            True if currently rate limited, False if clear
+        """
+        with self._lock:
+            if not self.rate_limited:
+                return False
+            
+            if time.time() >= self.rate_limit_reset_time:
+                self.rate_limited = False
+                self.rate_limit_hit_time = None
+                self.rate_limit_reset_time = None
+                logger.info("[OK] API rate limit period expired - resuming operations")
+                return False
+            
+            return True
+    
+    def seconds_until_reset(self) -> Optional[float]:
+        """Get seconds remaining until rate limit resets."""
+        with self._lock:
+            if not self.rate_limited or not self.rate_limit_reset_time:
+                return None
+            return max(0, self.rate_limit_reset_time - time.time())
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current rate limit status for status bar display."""
+        with self._lock:
+            if not self.rate_limited:
+                return {
+                    "rate_limited": False,
+                    "hit_count": self._hit_count,
+                    "status_text": "OK",
+                    "status_color": "healthy"
+                }
+            
+            remaining = self.seconds_until_reset()
+            if remaining:
+                minutes = int(remaining // 60)
+                seconds = int(remaining % 60)
+                return {
+                    "rate_limited": True,
+                    "hit_count": self._hit_count,
+                    "seconds_remaining": remaining,
+                    "status_text": f"RATE LIMITED - Resume in {minutes}m {seconds}s",
+                    "status_color": "critical"
+                }
+            else:
+                return {
+                    "rate_limited": True,
+                    "hit_count": self._hit_count,
+                    "status_text": "RATE LIMITED - Checking...",
+                    "status_color": "warning"
+                }
+
+
+# Global singleton instance
+_rate_limit_state = RateLimitState()
+
+
+class RateLimitError(Exception):
+    """
+    Exception raised when API rate limit (429) is hit.
+    
+    Callers should catch this and wait until seconds_remaining expires.
+    """
+    def __init__(self, message: str, seconds_remaining: Optional[float] = None):
+        super().__init__(message)
+        self.seconds_remaining = seconds_remaining
+
+
+def get_rate_limit_status() -> Dict[str, Any]:
+    """
+    Get the current rate limit status for external consumers (e.g., dashboard).
+    
+    Returns:
+        Dict with rate_limited (bool), status_text, status_color, etc.
+    """
+    return _rate_limit_state.get_status()
+
+
+def is_rate_limited() -> bool:
+    """Check if API is currently rate limited."""
+    return _rate_limit_state.check_and_clear()
 
 
 class MistConnection:
@@ -94,7 +241,7 @@ class MistConnection:
         **kwargs: Any
     ) -> Any:
         """
-        Execute an API call with retry logic.
+        Execute an API call with retry logic and 429 rate limit handling.
         
         Args:
             operation: Description of the operation (for logging)
@@ -106,8 +253,17 @@ class MistConnection:
             API response data
         
         Raises:
+            RateLimitError: If rate limited (429) - caller should wait
             Exception: If all retries are exhausted
         """
+        # Check if we're currently rate limited before trying
+        if _rate_limit_state.check_and_clear():
+            remaining = _rate_limit_state.seconds_until_reset()
+            raise RateLimitError(
+                f"API rate limited. {remaining:.0f}s remaining until reset.",
+                seconds_remaining=remaining
+            )
+        
         last_error: Optional[Exception] = None
         
         for attempt in range(1, self.ops_config.max_retries + 1):
@@ -117,6 +273,16 @@ class MistConnection:
                 return response
             except Exception as error:
                 last_error = error
+                error_str = str(error).lower()
+                
+                # Check for 429 rate limit error
+                if self._is_rate_limit_error(error):
+                    seconds_wait = _rate_limit_state.set_rate_limited()
+                    raise RateLimitError(
+                        f"API rate limit (429) hit. Waiting {seconds_wait:.0f}s until top of hour.",
+                        seconds_remaining=seconds_wait
+                    )
+                
                 logger.warning(
                     f"[WARN] {operation} failed (attempt {attempt}/{self.ops_config.max_retries}): {error}"
                 )
@@ -127,6 +293,30 @@ class MistConnection:
         if last_error is not None:
             raise last_error
         raise RuntimeError(f"{operation} failed with unknown error")
+    
+    def _is_rate_limit_error(self, error: Exception) -> bool:
+        """Check if an exception indicates a 429 rate limit error."""
+        error_str = str(error).lower()
+        
+        # Check for common 429 indicators
+        if "429" in error_str:
+            return True
+        if "rate limit" in error_str:
+            return True
+        if "too many requests" in error_str:
+            return True
+        
+        # Check for response status code attribute
+        if hasattr(error, 'response'):
+            response = error.response
+            if hasattr(response, 'status_code') and response.status_code == 429:
+                return True
+        
+        # Check for status_code attribute directly
+        if hasattr(error, 'status_code') and error.status_code == 429:
+            return True
+        
+        return False
     
     def close(self) -> None:
         """Close the API session and clean up resources."""
@@ -294,13 +484,21 @@ class MistStatsOperations:
         """
         self.connection = connection
     
-    def get_org_gateway_port_stats(self) -> List[Dict[str, Any]]:
+    def get_org_gateway_port_stats(
+        self,
+        on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Get organization-wide gateway port statistics.
         
         This is the primary method for getting real WAN utilization data.
         Returns rx_bytes, tx_bytes, speed, and status for all WAN ports.
         Fetches ALL available data with no batch limits.
+        
+        Args:
+            on_batch: Optional callback function called after each batch.
+                      Signature: on_batch(batch_records, batch_number, next_cursor)
+                      Use this for incremental saves during long fetches.
         
         Returns:
             List of port statistics dictionaries
@@ -332,6 +530,14 @@ class MistStatsOperations:
             
             # Check for more results (cursor-based pagination)
             next_cursor = data.get("next")
+            
+            # Call incremental save callback if provided
+            if on_batch and batch:
+                try:
+                    on_batch(batch, batch_count, next_cursor)
+                except Exception as callback_error:
+                    logger.warning(f"[WARN] Batch callback failed: {callback_error}")
+            
             if not next_cursor or len(batch) < 1000:
                 break
             search_after = next_cursor
@@ -565,9 +771,18 @@ class MistAPIClient:
         """Get WAN edge devices (gateways) for a specific site."""
         return self.site_ops.get_site_wan_edges(site_id)
     
-    def get_org_gateway_port_stats(self) -> List[Dict[str, Any]]:
-        """Get organization-wide gateway port statistics (rx_bytes, tx_bytes, speed)."""
-        return self.stats_ops.get_org_gateway_port_stats()
+    def get_org_gateway_port_stats(
+        self,
+        on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get organization-wide gateway port statistics (rx_bytes, tx_bytes, speed).
+        
+        Args:
+            on_batch: Optional callback for incremental saves during fetch.
+                      Signature: on_batch(batch_records, batch_number, next_cursor)
+        """
+        return self.stats_ops.get_org_gateway_port_stats(on_batch=on_batch)
     
     def get_org_device_stats(self) -> List[Dict[str, Any]]:
         """Get organization-wide gateway device statistics."""

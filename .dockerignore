@@ -1,0 +1,62 @@
+# MistWANPerformance - Docker Build Ignore File
+#
+# Files and directories to exclude from Docker build context
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+
+# Environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# Local data (use volumes instead)
+data/
+*.log
+
+# Documentation and non-runtime files
+documentation/
+*.md
+!README.md
+LICENSE
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Build artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak

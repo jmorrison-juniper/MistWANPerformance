@@ -49,8 +49,8 @@ class RankedCircuit:
     rank: int
     site_id: str
     site_name: Optional[str]
-    circuit_id: str
-    region: Optional[str]
+    port_id: str
+    bandwidth_mbps: int
     metric_value: float
     metric_name: str
     threshold_status: str  # "normal", "warning", "high", "critical"
@@ -62,8 +62,8 @@ class RankedCircuit:
             "rank": self.rank,
             "site_id": self.site_id,
             "site_name": self.site_name,
-            "circuit_id": self.circuit_id,
-            "region": self.region,
+            "port_id": self.port_id,
+            "bandwidth_mbps": self.bandwidth_mbps,
             "metric_value": self.metric_value,
             "metric_name": self.metric_name,
             "threshold_status": self.threshold_status,
@@ -155,34 +155,39 @@ class RankingViews:
         if not utilization_records:
             return []
         
-        # Group by circuit and get max utilization
-        circuit_max = {}
+        # Group by circuit and get max utilization with bandwidth
+        circuit_data = {}
         for record in utilization_records:
             key = (record.site_id, record.circuit_id)
-            if key not in circuit_max:
-                circuit_max[key] = record.utilization_pct
+            if key not in circuit_data:
+                circuit_data[key] = {
+                    "utilization_pct": record.utilization_pct,
+                    "bandwidth_mbps": record.bandwidth_mbps
+                }
             else:
-                circuit_max[key] = max(circuit_max[key], record.utilization_pct)
+                if record.utilization_pct > circuit_data[key]["utilization_pct"]:
+                    circuit_data[key]["utilization_pct"] = record.utilization_pct
+                    circuit_data[key]["bandwidth_mbps"] = record.bandwidth_mbps
         
         # Sort by utilization descending
         sorted_circuits = sorted(
-            circuit_max.items(),
-            key=lambda x: x[1],
+            circuit_data.items(),
+            key=lambda x: x[1]["utilization_pct"],
             reverse=True
         )[:top_n]
         
         # Build ranked results
         results = []
-        for rank, ((site_id, circuit_id), util_value) in enumerate(sorted_circuits, 1):
+        for rank, ((site_id, port_id), data) in enumerate(sorted_circuits, 1):
             results.append(RankedCircuit(
                 rank=rank,
                 site_id=site_id,
                 site_name=self.site_lookup.get(site_id),
-                circuit_id=circuit_id,
-                region=self.region_lookup.get(site_id),
-                metric_value=round(util_value, 2),
+                port_id=port_id,
+                bandwidth_mbps=data["bandwidth_mbps"],
+                metric_value=round(data["utilization_pct"], 2),
                 metric_name="utilization_pct",
-                threshold_status=self._get_threshold_status(util_value, MetricType.UTILIZATION),
+                threshold_status=self._get_threshold_status(data["utilization_pct"], MetricType.UTILIZATION),
                 period_type=period_type
             ))
         
@@ -233,13 +238,13 @@ class RankingViews:
         
         # Build ranked results
         results = []
-        for rank, ((site_id, circuit_id), avail_value) in enumerate(sorted_circuits, 1):
+        for rank, ((site_id, port_id), avail_value) in enumerate(sorted_circuits, 1):
             results.append(RankedCircuit(
                 rank=rank,
                 site_id=site_id,
                 site_name=self.site_lookup.get(site_id),
-                circuit_id=circuit_id,
-                region=self.region_lookup.get(site_id),
+                port_id=port_id,
+                bandwidth_mbps=0,  # Not available from status records
                 metric_value=round(avail_value, 4),
                 metric_name="availability_pct",
                 threshold_status=self._get_threshold_status(avail_value, MetricType.AVAILABILITY),
@@ -286,7 +291,7 @@ class RankingViews:
         
         # Build ranked results
         results = []
-        for rank, ((site_id, circuit_id), flap_count) in enumerate(sorted_circuits, 1):
+        for rank, ((site_id, port_id), flap_count) in enumerate(sorted_circuits, 1):
             # Flaps threshold status
             if flap_count >= 10:
                 status = "critical"
@@ -301,8 +306,8 @@ class RankingViews:
                 rank=rank,
                 site_id=site_id,
                 site_name=self.site_lookup.get(site_id),
-                circuit_id=circuit_id,
-                region=self.region_lookup.get(site_id),
+                port_id=port_id,
+                bandwidth_mbps=0,  # Not available from status records
                 metric_value=float(flap_count),
                 metric_name="flap_count",
                 threshold_status=status,
@@ -362,13 +367,13 @@ class RankingViews:
         
         # Build ranked results
         results = []
-        for rank, ((site_id, circuit_id), data) in enumerate(sorted_offenders, 1):
+        for rank, ((site_id, port_id), data) in enumerate(sorted_offenders, 1):
             results.append(RankedCircuit(
                 rank=rank,
                 site_id=site_id,
                 site_name=self.site_lookup.get(site_id),
-                circuit_id=circuit_id,
-                region=self.region_lookup.get(site_id),
+                port_id=port_id,
+                bandwidth_mbps=0,  # Not tracked for chronic offenders
                 metric_value=float(data["count"]),
                 metric_name=f"breach_count_above_{threshold_pct}",
                 threshold_status="critical" if data["count"] >= 5 else "high",

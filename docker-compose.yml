@@ -1,0 +1,95 @@
+# MistWANPerformance - Docker Compose Configuration
+#
+# Runs the complete MistWANPerformance stack:
+#   - Dashboard: Dash web application on port 8050
+#   - Redis: Data caching with 31-day persistence
+#
+# Usage with Podman (recommended):
+#   podman-compose up -d              # Start all services
+#   podman-compose down               # Stop services (data persisted)
+#   podman-compose logs -f dashboard  # View dashboard logs
+#   podman-compose logs -f redis      # View Redis logs
+#   podman-compose build              # Rebuild after code changes
+#
+# Usage with Docker:
+#   docker-compose up -d
+#   docker-compose down
+#
+# Data is stored in named volumes which persist across restarts.
+# To completely reset all data:
+#   podman-compose down -v            # Stop and remove volumes
+#
+# Environment:
+#   Copy .env.example to .env and configure your Mist API credentials
+
+version: '3.8'
+
+services:
+  # Main application - WAN Performance Dashboard
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host  # Use host network during build for apt-cacher-ng access
+    container_name: mistwan-dashboard
+    restart: unless-stopped
+    ports:
+      - "8050:8050"
+    environment:
+      # Redis connection (uses service name for DNS)
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # Dashboard settings
+      - DASH_HOST=0.0.0.0
+      - DASH_PORT=8050
+      - DASH_DEBUG=false
+    env_file:
+      # Load Mist API credentials from .env file
+      - .env
+    volumes:
+      # Persist application data (logs, exports, cache files)
+      - mistwan-app-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8050/')"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # Redis cache with persistence
+  redis:
+    image: redis:7-alpine
+    container_name: mistwan-redis
+    restart: unless-stopped
+    ports:
+      # Expose for local debugging; remove in production if not needed
+      - "6379:6379"
+    volumes:
+      # Persist Redis data
+      - mistwan-redis-data:/data
+      # Custom config for persistence settings
+      - ./redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          # 31 days of hourly data for 500 sites ~= 500MB-1GB
+          memory: 2G
+
+volumes:
+  mistwan-app-data:
+    name: mistwan-app-data
+  mistwan-redis-data:
+    name: mistwan-redis-data

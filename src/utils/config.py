@@ -82,8 +82,8 @@ class Config:
     
     Loads configuration from environment variables with .env file support.
     """
-    mist: MistConfig = field(default_factory=lambda: None)
-    snowflake: SnowflakeConfig = field(default_factory=lambda: None)
+    mist: Optional[MistConfig] = field(default=None)
+    snowflake: Optional[SnowflakeConfig] = field(default=None)
     redis: RedisConfig = field(default_factory=RedisConfig)
     thresholds: ThresholdConfig = field(default_factory=ThresholdConfig)
     operational: OperationalConfig = field(default_factory=OperationalConfig)
@@ -148,8 +148,15 @@ class Config:
         )
         
         # Load Redis configuration
+        # Container-friendly: build URL from REDIS_HOST/PORT if REDIS_URL not set
+        redis_url = os.getenv("REDIS_URL")
+        if not redis_url:
+            redis_host = os.getenv("REDIS_HOST", "localhost")
+            redis_port = os.getenv("REDIS_PORT", "6379")
+            redis_url = f"redis://{redis_host}:{redis_port}"
+        
         self.redis = RedisConfig(
-            url=os.getenv("REDIS_URL", "redis://localhost:6379"),
+            url=redis_url,
             enabled=os.getenv("REDIS_ENABLED", "true").lower() == "true",
             cache_ttl=int(os.getenv("REDIS_CACHE_TTL", "300")),
             stale_threshold=int(os.getenv("REDIS_STALE_THRESHOLD", "300"))

@@ -1,0 +1,12 @@
+{
+    "include": ["src", "run_dashboard.py", "tests"],
+    "exclude": ["**/__pycache__", "data", "documentation"],
+    "reportMissingImports": "warning",
+    "reportMissingTypeStubs": "none",
+    "reportOptionalMemberAccess": "error",
+    "reportAttributeAccessIssue": "error",
+    "reportArgumentType": "error",
+    "reportAssignmentType": "error",
+    "pythonVersion": "3.11",
+    "typeCheckingMode": "basic"
+}

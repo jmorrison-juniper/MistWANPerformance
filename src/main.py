@@ -9,6 +9,7 @@ import argparse
 import logging
 import sys
 from datetime import datetime, timezone
+from typing import Optional
 
 from src.utils.config import Config
 from src.utils.logging_config import setup_logging
@@ -91,8 +92,8 @@ Examples:
     return parser.parse_args()
 
 
-def run_collection(config: Config, start_time: datetime = None, end_time: datetime = None, 
-                   dry_run: bool = False) -> bool:
+def run_collection(config: Config, start_time: Optional[datetime] = None, 
+                   end_time: Optional[datetime] = None, dry_run: bool = False) -> bool:
     """
     Run the data collection cycle.
     
