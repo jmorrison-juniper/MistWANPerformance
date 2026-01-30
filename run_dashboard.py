@@ -1034,8 +1034,8 @@ def main():
             if config.mist is not None and quick_client is not None:
                 logger.info("[...] Fetching SLE metrics and alarms (quick API calls)")
                 
-                # Get SLE data for all sites (gateway-health metric)
-                sle_data = quick_client.get_org_sites_sle(sle="gateway-health")
+                # Get WAN SLE data for all sites (sle="wan" returns gateway-health, wan-link-health, etc.)
+                sle_data = quick_client.get_org_sites_sle(sle="wan")
                 if sle_data:
                     _data_provider.update_sle_data(sle_data)
                     logger.info(f"[OK] SLE data loaded: {sle_data.get('total', 0)} sites")
