@@ -1070,6 +1070,9 @@ def main():
                 sle_data = quick_client.get_org_sites_sle(sle="wan")
                 if sle_data:
                     _data_provider.update_sle_data(sle_data)
+                    # Persist SLE snapshot to Redis (7-day TTL)
+                    if _cache:
+                        _cache.save_sle_snapshot(sle_data)
                     logger.info(f"[OK] SLE data loaded: {sle_data.get('total', 0)} sites")
                 
                 # Get worst sites by gateway health
@@ -1080,11 +1083,20 @@ def main():
                         gateway_health=worst_gateway,
                         wan_link=worst_wan
                     )
+                    # Persist worst sites to Redis (1-hour TTL)
+                    if _cache:
+                        if worst_gateway:
+                            _cache.save_worst_sites_sle("gateway-health", worst_gateway)
+                        if worst_wan:
+                            _cache.save_worst_sites_sle("wan-link-health", worst_wan)
                 
                 # Get recent alarms (last 24 hours)
                 alarms_data = quick_client.search_org_alarms(duration="1d", limit=1000)
                 if alarms_data:
                     _data_provider.update_alarms(alarms_data)
+                    # Persist alarms to Redis (7-day TTL)
+                    if _cache:
+                        _cache.save_alarms(alarms_data)
                     logger.info(f"[OK] Alarms loaded: {alarms_data.get('total', 0)} alarms")
                     
         except Exception as sle_error:

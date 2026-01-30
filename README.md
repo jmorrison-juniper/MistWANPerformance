@@ -312,6 +312,21 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.29.16.45": {
+    "feature-additions": [
+      "Redis caching for SLE data, worst sites, and alarms"
+    ],
+    "performance": [
+      "SLE snapshot persisted to Redis with 7-day TTL",
+      "Worst sites persisted to Redis with 1-hour TTL",
+      "Alarms persisted to Redis with 7-day TTL"
+    ],
+    "api-changes": [
+      "save_sle_snapshot() now called after SLE API fetch",
+      "save_worst_sites_sle() now called after worst sites fetch",
+      "save_alarms() now called after alarms fetch"
+    ]
+  },
   "26.01.30.22.10": {
     "feature-additions": [
       "AsyncMistAPIClient for true async HTTP API calls using aiohttp",
