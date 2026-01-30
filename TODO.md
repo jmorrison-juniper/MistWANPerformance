@@ -4,8 +4,9 @@
 
 ### Async/Parallel Optimization Plan
 
-**Status:** In Progress  
-**Started:** 2026-01-29
+**Status:** Completed  
+**Started:** 2026-01-29  
+**Completed:** 2026-01-30
 
 **Goal:** Improve performance by applying async I/O and parallel processing patterns where appropriate.
 
@@ -77,15 +78,22 @@
   - [x] Added pytest-asyncio dependency for async test support
   - [x] Legacy `BackgroundRefreshWorker` preserved for backward compatibility
 
-#### Task 5: Mist API Client Async (Future)
-- [ ] **Status:** Not Started
+#### Task 5: Mist API Client Async
+- [x] **Status:** Completed (2026-01-30)
 - **Effort:** High
 - **Impact:** High (parallel API calls)
-- **Files:** `src/api/mist_client.py`
+- **Files:** `src/api/async_mist_client.py`, `src/api/__init__.py`, `src/cache/background_refresh.py`, `tests/test_async_mist_client.py`, `requirements.txt`
 - **Changes:**
-  - Add async versions of API methods
-  - Use aiohttp or async mistapi if available
-  - Parallel page fetches where possible
+  - [x] Added `AsyncMistConnection` class with aiohttp.ClientSession management
+  - [x] Added `AsyncMistStatsOperations` with async port stats fetching
+  - [x] Added `AsyncMistAPIClient` facade for unified async API access
+  - [x] Uses `aiohttp>=3.9.0` for true async HTTP (added to requirements.txt)
+  - [x] Async rate limiting using `asyncio.sleep()` instead of blocking sleep
+  - [x] Async retry logic with exponential backoff
+  - [x] 429 rate limit handling shared with sync client via `RateLimitState`
+  - [x] Updated `AsyncBackgroundRefreshWorker` with `use_async_api` parameter
+  - [x] Added 13 pytest-asyncio tests for async API client
+  - [x] Sync `MistAPIClient` preserved for backward compatibility
 
 ---
 

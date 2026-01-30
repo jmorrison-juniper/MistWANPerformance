@@ -8,15 +8,17 @@ NASA/JPL Pattern: Safety-first with graceful degradation.
 Handles 429 rate limits by pausing until top of hour reset.
 
 Supports both threading (legacy) and asyncio (preferred) modes.
+Asyncio mode can use either sync API (via executor) or true async API.
 """
 
 import asyncio
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from src.api.mist_client import RateLimitError, get_rate_limit_status, is_rate_limited
+from src.api.async_mist_client import AsyncMistAPIClient
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +35,10 @@ class AsyncBackgroundRefreshWorker:
     Uses asyncio for non-blocking operations with parallel site refresh
     capabilities via TaskGroup. Preferred over threading for new code.
     
+    Supports two API modes:
+    - Sync API (legacy): Uses run_in_executor to call sync MistAPIClient
+    - Async API (preferred): Uses AsyncMistAPIClient for true async HTTP
+    
     Strategy:
     1. First pass: Get data for ALL sites (fill gaps)
     2. Subsequent passes: Refresh oldest data first (keep fresh)
@@ -41,24 +47,26 @@ class AsyncBackgroundRefreshWorker:
     def __init__(
         self,
         cache,
-        api_client,
+        api_client: Union[Any, AsyncMistAPIClient],
         site_ids: List[str],
         min_delay_between_fetches: int = 5,
         max_age_seconds: int = 3600,
         on_data_updated: Optional[Callable] = None,
-        parallel_site_limit: int = 5
+        parallel_site_limit: int = 5,
+        use_async_api: bool = False
     ):
         """
         Initialize the async background refresh worker.
         
         Args:
             cache: Redis cache instance
-            api_client: Mist API client instance
+            api_client: Mist API client instance (sync or async)
             site_ids: List of all site IDs to monitor
             min_delay_between_fetches: Minimum seconds between API calls
             max_age_seconds: Cache age threshold for staleness (default: 1 hour)
             on_data_updated: Optional callback when data is refreshed
             parallel_site_limit: Max concurrent site refreshes (default: 5)
+            use_async_api: If True, api_client is AsyncMistAPIClient (default: False)
         """
         self.cache = cache
         self.api_client = api_client
@@ -67,6 +75,7 @@ class AsyncBackgroundRefreshWorker:
         self.max_age_seconds = max_age_seconds
         self.on_data_updated = on_data_updated
         self.parallel_site_limit = parallel_site_limit
+        self.use_async_api = use_async_api
         
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -210,17 +219,22 @@ class AsyncBackgroundRefreshWorker:
     async def _fetch_and_cache_port_stats(self, cycle_start: float) -> None:
         """Fetch all port stats and cache them."""
         try:
-            # Run blocking API call in thread pool to avoid blocking event loop
-            loop = asyncio.get_event_loop()
-            all_port_stats = await loop.run_in_executor(
-                None, self.api_client.get_org_gateway_port_stats
-            )
+            # Use true async API if available, otherwise fall back to executor
+            if self.use_async_api and isinstance(self.api_client, AsyncMistAPIClient):
+                all_port_stats = await self.api_client.get_org_gateway_port_stats_async()
+            else:
+                # Run blocking API call in thread pool to avoid blocking event loop
+                loop = asyncio.get_event_loop()
+                all_port_stats = await loop.run_in_executor(
+                    None, self.api_client.get_org_gateway_port_stats
+                )
             
             if not all_port_stats:
                 logger.warning("[WARN] Async API returned no port stats")
                 return
             
             # Cache data (may also be blocking - run in executor)
+            loop = asyncio.get_event_loop()
             sites_cached = await loop.run_in_executor(
                 None, self.cache.set_bulk_site_port_stats, all_port_stats
             )
@@ -239,10 +253,11 @@ class AsyncBackgroundRefreshWorker:
                 logger.debug(f"Redis save notification: {save_error}")
             
             cycle_duration = time.time() - cycle_start
+            api_mode = "async" if self.use_async_api else "sync-executor"
             
             if not self._initial_coverage_complete or self._refresh_cycles <= 3:
                 logger.info(
-                    f"[OK] Async cycle {self._refresh_cycles}: "
+                    f"[OK] Async cycle {self._refresh_cycles} ({api_mode}): "
                     f"Cached {sites_cached} sites, {len(all_port_stats)} ports "
                     f"in {cycle_duration:.1f}s"
                 )
@@ -265,6 +280,7 @@ class AsyncBackgroundRefreshWorker:
         return {
             "running": self._running,
             "mode": "async",
+            "api_mode": "async-http" if self.use_async_api else "sync-executor",
             "refresh_cycles": self._refresh_cycles,
             "total_sites_refreshed": self._total_sites_refreshed,
             "last_refresh_time": self._last_refresh_time,
