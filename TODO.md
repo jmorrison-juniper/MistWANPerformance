@@ -2,6 +2,191 @@
 
 ## High Priority
 
+### Site-Level SLE Deep-Dive Data Collection
+
+**Status:** Not Started  
+**Started:** 2026-01-29
+
+**Goal:** Collect detailed site-level SLE data for degraded sites. Use org-level API to identify degraded sites, then fetch detailed diagnostics only for those sites. Smart time-series fetching with 10-minute resolution across 7 days, using incremental fetching when historical data exists.
+
+---
+
+#### Raw Endpoint Reference (Provided by User)
+
+| Endpoint | Method | Scope | Purpose |
+|----------|--------|-------|---------|
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/threshold` | `getSiteSleThreshold` | Site | Get SLE threshold config |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/summary` | `getSiteSleSummary` | Site | Get SLE summary with classifiers (time-series) |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/histogram` | `getSiteSleHistogram` | Site | Get histogram distribution |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/impact-summary` | `getSiteSleImpactSummary` | Site | Get impact summary counts |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/impacted-clients` | `listSiteSleImpactedWirelessClients` | Site | Get impacted clients list |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/impacted-peer-paths` | N/A (not in mistapi) | Site | Get impacted peer paths |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/impacted-gateways` | `listSiteSleImpactedGateways` | Site | Get impacted gateways list |
+| `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/impacted-interfaces` | `listSiteSleImpactedInterfaces` | Site | Get impacted interfaces list |
+
+---
+
+#### Org-Level vs Site-Level Strategy
+
+**Org-Level (Already Implemented):**
+- `getOrgSitesSle(sle="wan")` - SLE scores for all sites (gateway-health, wan-link-health, application-health)
+- `getOrgSle(metric="worst-sites-by-sle")` - Worst performing sites list
+
+**Site-Level (New - For Degraded Sites Only):**
+- Use org-level API to identify sites with SLE < 90%
+- Fetch detailed site-level diagnostics ONLY for degraded sites
+- Reduces API calls from 3,208 sites to ~100-200 degraded sites
+
+---
+
+#### API Testing Results (2026-01-29)
+
+**getSiteSleHistogram Response:**
+```json
+{
+  "metric": "wan-link-health-v2",
+  "start": 1769660273,
+  "end": 1769746673,
+  "data": [
+    {"range": [null, 0], "value": 0},
+    {"range": [0.0, 5.0], "value": 98916.0},
+    {"range": [5.0, 10.0], "value": 0}
+  ]
+}
+```
+
+**getSiteSleSummary Response (Time-Series):**
+```json
+{
+  "start": 1769660283,
+  "end": 1769746683,
+  "sle": {
+    "name": "wan-link-health",
+    "interval": 3600,
+    "samples": {
+      "total": [50.77, 44.87, 38.83, ...],
+      "degraded": [0.0, 3.0, 0.0, ...]
+    }
+  },
+  "impact": {
+    "num_users": 0,
+    "num_gateways": 1,
+    "total_gateways": 1
+  },
+  "classifiers": [
+    {"name": "interface-negotiation-failed", "interval": 3600, "samples": {...}}
+  ]
+}
+```
+
+**listSiteSleImpactedGateways Response:**
+```json
+{
+  "start": 1769660301,
+  "end": 1769746701,
+  "metric": "wan-link-health",
+  "gateways": [
+    {
+      "gateway_mac": "90ec77710609",
+      "name": "1NJR010482G",
+      "duration": 601.5,
+      "degraded": 38.95,
+      "gateway_model": "SSR130",
+      "gateway_version": "6.2.6-15.sts"
+    }
+  ]
+}
+```
+
+**listSiteSleImpactedInterfaces Response:**
+```json
+{
+  "start": 1769660309,
+  "end": 1769746709,
+  "interfaces": [
+    {
+      "interface_name": "ge-0/0/2",
+      "gateway_name": "1NJR010482G",
+      "gateway_mac": "90ec77710609",
+      "duration": 359.02,
+      "degraded": 38.95
+    }
+  ]
+}
+```
+
+**getSiteSleThreshold Response:**
+```json
+{
+  "metric": "wan-link-health-v2",
+  "minimum": 0,
+  "maximum": 0,
+  "default": 0,
+  "units": "Mbps",
+  "direction": "right",
+  "threshold": 0
+}
+```
+
+**Available WAN-Link-Health Classifiers:**
+- `interface-negotiation-failed`
+- `interface-port-down`
+- `interface-vpn`
+- `isp-reachability-dhcp`
+- `network-vpn-path-down`
+- `interface-cable-issues`
+- `network-loss`
+- `network-jitter`
+- `isp-reachability-arp`
+- `interface-lte-signal`
+- `interface-congestion`
+- `network-latency`
+
+---
+
+#### Implementation Tasks
+
+##### Task F1: MistAPIClient Site-Level SLE Methods
+- [ ] Add `get_site_sle_summary(site_id, metric, start, end, duration)` to MistAPIClient
+- [ ] Add `get_site_sle_histogram(site_id, metric, start, end, duration)` to MistAPIClient
+- [ ] Add `get_site_sle_threshold(site_id, metric)` to MistAPIClient
+- [ ] Add `get_site_sle_impacted_gateways(site_id, metric, start, end)` to MistAPIClient
+- [ ] Add `get_site_sle_impacted_interfaces(site_id, metric, start, end)` to MistAPIClient
+- [ ] Support smart start_time from cached last timestamp for incremental fetching
+
+##### Task F2: Redis Storage Schema for Site-Level SLE
+- [ ] Design key patterns:
+  - `mistwan:site_sle:{site_id}:summary:{metric}` - Summary time-series
+  - `mistwan:site_sle:{site_id}:histogram:{metric}` - Histogram data
+  - `mistwan:site_sle:{site_id}:impacted_gateways:{metric}` - Impacted gateways
+  - `mistwan:site_sle:{site_id}:impacted_interfaces:{metric}` - Impacted interfaces
+  - `mistwan:site_sle:{site_id}:threshold:{metric}` - Threshold config
+  - `mistwan:site_sle:last_fetch:{site_id}` - Last fetch timestamp for incremental
+- [ ] Add save methods: `save_site_sle_summary()`, `save_site_sle_histogram()`, etc.
+- [ ] Add get methods: `get_site_sle_summary()`, `get_site_sle_histogram()`, etc.
+- [ ] Add `get_last_site_sle_timestamp(site_id)` for incremental fetching
+- [ ] TTL: 7 days for all site-level SLE data
+
+##### Task F3: Degraded Site Collection Workflow
+- [ ] Create `collect_degraded_site_details()` function:
+  1. Get degraded sites from `_data_provider.get_sle_degraded_sites()`
+  2. For each degraded site (limited to top N worst):
+     a. Check `get_last_site_sle_timestamp(site_id)`
+     b. If fresh data exists, adjust start_time for incremental fetch
+     c. Fetch summary, histogram, impacted gateways, impacted interfaces
+     d. Save all to Redis
+- [ ] Add to background refresh cycle (lower priority than port stats)
+- [ ] Rate limit to avoid 429 errors (1 site per 200ms)
+
+##### Task F4: Dashboard Integration
+- [ ] Add "Site Details" drill-down view when clicking degraded site row
+- [ ] Display SLE summary time-series chart
+- [ ] Display histogram as bar chart
+- [ ] List impacted gateways and interfaces in tables
+- [ ] Show classifier breakdown (network-loss, jitter, latency, etc.)
+
+---
+
 ### Async/Parallel Optimization Plan
 
 **Status:** Completed  
