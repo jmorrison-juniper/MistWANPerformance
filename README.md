@@ -312,6 +312,19 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.29.20.55": {
+    "feature-additions": [
+      "Added get_site_sle_trend() to MistInsightsOperations for site-specific SLE deep-dives"
+    ],
+    "api-changes": [
+      "MistInsightsOperations.get_site_sle_trend() - retrieves SLE time-series for individual sites",
+      "MistAPIClient.get_site_sle_trend() - facade delegation for site SLE trend",
+      "Supports gateway-health, wan-link-health, application-health metrics"
+    ],
+    "documentation": [
+      "Updated TODO.md Task C (Site-Level SLE) as complete"
+    ]
+  },
   "26.01.30.21.40": {
     "feature-additions": [
       "AsyncBackgroundRefreshWorker class for asyncio-based cache refresh",

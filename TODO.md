@@ -228,10 +228,11 @@ GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/application-health/summary
 
 ##### Task C: Site-Level SLE (Fallback)
 
-- [ ] Add `get_site_sle_trend()` to `MistAPIClient` (if org-level lacks detail)
+- [x] Add `get_site_sle_trend()` to `MistAPIClient` (if org-level lacks detail)
   - Call `mistapi.api.v1.sites.sle.getSiteSleSummaryTrend()`
   - Metrics: gateway-health, wan-link-health, application-health
-- [ ] Only use for specific site deep-dives, not bulk collection
+- [x] Only use for specific site deep-dives, not bulk collection
+- [x] Added to MistInsightsOperations class with facade delegation
 
 ##### Task D: Redis Storage Schema
 

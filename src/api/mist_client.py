@@ -1047,6 +1047,69 @@ class MistInsightsOperations:
         logger.info(f"[OK] Retrieved {len(all_results)} alarms (total: {total_count})")
         return result
 
+    def get_site_sle_trend(
+        self,
+        site_id: str,
+        metric: str = "gateway-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get SLE time-series trend for a specific site.
+        
+        Use this for site-specific deep-dives, not bulk collection.
+        For org-wide SLE data, use get_org_sites_sle() instead.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "gateway-health", "wan-link-health", "application-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified ("1h", "1d", "7d")
+        
+        Returns:
+            Dictionary with SLE trend data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "interval": seconds,
+                "data": [
+                    {
+                        "timestamp": epoch,
+                        "value": 0.0-1.0
+                    }
+                ]
+            }
+        """
+        logger.info(f"[...] Retrieving SLE trend for site {site_id} (metric={metric})")
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "scope": "site",
+            "scope_id": site_id,
+            "metric": metric
+        }
+        
+        if start_time:
+            api_kwargs["start"] = str(start_time)
+        if end_time:
+            api_kwargs["end"] = str(end_time)
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            f"Get site SLE trend ({metric})",
+            mistapi.api.v1.sites.sle.getSiteSleSummaryTrend,  # type: ignore[union-attr]
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        data = response.data if hasattr(response, 'data') else {}
+        trend_points = data.get("data", [])
+        logger.info(f"[OK] Retrieved {len(trend_points)} trend points for site {site_id}")
+        return data
+
 
 class MistAPIClient:
     """
@@ -1248,6 +1311,37 @@ class MistAPIClient:
             site_id=site_id,
             status=status,
             limit=limit
+        )
+    
+    def get_site_sle_trend(
+        self,
+        site_id: str,
+        metric: str = "gateway-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get SLE time-series trend for a specific site.
+        
+        Use for site-specific deep-dives. For org-wide data, use get_org_sites_sle().
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "gateway-health", "wan-link-health", "application-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with SLE trend data including timestamps and values
+        """
+        return self.insights_ops.get_site_sle_trend(
+            site_id=site_id,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
         )
     
     def close(self) -> None:
