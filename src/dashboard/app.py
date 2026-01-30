@@ -573,6 +573,80 @@ class WANPerformanceDashboard:
                             dbc.CardBody([
                                 html.Div(id="alerts-list")
                             ])
+                        ], className="mb-4"),
+                        
+                        # SLE Degraded Sites Table
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("SLE Degraded Sites (< 90%)"),
+                                dbc.Button(
+                                    "Export CSV",
+                                    id="export-sle-degraded-btn",
+                                    color="secondary",
+                                    size="sm",
+                                    className="float-end"
+                                ),
+                                dcc.Download(id="download-sle-degraded-csv")
+                            ]),
+                            dbc.CardBody([
+                                dash_table.DataTable(
+                                    id="sle-degraded-table",
+                                    columns=[
+                                        {"name": "Site Name", "id": "site_name"},
+                                        {"name": "Gateway %", "id": "gateway_health"},
+                                        {"name": "WAN Link %", "id": "wan_link"},
+                                        {"name": "App Health %", "id": "app_health"}
+                                    ],
+                                    style_cell={
+                                        "backgroundColor": self.COLORS["bg_secondary"],
+                                        "color": self.COLORS["text_primary"],
+                                        "textAlign": "left",
+                                        "cursor": "pointer",
+                                        "border": f"1px solid {self.COLORS['bg_border']}",
+                                        "padding": "8px"
+                                    },
+                                    style_header={
+                                        "backgroundColor": self.COLORS["bg_card"],
+                                        "fontWeight": "bold",
+                                        "borderBottom": f"2px solid {self.COLORS['primary']}"
+                                    },
+                                    style_data_conditional=[  # type: ignore[arg-type]
+                                        {
+                                            "if": {"filter_query": "{gateway_health} < 90"},
+                                            "backgroundColor": "#fd7e14",
+                                            "color": "white"
+                                        },
+                                        {
+                                            "if": {"filter_query": "{wan_link} < 90"},
+                                            "backgroundColor": "#fd7e14",
+                                            "color": "white"
+                                        },
+                                        {
+                                            "if": {"filter_query": "{app_health} < 90"},
+                                            "backgroundColor": "#fd7e14",
+                                            "color": "white"
+                                        },
+                                        {
+                                            "if": {"filter_query": "{gateway_health} < 70"},
+                                            "backgroundColor": "#dc3545",
+                                            "color": "white"
+                                        },
+                                        {
+                                            "if": {"filter_query": "{wan_link} < 70"},
+                                            "backgroundColor": "#dc3545",
+                                            "color": "white"
+                                        },
+                                        {
+                                            "if": {"filter_query": "{app_health} < 70"},
+                                            "backgroundColor": "#dc3545",
+                                            "color": "white"
+                                        }
+                                    ],
+                                    page_size=10,
+                                    sort_action="native",
+                                    filter_action="native"
+                                )
+                            ])
                         ])
                     ], width=6),
                     
@@ -905,6 +979,7 @@ class WANPerformanceDashboard:
             "0",    # alarms critical
             # Tables and charts
             [],     # congested table data
+            [],     # sle degraded table data
             loading_alert,
             empty_chart,
             empty_chart,
@@ -944,6 +1019,7 @@ class WANPerformanceDashboard:
                 Output("alarms-critical", "children"),
                 # Tables and charts
                 Output("top-congested-table", "data"),
+                Output("sle-degraded-table", "data"),
                 Output("alerts-list", "children"),
                 Output("utilization-chart", "figure"),
                 Output("region-chart", "figure"),
@@ -992,6 +1068,9 @@ class WANPerformanceDashboard:
             
             # Top congested table
             congested_data = data.get("top_congested", [])
+            
+            # SLE degraded sites table
+            sle_degraded_data = data.get("sle_degraded_sites", [])
             
             # Alerts list
             alerts_list = self._build_alerts_list(data.get("alerts", []))
@@ -1058,6 +1137,7 @@ class WANPerformanceDashboard:
                 alarms_critical,
                 # Tables and charts
                 congested_data,
+                sle_degraded_data,
                 alerts_list,
                 util_chart,
                 region_chart,
@@ -1303,6 +1383,23 @@ class WANPerformanceDashboard:
                 alerts,
                 "active_alerts.csv",
                 ["severity", "site_name", "circuit_id", "message", "timestamp"]
+            )
+        
+        @self.app.callback(
+            Output("download-sle-degraded-csv", "data"),
+            [Input("export-sle-degraded-btn", "n_clicks")],
+            [State("sle-degraded-table", "data")],
+            prevent_initial_call=True
+        )
+        def export_sle_degraded_csv(n_clicks, data):
+            """Export SLE degraded sites to CSV."""
+            if not n_clicks or not data:
+                raise PreventUpdate
+            
+            return self._generate_csv_download(
+                data,
+                "sle_degraded_sites.csv",
+                ["site_name", "site_id", "gateway_health", "wan_link", "app_health", "worst_score"]
             )
     
     def _generate_csv_download(

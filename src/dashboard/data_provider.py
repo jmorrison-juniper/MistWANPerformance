@@ -237,6 +237,54 @@ class DashboardDataProvider:
             "worst_wan_link": self.worst_sites_wan_link
         }
     
+    def get_sle_degraded_sites(self, threshold: float = 0.9) -> List[Dict[str, Any]]:
+        """
+        Get list of sites with any degraded SLE metric (below threshold).
+        
+        Args:
+            threshold: SLE threshold (default 0.9 = 90%)
+        
+        Returns:
+            List of degraded sites with their SLE scores, sorted by worst first
+        """
+        if not self.sle_data:
+            return []
+        
+        results = self.sle_data.get("results", [])
+        degraded_sites = []
+        
+        for site in results:
+            site_id = site.get("site_id", "")
+            gateway_health = site.get("gateway-health", 1.0)
+            wan_link = site.get("wan-link-health", 1.0)
+            app_health = site.get("application-health", 1.0)
+            
+            # Check if any metric is below threshold
+            is_degraded = (
+                gateway_health < threshold or
+                wan_link < threshold or
+                app_health < threshold
+            )
+            
+            if is_degraded:
+                # Find worst metric for sorting
+                worst_score = min(gateway_health, wan_link, app_health)
+                site_name = self.site_lookup.get(site_id, site_id[:8] + "...")
+                
+                degraded_sites.append({
+                    "site_name": site_name,
+                    "site_id": site_id,
+                    "gateway_health": round(gateway_health * 100, 1),
+                    "wan_link": round(wan_link * 100, 1),
+                    "app_health": round(app_health * 100, 1),
+                    "worst_score": round(worst_score * 100, 1)
+                })
+        
+        # Sort by worst score (ascending - worst first)
+        degraded_sites.sort(key=lambda x: x["worst_score"])
+        
+        return degraded_sites
+    
     def get_alarms_summary(self) -> Dict[str, Any]:
         """
         Get alarms summary for dashboard display.
@@ -326,7 +374,8 @@ class DashboardDataProvider:
             "trends": trends,
             "throughput": throughput,
             "sle_summary": self.get_sle_summary(),
-            "alarms_summary": self.get_alarms_summary()
+            "alarms_summary": self.get_alarms_summary(),
+            "sle_degraded_sites": self.get_sle_degraded_sites()
         }
     
     def _calculate_site_statuses(self) -> Dict[str, int]:
