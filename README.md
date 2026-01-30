@@ -312,6 +312,31 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.30.21.40": {
+    "feature-additions": [
+      "AsyncBackgroundRefreshWorker class for asyncio-based cache refresh",
+      "refresh_stale_sites_parallel() function using asyncio.TaskGroup for structured concurrency",
+      "Parallel site refresh with configurable concurrency limit (default: 5)"
+    ],
+    "performance": [
+      "Async refresh loop using asyncio.sleep() instead of blocking sleep",
+      "Blocking API calls run in executor to avoid blocking event loop",
+      "Semaphore-based concurrency limiting for parallel site refresh"
+    ],
+    "api-changes": [
+      "AsyncBackgroundRefreshWorker - async equivalent of BackgroundRefreshWorker",
+      "refresh_stale_sites_parallel() - TaskGroup-based parallel refresh",
+      "Updated cache/__init__.py to export new async classes"
+    ],
+    "testing": [
+      "Added 12 unit tests for background refresh (async and legacy)",
+      "Added pytest-asyncio dependency for async test support",
+      "All 69 tests pass"
+    ],
+    "documentation": [
+      "Updated TODO.md Task 4 as complete"
+    ]
+  },
   "26.01.30.21.00": {
     "feature-additions": [
       "ProcessPoolExecutor for time aggregation (aggregate_daily_to_weekly_parallel, aggregate_daily_to_monthly_parallel, aggregate_to_region_parallel)"

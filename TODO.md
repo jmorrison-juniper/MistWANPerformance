@@ -61,15 +61,21 @@
   - [x] Added 4 unit tests for parallel aggregation validation
   - [x] Original class methods preserved for backward compatibility
 
-#### Task 4: Background Refresh Async (Future)
-- [ ] **Status:** Not Started
+#### Task 4: Background Refresh Async
+- [x] **Status:** Completed (2026-01-30)
 - **Effort:** Medium
 - **Impact:** High (parallel site refresh)
-- **Files:** `src/cache/background_refresh.py`
+- **Files:** `src/cache/background_refresh.py`, `src/cache/__init__.py`, `tests/test_background_refresh.py`, `requirements.txt`
 - **Changes:**
-  - Convert to asyncio with TaskGroup
-  - Refresh multiple stale sites in parallel
-  - Use asyncio.sleep() instead of blocking sleep
+  - [x] Added `AsyncBackgroundRefreshWorker` class with asyncio-based refresh loop
+  - [x] Added `refresh_stale_sites_parallel()` using asyncio.TaskGroup for structured concurrency
+  - [x] Uses `asyncio.sleep()` instead of blocking sleep
+  - [x] Runs blocking API calls in executor to avoid blocking event loop
+  - [x] Semaphore-based concurrency limiting (default: 5 parallel refreshes)
+  - [x] Updated `__init__.py` to export new async classes
+  - [x] Added 12 unit tests for background refresh (async and legacy)
+  - [x] Added pytest-asyncio dependency for async test support
+  - [x] Legacy `BackgroundRefreshWorker` preserved for backward compatibility
 
 #### Task 5: Mist API Client Async (Future)
 - [ ] **Status:** Not Started

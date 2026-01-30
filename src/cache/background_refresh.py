@@ -6,8 +6,11 @@ the dashboard is running. Prioritizes oldest data first.
 
 NASA/JPL Pattern: Safety-first with graceful degradation.
 Handles 429 rate limits by pausing until top of hour reset.
+
+Supports both threading (legacy) and asyncio (preferred) modes.
 """
 
+import asyncio
 import logging
 import threading
 import time
@@ -16,6 +19,350 @@ from typing import Any, Callable, Dict, List, Optional
 from src.api.mist_client import RateLimitError, get_rate_limit_status, is_rate_limited
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Async Background Refresh Worker (Preferred for new code)
+# ============================================================================
+
+
+class AsyncBackgroundRefreshWorker:
+    """
+    Async background worker that refreshes stale cache data.
+    
+    Uses asyncio for non-blocking operations with parallel site refresh
+    capabilities via TaskGroup. Preferred over threading for new code.
+    
+    Strategy:
+    1. First pass: Get data for ALL sites (fill gaps)
+    2. Subsequent passes: Refresh oldest data first (keep fresh)
+    """
+    
+    def __init__(
+        self,
+        cache,
+        api_client,
+        site_ids: List[str],
+        min_delay_between_fetches: int = 5,
+        max_age_seconds: int = 3600,
+        on_data_updated: Optional[Callable] = None,
+        parallel_site_limit: int = 5
+    ):
+        """
+        Initialize the async background refresh worker.
+        
+        Args:
+            cache: Redis cache instance
+            api_client: Mist API client instance
+            site_ids: List of all site IDs to monitor
+            min_delay_between_fetches: Minimum seconds between API calls
+            max_age_seconds: Cache age threshold for staleness (default: 1 hour)
+            on_data_updated: Optional callback when data is refreshed
+            parallel_site_limit: Max concurrent site refreshes (default: 5)
+        """
+        self.cache = cache
+        self.api_client = api_client
+        self.site_ids = site_ids
+        self.min_delay = min_delay_between_fetches
+        self.max_age_seconds = max_age_seconds
+        self.on_data_updated = on_data_updated
+        self.parallel_site_limit = parallel_site_limit
+        
+        self._running = False
+        self._task: Optional[asyncio.Task] = None
+        self._last_refresh_time = 0.0
+        self._total_sites_refreshed = 0
+        self._refresh_cycles = 0
+        self._initial_coverage_complete = False
+        self._sites_with_data: set = set()
+        self._rate_limited = False
+    
+    async def start(self) -> None:
+        """Start the async background refresh worker."""
+        if self._running:
+            logger.warning("[WARN] Async background refresh already running")
+            return
+        
+        self._running = True
+        self._task = asyncio.create_task(
+            self._refresh_loop(),
+            name="AsyncBackgroundRefreshWorker"
+        )
+        logger.info(
+            f"[OK] Async background refresh started "
+            f"({len(self.site_ids)} sites, parallel limit: {self.parallel_site_limit})"
+        )
+    
+    async def stop(self) -> None:
+        """Stop the async background refresh worker."""
+        if not self._running:
+            return
+        
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass  # Expected when stopping
+        
+        logger.info(
+            f"[OK] Async background refresh stopped "
+            f"(cycles: {self._refresh_cycles}, total: {self._total_sites_refreshed})"
+        )
+    
+    async def _refresh_loop(self) -> None:
+        """Main async refresh loop - runs continuously."""
+        logger.info("[...] Async background refresh loop starting")
+        
+        while self._running:
+            try:
+                # Check rate limit before API call
+                if is_rate_limited():
+                    rate_status = get_rate_limit_status()
+                    remaining = rate_status.get("seconds_remaining", 60)
+                    self._rate_limited = True
+                    
+                    logger.warning(
+                        f"[RATE LIMIT] API rate limited - pausing async refresh. "
+                        f"Resume in {int(remaining // 60)}m {int(remaining % 60)}s"
+                    )
+                    await asyncio.sleep(min(60, int(remaining) + 1))
+                    continue
+                
+                if self._rate_limited:
+                    self._rate_limited = False
+                    logger.info("[OK] Rate limit cleared - resuming async refresh")
+                
+                cycle_start = time.time()
+                await self._run_refresh_cycle_async()
+                cycle_duration = time.time() - cycle_start
+                
+                # Ensure minimum delay between cycles
+                if cycle_duration < self.min_delay:
+                    await asyncio.sleep(self.min_delay - cycle_duration)
+                    
+            except asyncio.CancelledError:
+                logger.info("[INFO] Async refresh loop cancelled")
+                break
+                
+            except RateLimitError as rate_error:
+                self._rate_limited = True
+                wait_time = rate_error.seconds_remaining or 3600
+                logger.error(
+                    f"[RATE LIMIT] Hit 429 during async refresh - pausing "
+                    f"{int(wait_time // 60)}m {int(wait_time % 60)}s"
+                )
+                await asyncio.sleep(int(wait_time) + 5)
+                
+            except Exception as error:
+                logger.error(f"[ERROR] Async refresh error: {error}", exc_info=True)
+                await asyncio.sleep(5)
+    
+    async def _run_refresh_cycle_async(self) -> None:
+        """Execute one async refresh cycle with parallel site processing."""
+        self._refresh_cycles += 1
+        cycle_start = time.time()
+        
+        # Get stale site IDs
+        stale_ids, fresh_count, missing_count, stale_count = self._get_stale_sites()
+        
+        # Log coverage status
+        self._log_coverage_status(fresh_count, missing_count, stale_count)
+        
+        # Fetch and cache all port stats (bulk operation)
+        await self._fetch_and_cache_port_stats(cycle_start)
+    
+    def _get_stale_sites(self) -> tuple:
+        """Get stale site IDs and cache statistics."""
+        if hasattr(self.cache, 'get_stale_site_ids_pipelined'):
+            return self.cache.get_stale_site_ids_pipelined(
+                self.site_ids, max_age_seconds=self.max_age_seconds
+            )
+        
+        site_ages = self.cache.get_sites_sorted_by_cache_age(self.site_ids)
+        missing = sum(1 for _, age in site_ages if age == float('inf'))
+        stale = sum(1 for _, age in site_ages if age >= self.max_age_seconds and age != float('inf'))
+        fresh = len(self.site_ids) - missing - stale
+        stale_ids = [sid for sid, age in site_ages if age >= self.max_age_seconds]
+        return stale_ids, fresh, missing, stale
+    
+    def _log_coverage_status(self, fresh: int, missing: int, stale: int) -> None:
+        """Log cache coverage status."""
+        if not self._initial_coverage_complete:
+            coverage = ((fresh + stale) / len(self.site_ids)) * 100 if self.site_ids else 0
+            if missing == 0:
+                self._initial_coverage_complete = True
+                logger.info(
+                    f"[OK] Initial coverage complete! All {len(self.site_ids)} sites cached"
+                )
+            else:
+                logger.info(
+                    f"[...] Async cycle {self._refresh_cycles}: {coverage:.1f}% coverage "
+                    f"({fresh} fresh, {stale} stale, {missing} missing)"
+                )
+        elif self._refresh_cycles % 10 == 0:
+            logger.info(
+                f"[INFO] Async cycle {self._refresh_cycles}: "
+                f"{fresh} fresh, {stale} stale, {missing} missing"
+            )
+    
+    async def _fetch_and_cache_port_stats(self, cycle_start: float) -> None:
+        """Fetch all port stats and cache them."""
+        try:
+            # Run blocking API call in thread pool to avoid blocking event loop
+            loop = asyncio.get_event_loop()
+            all_port_stats = await loop.run_in_executor(
+                None, self.api_client.get_org_gateway_port_stats
+            )
+            
+            if not all_port_stats:
+                logger.warning("[WARN] Async API returned no port stats")
+                return
+            
+            # Cache data (may also be blocking - run in executor)
+            sites_cached = await loop.run_in_executor(
+                None, self.cache.set_bulk_site_port_stats, all_port_stats
+            )
+            self._total_sites_refreshed += sites_cached
+            
+            # Track sites with data
+            sites_in_response = set(
+                port.get("site_id") for port in all_port_stats if port.get("site_id")
+            )
+            self._sites_with_data.update(sites_in_response)
+            
+            # Force Redis save
+            try:
+                await loop.run_in_executor(None, self.cache.force_save)
+            except Exception as save_error:
+                logger.debug(f"Redis save notification: {save_error}")
+            
+            cycle_duration = time.time() - cycle_start
+            
+            if not self._initial_coverage_complete or self._refresh_cycles <= 3:
+                logger.info(
+                    f"[OK] Async cycle {self._refresh_cycles}: "
+                    f"Cached {sites_cached} sites, {len(all_port_stats)} ports "
+                    f"in {cycle_duration:.1f}s"
+                )
+            
+            # Notify callback
+            if self.on_data_updated:
+                try:
+                    self.on_data_updated(all_port_stats)
+                except Exception as callback_error:
+                    logger.error(f"[ERROR] Async callback failed: {callback_error}")
+        
+        except RateLimitError:
+            raise
+        except Exception as api_error:
+            logger.error(f"[ERROR] Async API fetch failed: {api_error}")
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current async worker status for monitoring."""
+        rate_status = get_rate_limit_status()
+        return {
+            "running": self._running,
+            "mode": "async",
+            "refresh_cycles": self._refresh_cycles,
+            "total_sites_refreshed": self._total_sites_refreshed,
+            "last_refresh_time": self._last_refresh_time,
+            "min_delay_seconds": self.min_delay,
+            "max_age_seconds": self.max_age_seconds,
+            "monitored_site_count": len(self.site_ids),
+            "initial_coverage_complete": self._initial_coverage_complete,
+            "sites_with_data_count": len(self._sites_with_data),
+            "parallel_site_limit": self.parallel_site_limit,
+            "rate_limited": self._rate_limited or rate_status.get("rate_limited", False),
+            "rate_limit_status": rate_status
+        }
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if async worker is currently running."""
+        return self._running
+
+
+async def refresh_stale_sites_parallel(
+    cache,
+    api_client,
+    stale_site_ids: List[str],
+    max_concurrent: int = 5
+) -> int:
+    """
+    Refresh multiple stale sites in parallel using asyncio TaskGroup.
+    
+    Args:
+        cache: Redis cache instance
+        api_client: Mist API client with per-site fetch capability
+        stale_site_ids: List of site IDs needing refresh
+        max_concurrent: Maximum concurrent refreshes (default: 5)
+    
+    Returns:
+        Number of sites successfully refreshed
+    """
+    if not stale_site_ids:
+        return 0
+    
+    refreshed_count = 0
+    semaphore = asyncio.Semaphore(max_concurrent)
+    loop = asyncio.get_event_loop()
+    
+    async def refresh_single_site(site_id: str) -> bool:
+        """Refresh a single site with semaphore limiting."""
+        async with semaphore:
+            try:
+                # Check rate limit before each call
+                if is_rate_limited():
+                    logger.debug(f"[SKIP] Rate limited, skipping site {site_id}")
+                    return False
+                
+                # Run blocking API call in executor
+                port_stats = await loop.run_in_executor(
+                    None, lambda: api_client.get_site_gateway_port_stats(site_id)
+                )
+                
+                if port_stats:
+                    await loop.run_in_executor(
+                        None, lambda: cache.set_site_port_stats(site_id, port_stats)
+                    )
+                    return True
+                return False
+                
+            except RateLimitError:
+                logger.warning(f"[RATE LIMIT] Hit limit refreshing site {site_id}")
+                return False
+            except Exception as error:
+                logger.error(f"[ERROR] Failed to refresh site {site_id}: {error}")
+                return False
+    
+    # Use TaskGroup for structured concurrency (Python 3.11+)
+    try:
+        async with asyncio.TaskGroup() as task_group:
+            tasks = [
+                task_group.create_task(refresh_single_site(site_id))
+                for site_id in stale_site_ids
+            ]
+        
+        # Count successful refreshes
+        refreshed_count = sum(1 for task in tasks if task.result())
+        
+    except ExceptionGroup as exception_group:
+        # Handle any exceptions from the TaskGroup
+        logger.error(f"[ERROR] TaskGroup exceptions: {len(exception_group.exceptions)} errors")
+        for error in exception_group.exceptions[:3]:  # Log first 3 errors
+            logger.error(f"  - {type(error).__name__}: {error}")
+    
+    logger.info(
+        f"[OK] Parallel refresh complete: {refreshed_count}/{len(stale_site_ids)} sites"
+    )
+    return refreshed_count
+
+
+# ============================================================================
+# Threading-based Background Refresh Worker (Legacy compatibility)
+# ============================================================================
 
 
 class BackgroundRefreshWorker:
