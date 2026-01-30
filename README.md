@@ -312,6 +312,33 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.30.23.45": {
+    "feature-additions": [
+      "Site-level SLE collector for degraded site deep-dives",
+      "SLECollector class with collect_for_site(), collect_for_degraded_sites(), collect_for_all_sites()",
+      "SLEBackgroundWorker for continuous background SLE data collection",
+      "Prioritizes degraded sites first, then collects all sites incrementally"
+    ],
+    "api-changes": [
+      "MistAPIClient: get_site_sle_summary(), get_site_sle_histogram(), get_site_sle_threshold()",
+      "MistAPIClient: get_site_sle_impacted_gateways(), get_site_sle_impacted_interfaces()",
+      "MistAPIClient: get_site_sle_classifiers()",
+      "DashboardDataProvider: get_site_sle_details() for cached SLE data retrieval"
+    ],
+    "data-model-changes": [
+      "Redis key pattern: mistwan:site_sle:{site_id}:{data_type}:{metric}",
+      "Redis key: mistwan:site_sle:last_fetch:{site_id} for incremental fetching",
+      "12 new cache methods for site-level SLE storage and retrieval"
+    ],
+    "performance": [
+      "Rate-limited collection: 2 seconds between site API calls",
+      "Cache freshness check to skip recently updated sites",
+      "Incremental fetching using last timestamp"
+    ],
+    "documentation": [
+      "Updated TODO.md Tasks F1-F3 as complete"
+    ]
+  },
   "26.01.29.16.45": {
     "feature-additions": [
       "Redis caching for SLE data, worst sites, and alarms"
