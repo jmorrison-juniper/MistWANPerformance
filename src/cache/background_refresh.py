@@ -759,6 +759,8 @@ class SLEBackgroundWorker:
         
         # Phase 1: Collect degraded sites first (priority)
         degraded_sites = self.data_provider.get_sle_degraded_sites()
+        degraded_site_ids = set()
+        
         if degraded_sites:
             logger.info(
                 f"[...] SLE cycle {self._collection_cycles}: "
@@ -771,6 +773,7 @@ class SLEBackgroundWorker:
                 
                 site_id = site.get("site_id", "")
                 site_name = site.get("site_name", "Unknown")
+                degraded_site_ids.add(site_id)
                 
                 # Check if cache is fresh
                 if self.cache.is_site_sle_cache_fresh(site_id, self.max_age_seconds):
@@ -788,7 +791,7 @@ class SLEBackgroundWorker:
                 
                 time.sleep(self.min_delay)
         
-        # Phase 2: Collect all sites (fill gaps) - missing sites prioritized by cache method
+        # Phase 2: Refresh stale sites (already collected but old)
         all_sites = self._get_all_sites_list()
         all_site_ids = [s.get("site_id") for s in all_sites if s.get("site_id")]
         
@@ -798,21 +801,19 @@ class SLEBackgroundWorker:
             self.max_age_seconds
         )
         
-        sites_needing_refresh = self.cache.get_sites_needing_sle_refresh(
+        # Get only STALE sites (already collected, but old) - not missing
+        stale_sites = self.cache.get_stale_sle_sites(
             all_site_ids,
             self.max_age_seconds
         )
         
-        if sites_needing_refresh:
-            # Log with fresh/stale/missing breakdown
+        if stale_sites:
             logger.info(
-                f"[...] SLE cycle {self._collection_cycles}: "
-                f"{sle_cache_status['fresh']} fresh, {sle_cache_status['stale']} stale, "
-                f"{sle_cache_status['missing']} missing - refreshing {min(50, len(sites_needing_refresh))} sites"
+                f"[...] SLE Phase 2: Refreshing {min(50, len(stale_sites))} stale sites "
+                f"({sle_cache_status['stale']} total stale)"
             )
             
-            # Limit to 50 sites per cycle to avoid long cycles
-            for site_id in sites_needing_refresh[:50]:
+            for site_id in stale_sites[:50]:
                 if not self._running:
                     break
                 
@@ -831,12 +832,45 @@ class SLEBackgroundWorker:
                 
                 time.sleep(self.min_delay)
         
+        # Phase 3: Backfill healthy sites (only when no degraded/stale work remains)
+        # This fills in the "missing" sites after priority work is done
+        if not degraded_sites and not stale_sites:
+            missing_sites = self.cache.get_missing_sle_sites(all_site_ids)
+            
+            if missing_sites:
+                logger.info(
+                    f"[...] SLE Phase 3: Backfilling {min(25, len(missing_sites))} healthy sites "
+                    f"({len(missing_sites)} total never-collected)"
+                )
+                
+                # Smaller batch for healthy sites - lower priority
+                for site_id in missing_sites[:25]:
+                    if not self._running:
+                        break
+                    
+                    site_name = self.data_provider.site_lookup.get(
+                        site_id, site_id[:8] + "..."
+                    )
+                    
+                    self._current_site = site_name
+                    result = sle_collector.collect_for_site(site_id, site_name)
+                    
+                    if result.success:
+                        self._total_sites_collected += 1
+                    
+                    if self.on_site_collected:
+                        self.on_site_collected(result)
+                    
+                    time.sleep(self.min_delay)
+        
         cycle_duration = time.time() - cycle_start
         
         if self._collection_cycles <= 3 or self._collection_cycles % 10 == 0:
             logger.info(
                 f"[OK] SLE cycle {self._collection_cycles} complete: "
-                f"{self._total_sites_collected} total collected in {cycle_duration:.1f}s"
+                f"{self._total_sites_collected} total collected in {cycle_duration:.1f}s "
+                f"(fresh: {sle_cache_status['fresh']}, stale: {sle_cache_status['stale']}, "
+                f"missing: {sle_cache_status['missing']})"
             )
     
     def _get_all_sites_list(self) -> List[Dict[str, Any]]:

@@ -2251,6 +2251,74 @@ class RedisCache:
             logger.error(f"Error checking site SLE freshness: {error}")
             return site_ids  # Assume all need refresh on error
     
+    def get_stale_sle_sites(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> List[str]:
+        """
+        Get list of sites with stale SLE data (previously collected but old).
+        
+        Args:
+            site_ids: List of site UUIDs to check
+            max_age_seconds: Maximum acceptable cache age (default: 1 hour)
+        
+        Returns:
+            List of site IDs with stale data (oldest first)
+        """
+        try:
+            stale_sites = []
+            current_time = int(time.time())
+            
+            # Use pipeline for efficient bulk check
+            pipe = self.client.pipeline()
+            for site_id in site_ids:
+                pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
+            
+            results = pipe.execute()
+            
+            for site_id, last_fetch_data in zip(site_ids, results):
+                if last_fetch_data is not None:
+                    last_fetch = int(float(last_fetch_data))
+                    if current_time - last_fetch >= max_age_seconds:
+                        stale_sites.append((site_id, last_fetch))
+            
+            # Sort by oldest first
+            stale_sites.sort(key=lambda x: x[1])
+            return [s[0] for s in stale_sites]
+        except Exception as error:
+            logger.error(f"Error getting stale SLE sites: {error}")
+            return []
+    
+    def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
+        """
+        Get list of sites that have never had SLE data collected.
+        
+        Args:
+            site_ids: List of site UUIDs to check
+        
+        Returns:
+            List of site IDs that have never been cached
+        """
+        try:
+            missing_sites = []
+            
+            # Use pipeline for efficient bulk check
+            pipe = self.client.pipeline()
+            for site_id in site_ids:
+                pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
+            
+            results = pipe.execute()
+            
+            for site_id, last_fetch_data in zip(site_ids, results):
+                if last_fetch_data is None:
+                    missing_sites.append(site_id)
+            
+            return missing_sites
+        except Exception as error:
+            logger.error(f"Error getting missing SLE sites: {error}")
+            return []
+    
     def get_site_sle_cache_status(
         self,
         site_ids: List[str],
@@ -2791,6 +2859,23 @@ class NullCache:
         max_age_seconds: int = 3600
     ) -> List[str]:
         return list(site_ids)
+    
+    def get_stale_sle_sites(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> List[str]:
+        return []
+    
+    def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
+        return list(site_ids)
+    
+    def get_site_sle_cache_status(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> Dict[str, int]:
+        return {"fresh": 0, "stale": 0, "missing": len(site_ids)}
     
     def clear_all(self) -> bool:
         return True
