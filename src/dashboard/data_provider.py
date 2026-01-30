@@ -295,6 +295,8 @@ class DashboardDataProvider:
         """
         Get detailed SLE data for a specific site from cache.
         
+        OPTIMIZED: Returns pre-computed data if available.
+        
         Args:
             site_id: Mist site UUID
             metric: SLE metric name (default: wan-link-health)
@@ -303,6 +305,16 @@ class DashboardDataProvider:
             Dictionary with SLE details including summary, histogram,
             impacted gateways, and impacted interfaces
         """
+        # Try precomputed data first (fast path)
+        if hasattr(self, 'site_sle_precomputer') and self.site_sle_precomputer:
+            precomputed = self.site_sle_precomputer.get_precomputed(site_id)
+            if precomputed and precomputed.get("available", False):
+                logger.info(f"[PRECOMPUTED] Using cached SLE for site {site_id[:8]}")
+                return precomputed
+        
+        # Fallback: compute live
+        logger.info(f"[LIVE] Computing SLE for site {site_id[:8]}")
+        
         if not hasattr(self, 'redis_cache') or self.redis_cache is None:
             return {"available": False, "error": "Cache not available"}
         
@@ -370,7 +382,10 @@ class DashboardDataProvider:
         if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("main")
             if precomputed and not precomputed.get("loading", True):
+                logger.info("[PRECOMPUTED] Using cached dashboard data")
                 return precomputed
+            else:
+                logger.info("[LIVE] Precomputed data not available, computing live")
         
         # Fallback: Return loading state if no data yet
         if not self.utilization_records:
@@ -868,7 +883,10 @@ class DashboardDataProvider:
         if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("circuit_summary")
             if precomputed:
+                logger.info("[PRECOMPUTED] Using cached circuit_summary")
                 return precomputed
+            else:
+                logger.info("[LIVE] Computing circuit_summary live")
         
         if not self.utilization_records:
             return {
@@ -981,7 +999,10 @@ class DashboardDataProvider:
         if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("gateway_health")
             if precomputed:
+                logger.info("[PRECOMPUTED] Using cached gateway_health")
                 return precomputed
+            else:
+                logger.info("[LIVE] Computing gateway_health live")
         
         return {
             "total": self.gateways_total,
@@ -1004,7 +1025,10 @@ class DashboardDataProvider:
         if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("vpn_summary")
             if precomputed:
+                logger.info("[PRECOMPUTED] Using cached vpn_summary")
                 return precomputed
+            else:
+                logger.info("[LIVE] Computing vpn_summary live")
         
         try:
             if hasattr(self, 'redis_cache') and self.redis_cache is not None:
@@ -1065,6 +1089,8 @@ class DashboardDataProvider:
         """
         Get VPN peer data formatted for dashboard table display.
         
+        OPTIMIZED: Returns pre-computed data if available for per-site requests.
+        
         Args:
             site_id: Optional site UUID to filter by
         
@@ -1073,6 +1099,17 @@ class DashboardDataProvider:
             - vpn_name, peer_router_name, port_id, peer_port_id
             - status (Up/Down), latency, loss, jitter, mos
         """
+        # Try precomputed data first for per-site requests (fast path)
+        if site_id and hasattr(self, 'site_vpn_precomputer') and self.site_vpn_precomputer:
+            precomputed = self.site_vpn_precomputer.get_precomputed(site_id)
+            if precomputed and precomputed.get("available", False):
+                logger.info(f"[PRECOMPUTED] Using cached VPN for site {site_id[:8]}")
+                return precomputed.get("peers", [])
+        
+        # Log if computing live
+        if site_id:
+            logger.info(f"[LIVE] Computing VPN for site {site_id[:8]}")
+        
         try:
             if site_id:
                 peers = self.get_site_vpn_peers(site_id)

@@ -33,12 +33,15 @@ from src.dashboard.data_provider import DashboardDataProvider
 from src.models.dimensions import DimSite, DimCircuit
 from src.models.facts import CircuitUtilizationRecord
 from src.cache.dashboard_precompute import DashboardPrecomputer
+from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 
 # Global references for background refresh and data loading
 _background_worker = None
 _sle_background_worker = None
 _vpn_peer_background_worker = None
 _dashboard_precomputer = None
+_site_sle_precomputer = None
+_site_vpn_precomputer = None
 _api_client = None
 _cache = None
 _data_provider = None
@@ -996,6 +999,30 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             _dashboard_precomputer.start()
             data_provider.dashboard_precomputer = _dashboard_precomputer
             logger.info("[OK] Dashboard precomputer started (20s refresh)")
+            
+            # Start per-site SLE precomputer (precomputes drill-down data)
+            global _site_sle_precomputer
+            _site_sle_precomputer = SiteSlePrecomputer(
+                cache=_cache,
+                data_provider=data_provider,
+                batch_size=50,
+                cycle_delay=0.5
+            )
+            _site_sle_precomputer.start()
+            data_provider.site_sle_precomputer = _site_sle_precomputer
+            logger.info("[OK] Site SLE precomputer started (per-site drill-down)")
+            
+            # Start per-site VPN precomputer (precomputes drill-down data)
+            global _site_vpn_precomputer
+            _site_vpn_precomputer = SiteVpnPrecomputer(
+                cache=_cache,
+                data_provider=data_provider,
+                batch_size=50,
+                cycle_delay=0.5
+            )
+            _site_vpn_precomputer.start()
+            data_provider.site_vpn_precomputer = _site_vpn_precomputer
+            logger.info("[OK] Site VPN precomputer started (per-site drill-down)")
         
     except Exception as error:
         logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
@@ -1042,6 +1069,12 @@ def main():
         if _dashboard_precomputer:
             logger.info("[SHUTDOWN] Stopping dashboard precomputer...")
             _dashboard_precomputer.stop()
+        if _site_sle_precomputer:
+            logger.info("[SHUTDOWN] Stopping site SLE precomputer...")
+            _site_sle_precomputer.stop()
+        if _site_vpn_precomputer:
+            logger.info("[SHUTDOWN] Stopping site VPN precomputer...")
+            _site_vpn_precomputer.stop()
         if _background_worker:
             logger.info("[SHUTDOWN] Stopping port stats background worker...")
             _background_worker.stop()
@@ -1224,6 +1257,30 @@ def main():
                 _dashboard_precomputer.start()
                 _data_provider.dashboard_precomputer = _dashboard_precomputer
                 logger.info("[OK] Dashboard precomputer started (20s refresh)")
+                
+                # Start per-site SLE precomputer (precomputes drill-down data)
+                global _site_sle_precomputer
+                _site_sle_precomputer = SiteSlePrecomputer(
+                    cache=_cache,
+                    data_provider=_data_provider,
+                    batch_size=50,
+                    cycle_delay=0.5
+                )
+                _site_sle_precomputer.start()
+                _data_provider.site_sle_precomputer = _site_sle_precomputer
+                logger.info("[OK] Site SLE precomputer started (per-site drill-down)")
+                
+                # Start per-site VPN precomputer (precomputes drill-down data)
+                global _site_vpn_precomputer
+                _site_vpn_precomputer = SiteVpnPrecomputer(
+                    cache=_cache,
+                    data_provider=_data_provider,
+                    batch_size=50,
+                    cycle_delay=0.5
+                )
+                _site_vpn_precomputer.start()
+                _data_provider.site_vpn_precomputer = _site_vpn_precomputer
+                logger.info("[OK] Site VPN precomputer started (per-site drill-down)")
         except Exception as sle_worker_error:
             logger.warning(f"[WARN] Could not start SLE background worker: {sle_worker_error}")
         
@@ -1236,6 +1293,10 @@ def main():
         logger.info("[INFO] Dashboard stopped by user")
         if _dashboard_precomputer:
             _dashboard_precomputer.stop()
+        if _site_sle_precomputer:
+            _site_sle_precomputer.stop()
+        if _site_vpn_precomputer:
+            _site_vpn_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1247,6 +1308,10 @@ def main():
         logger.error(f"[ERROR] API connection failed: {error}")
         if _dashboard_precomputer:
             _dashboard_precomputer.stop()
+        if _site_sle_precomputer:
+            _site_sle_precomputer.stop()
+        if _site_vpn_precomputer:
+            _site_vpn_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1258,6 +1323,10 @@ def main():
         logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
         if _dashboard_precomputer:
             _dashboard_precomputer.stop()
+        if _site_sle_precomputer:
+            _site_sle_precomputer.stop()
+        if _site_vpn_precomputer:
+            _site_vpn_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:

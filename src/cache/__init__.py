@@ -14,6 +14,7 @@ from src.cache.background_refresh import (
     refresh_stale_sites_parallel,
 )
 from src.cache.dashboard_precompute import DashboardPrecomputer
+from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 
 __all__ = [
     "RedisCache",
@@ -21,4 +22,7 @@ __all__ = [
     "AsyncBackgroundRefreshWorker",
     "refresh_stale_sites_parallel",
     "DashboardPrecomputer",
+    "SiteSlePrecomputer",
+    "SiteVpnPrecomputer",
 ]
+
