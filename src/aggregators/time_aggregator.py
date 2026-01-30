@@ -6,7 +6,9 @@ Organized per 5-item rule into focused classes.
 """
 
 import logging
+import os
 import statistics
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
@@ -22,6 +24,9 @@ from src.calculators.kpi_calculator import KPICalculator
 
 
 logger = logging.getLogger(__name__)
+
+# CPU count for parallel processing (cap at 8 for memory efficiency)
+CPU_COUNT = min(os.cpu_count() or 4, 8)
 
 
 class AggregateCalculator:
@@ -673,3 +678,313 @@ class TimeAggregator:
     ) -> List[Any]:
         """Proxy to rolling._filter_records_in_window for backward compatibility."""
         return self.rolling._filter_records_in_window(records, window_start, window_end)
+
+
+# -----------------------------------------------------------------------------
+# Module-level worker functions for ProcessPoolExecutor (must be picklable)
+# -----------------------------------------------------------------------------
+
+def _merge_aggregates_worker(worker_input: Tuple) -> Dict[str, Any]:
+    """
+    Worker function for merging daily aggregates into weekly/monthly.
+    
+    Args:
+        worker_input: Tuple of (site_id, circuit_id, period_key, period_type, aggregates_data)
+    
+    Returns:
+        Dictionary representation of merged AggregatedMetrics
+    """
+    site_id, circuit_id, period_key, period_type, aggregates_data = worker_input
+    
+    # Reconstruct metrics from serialized data
+    metrics = {
+        "util_avgs": [a["utilization_avg"] for a in aggregates_data if a.get("utilization_avg") is not None],
+        "util_maxes": [a["utilization_max"] for a in aggregates_data if a.get("utilization_max") is not None],
+        "util_p95s": [a["utilization_p95"] for a in aggregates_data if a.get("utilization_p95") is not None],
+        "loss_avgs": [a["loss_avg"] for a in aggregates_data if a.get("loss_avg") is not None],
+        "loss_maxes": [a["loss_max"] for a in aggregates_data if a.get("loss_max") is not None],
+        "jitter_avgs": [a["jitter_avg"] for a in aggregates_data if a.get("jitter_avg") is not None],
+        "jitter_maxes": [a["jitter_max"] for a in aggregates_data if a.get("jitter_max") is not None],
+        "latency_avgs": [a["latency_avg"] for a in aggregates_data if a.get("latency_avg") is not None],
+        "latency_maxes": [a["latency_max"] for a in aggregates_data if a.get("latency_max") is not None]
+    }
+    
+    totals = {
+        "up": sum(a.get("total_up_minutes", 0) for a in aggregates_data),
+        "down": sum(a.get("total_down_minutes", 0) for a in aggregates_data),
+        "flaps": sum(a.get("total_flaps", 0) for a in aggregates_data),
+        "hours_70": sum(a.get("hours_above_70", 0) for a in aggregates_data),
+        "hours_80": sum(a.get("hours_above_80", 0) for a in aggregates_data),
+        "hours_90": sum(a.get("hours_above_90", 0) for a in aggregates_data)
+    }
+    
+    # Calculate availability
+    availability = None
+    total_minutes = totals["up"] + totals["down"]
+    if total_minutes > 0:
+        availability = round((totals["up"] / total_minutes) * 100, 4)
+    
+    return {
+        "site_id": site_id,
+        "circuit_id": circuit_id,
+        "period_key": period_key,
+        "period_type": period_type,
+        "utilization_avg": round(statistics.mean(metrics["util_avgs"]), 2) if metrics["util_avgs"] else None,
+        "utilization_max": round(max(metrics["util_maxes"]), 2) if metrics["util_maxes"] else None,
+        "utilization_p95": round(max(metrics["util_p95s"]), 2) if metrics["util_p95s"] else None,
+        "hours_above_70": totals["hours_70"],
+        "hours_above_80": totals["hours_80"],
+        "hours_above_90": totals["hours_90"],
+        "total_up_minutes": totals["up"],
+        "total_down_minutes": totals["down"],
+        "availability_pct": availability,
+        "total_flaps": totals["flaps"],
+        "loss_avg": round(statistics.mean(metrics["loss_avgs"]), 4) if metrics["loss_avgs"] else None,
+        "loss_max": round(max(metrics["loss_maxes"]), 4) if metrics["loss_maxes"] else None,
+        "jitter_avg": round(statistics.mean(metrics["jitter_avgs"]), 2) if metrics["jitter_avgs"] else None,
+        "jitter_max": round(max(metrics["jitter_maxes"]), 2) if metrics["jitter_maxes"] else None,
+        "latency_avg": round(statistics.mean(metrics["latency_avgs"]), 2) if metrics["latency_avgs"] else None,
+        "latency_max": round(max(metrics["latency_maxes"]), 2) if metrics["latency_maxes"] else None
+    }
+
+
+def aggregate_daily_to_weekly_parallel(
+    daily_aggregates: List[AggregatedMetrics],
+    use_parallel: bool = True
+) -> List[AggregatedMetrics]:
+    """
+    Aggregate daily records to weekly summaries using parallel processing.
+    
+    Args:
+        daily_aggregates: Daily aggregated metrics
+        use_parallel: Whether to use ProcessPoolExecutor (default True)
+    
+    Returns:
+        List of weekly AggregatedMetrics
+    """
+    if not daily_aggregates:
+        return []
+    
+    logger.info("[...] Aggregating daily data to weekly (parallel)")
+    
+    # Group by circuit and week
+    grouped = defaultdict(list)
+    for aggregate in daily_aggregates:
+        # Get ISO week key (YYYYWW)
+        parsed_date = datetime.strptime(aggregate.period_key, "%Y%m%d")
+        iso_year, iso_week, _ = parsed_date.isocalendar()
+        week_key = f"{iso_year}{iso_week:02d}"
+        key = (aggregate.site_id, aggregate.circuit_id, week_key)
+        grouped[key].append(aggregate)
+    
+    # Prepare worker inputs (serialize aggregates to dicts for pickling)
+    worker_inputs = []
+    for (site_id, circuit_id, week_key), daily_records in grouped.items():
+        agg_data = [
+            {
+                "utilization_avg": a.utilization_avg,
+                "utilization_max": a.utilization_max,
+                "utilization_p95": a.utilization_p95,
+                "hours_above_70": a.hours_above_70,
+                "hours_above_80": a.hours_above_80,
+                "hours_above_90": a.hours_above_90,
+                "total_up_minutes": a.total_up_minutes,
+                "total_down_minutes": a.total_down_minutes,
+                "total_flaps": a.total_flaps,
+                "loss_avg": a.loss_avg,
+                "loss_max": a.loss_max,
+                "jitter_avg": a.jitter_avg,
+                "jitter_max": a.jitter_max,
+                "latency_avg": a.latency_avg,
+                "latency_max": a.latency_max
+            }
+            for a in daily_records
+        ]
+        worker_inputs.append((site_id, circuit_id, week_key, "weekly", agg_data))
+    
+    weekly_aggregates = []
+    
+    if use_parallel and len(worker_inputs) > 10:
+        with ProcessPoolExecutor(max_workers=CPU_COUNT) as executor:
+            futures = [
+                executor.submit(_merge_aggregates_worker, inp)
+                for inp in worker_inputs
+            ]
+            
+            for future in as_completed(futures):
+                try:
+                    result_dict = future.result()
+                    weekly_aggregates.append(AggregatedMetrics(**result_dict))
+                except Exception as error:
+                    logger.error(f"Error merging weekly aggregate: {error}")
+    else:
+        # Single-threaded for small datasets
+        for inp in worker_inputs:
+            try:
+                result_dict = _merge_aggregates_worker(inp)
+                weekly_aggregates.append(AggregatedMetrics(**result_dict))
+            except Exception as error:
+                logger.error(f"Error merging weekly aggregate: {error}")
+    
+    logger.info(f"[OK] Created {len(weekly_aggregates)} weekly aggregates")
+    return weekly_aggregates
+
+
+def aggregate_daily_to_monthly_parallel(
+    daily_aggregates: List[AggregatedMetrics],
+    use_parallel: bool = True
+) -> List[AggregatedMetrics]:
+    """
+    Aggregate daily records to monthly summaries using parallel processing.
+    
+    Args:
+        daily_aggregates: Daily aggregated metrics
+        use_parallel: Whether to use ProcessPoolExecutor (default True)
+    
+    Returns:
+        List of monthly AggregatedMetrics
+    """
+    if not daily_aggregates:
+        return []
+    
+    logger.info("[...] Aggregating daily data to monthly (parallel)")
+    
+    # Group by circuit and month
+    grouped = defaultdict(list)
+    for aggregate in daily_aggregates:
+        month_key = aggregate.period_key[:6]  # YYYYMM from YYYYMMDD
+        key = (aggregate.site_id, aggregate.circuit_id, month_key)
+        grouped[key].append(aggregate)
+    
+    # Prepare worker inputs (serialize aggregates to dicts for pickling)
+    worker_inputs = []
+    for (site_id, circuit_id, month_key), daily_records in grouped.items():
+        agg_data = [
+            {
+                "utilization_avg": a.utilization_avg,
+                "utilization_max": a.utilization_max,
+                "utilization_p95": a.utilization_p95,
+                "hours_above_70": a.hours_above_70,
+                "hours_above_80": a.hours_above_80,
+                "hours_above_90": a.hours_above_90,
+                "total_up_minutes": a.total_up_minutes,
+                "total_down_minutes": a.total_down_minutes,
+                "total_flaps": a.total_flaps,
+                "loss_avg": a.loss_avg,
+                "loss_max": a.loss_max,
+                "jitter_avg": a.jitter_avg,
+                "jitter_max": a.jitter_max,
+                "latency_avg": a.latency_avg,
+                "latency_max": a.latency_max
+            }
+            for a in daily_records
+        ]
+        worker_inputs.append((site_id, circuit_id, month_key, "monthly", agg_data))
+    
+    monthly_aggregates = []
+    
+    if use_parallel and len(worker_inputs) > 10:
+        with ProcessPoolExecutor(max_workers=CPU_COUNT) as executor:
+            futures = [
+                executor.submit(_merge_aggregates_worker, inp)
+                for inp in worker_inputs
+            ]
+            
+            for future in as_completed(futures):
+                try:
+                    result_dict = future.result()
+                    monthly_aggregates.append(AggregatedMetrics(**result_dict))
+                except Exception as error:
+                    logger.error(f"Error merging monthly aggregate: {error}")
+    else:
+        # Single-threaded for small datasets
+        for inp in worker_inputs:
+            try:
+                result_dict = _merge_aggregates_worker(inp)
+                monthly_aggregates.append(AggregatedMetrics(**result_dict))
+            except Exception as error:
+                logger.error(f"Error merging monthly aggregate: {error}")
+    
+    logger.info(f"[OK] Created {len(monthly_aggregates)} monthly aggregates")
+    return monthly_aggregates
+
+
+def aggregate_to_region_parallel(
+    aggregates: List[AggregatedMetrics],
+    site_region_map: Dict[str, str],
+    use_parallel: bool = True
+) -> List[AggregatedMetrics]:
+    """
+    Aggregate circuit metrics to region level using parallel processing.
+    
+    Args:
+        aggregates: Circuit-level aggregates
+        site_region_map: Mapping of site_id to region
+        use_parallel: Whether to use ProcessPoolExecutor (default True)
+    
+    Returns:
+        List of region-level AggregatedMetrics
+    """
+    if not aggregates:
+        return []
+    
+    logger.info("[...] Aggregating to region level (parallel)")
+    
+    # Group by region and period
+    grouped = defaultdict(list)
+    for aggregate in aggregates:
+        region = site_region_map.get(aggregate.site_id, "Unknown")
+        key = (region, aggregate.period_key, aggregate.period_type)
+        grouped[key].append(aggregate)
+    
+    # Prepare worker inputs
+    worker_inputs = []
+    for (region, period_key, period_type), circuit_aggs in grouped.items():
+        agg_data = [
+            {
+                "utilization_avg": a.utilization_avg,
+                "utilization_max": a.utilization_max,
+                "utilization_p95": a.utilization_p95,
+                "hours_above_70": a.hours_above_70,
+                "hours_above_80": a.hours_above_80,
+                "hours_above_90": a.hours_above_90,
+                "total_up_minutes": a.total_up_minutes,
+                "total_down_minutes": a.total_down_minutes,
+                "total_flaps": a.total_flaps,
+                "loss_avg": a.loss_avg,
+                "loss_max": a.loss_max,
+                "jitter_avg": a.jitter_avg,
+                "jitter_max": a.jitter_max,
+                "latency_avg": a.latency_avg,
+                "latency_max": a.latency_max
+            }
+            for a in circuit_aggs
+        ]
+        worker_inputs.append((region, None, period_key, period_type, agg_data))
+    
+    region_aggregates = []
+    
+    if use_parallel and len(worker_inputs) > 10:
+        with ProcessPoolExecutor(max_workers=CPU_COUNT) as executor:
+            futures = [
+                executor.submit(_merge_aggregates_worker, inp)
+                for inp in worker_inputs
+            ]
+            
+            for future in as_completed(futures):
+                try:
+                    result_dict = future.result()
+                    region_aggregates.append(AggregatedMetrics(**result_dict))
+                except Exception as error:
+                    logger.error(f"Error merging region aggregate: {error}")
+    else:
+        # Single-threaded for small datasets
+        for inp in worker_inputs:
+            try:
+                result_dict = _merge_aggregates_worker(inp)
+                region_aggregates.append(AggregatedMetrics(**result_dict))
+            except Exception as error:
+                logger.error(f"Error merging region aggregate: {error}")
+    
+    logger.info(f"[OK] Created {len(region_aggregates)} region aggregates")
+    return region_aggregates

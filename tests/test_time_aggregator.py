@@ -321,5 +321,146 @@ class TestRollingWindowMetricsModel(unittest.TestCase):
         self.assertIn("3h", pk)
 
 
+class TestParallelAggregation(unittest.TestCase):
+    """Test cases for parallel aggregation functions."""
+    
+    def setUp(self):
+        """Set up test fixtures."""
+        from src.models.facts import AggregatedMetrics
+        self.AggregatedMetrics = AggregatedMetrics
+    
+    def _create_daily_aggregate(
+        self,
+        site_id: str,
+        circuit_id: str,
+        date_key: str,
+        utilization_avg: float = 50.0
+    ):
+        """Helper to create test daily aggregate."""
+        return self.AggregatedMetrics(
+            site_id=site_id,
+            circuit_id=circuit_id,
+            period_key=date_key,
+            period_type="daily",
+            utilization_avg=utilization_avg,
+            utilization_max=utilization_avg + 10,
+            utilization_p95=utilization_avg + 5,
+            hours_above_70=2,
+            hours_above_80=1,
+            hours_above_90=0,
+            total_up_minutes=1440,
+            total_down_minutes=0,
+            availability_pct=100.0,
+            total_flaps=1,
+            loss_avg=0.05,
+            loss_max=0.1,
+            jitter_avg=5.0,
+            jitter_max=10.0,
+            latency_avg=25.0,
+            latency_max=50.0
+        )
+    
+    def test_weekly_parallel_matches_sequential(self):
+        """Test that parallel weekly aggregation matches sequential."""
+        from src.aggregators.time_aggregator import aggregate_daily_to_weekly_parallel
+        
+        # Create 7 days of data for one week (2024-01-01 to 2024-01-07)
+        daily_aggregates = [
+            self._create_daily_aggregate("site-001", "circuit-A", f"2024010{day}", 50.0 + day)
+            for day in range(1, 8)
+        ]
+        
+        # Run parallel (forced sequential with use_parallel=False)
+        sequential_results = aggregate_daily_to_weekly_parallel(
+            daily_aggregates, use_parallel=False
+        )
+        
+        # Run parallel
+        parallel_results = aggregate_daily_to_weekly_parallel(
+            daily_aggregates, use_parallel=True
+        )
+        
+        self.assertEqual(len(sequential_results), len(parallel_results))
+        self.assertEqual(len(sequential_results), 1)
+        
+        # Check values match
+        seq = sequential_results[0]
+        par = parallel_results[0]
+        self.assertEqual(seq.site_id, par.site_id)
+        self.assertEqual(seq.circuit_id, par.circuit_id)
+        self.assertEqual(seq.period_type, "weekly")
+        self.assertIsNotNone(seq.utilization_avg)
+    
+    def test_monthly_parallel_matches_sequential(self):
+        """Test that parallel monthly aggregation matches sequential."""
+        from src.aggregators.time_aggregator import aggregate_daily_to_monthly_parallel
+        
+        # Create 30 days of data for January 2024
+        daily_aggregates = [
+            self._create_daily_aggregate("site-002", "circuit-B", f"202401{day:02d}", 45.0)
+            for day in range(1, 31)
+        ]
+        
+        # Run sequential
+        sequential_results = aggregate_daily_to_monthly_parallel(
+            daily_aggregates, use_parallel=False
+        )
+        
+        # Run parallel
+        parallel_results = aggregate_daily_to_monthly_parallel(
+            daily_aggregates, use_parallel=True
+        )
+        
+        self.assertEqual(len(sequential_results), len(parallel_results))
+        self.assertEqual(len(sequential_results), 1)
+        
+        seq = sequential_results[0]
+        par = parallel_results[0]
+        self.assertEqual(seq.site_id, par.site_id)
+        self.assertEqual(seq.period_key, "202401")
+        self.assertEqual(seq.period_type, "monthly")
+    
+    def test_region_parallel_aggregation(self):
+        """Test parallel region aggregation."""
+        from src.aggregators.time_aggregator import aggregate_to_region_parallel
+        
+        # Create data for multiple sites in different regions
+        daily_aggregates = [
+            self._create_daily_aggregate("site-001", "circuit-A", "20240101", 60.0),
+            self._create_daily_aggregate("site-002", "circuit-B", "20240101", 70.0),
+            self._create_daily_aggregate("site-003", "circuit-C", "20240101", 50.0),
+        ]
+        
+        site_region_map = {
+            "site-001": "AMER",
+            "site-002": "AMER",
+            "site-003": "EMEA"
+        }
+        
+        results = aggregate_to_region_parallel(
+            daily_aggregates, site_region_map, use_parallel=False
+        )
+        
+        self.assertEqual(len(results), 2)  # AMER and EMEA
+        
+        # Find AMER aggregate
+        amer_agg = next((r for r in results if r.site_id == "AMER"), None)
+        self.assertIsNotNone(amer_agg)
+        # AMER should have average of 60 and 70 = 65
+        self.assertAlmostEqual(amer_agg.utilization_avg, 65.0, places=1)
+    
+    def test_empty_input_returns_empty(self):
+        """Test that empty input returns empty list."""
+        from src.aggregators.time_aggregator import (
+            aggregate_daily_to_weekly_parallel,
+            aggregate_daily_to_monthly_parallel,
+            aggregate_to_region_parallel
+        )
+        
+        self.assertEqual(aggregate_daily_to_weekly_parallel([]), [])
+        self.assertEqual(aggregate_daily_to_monthly_parallel([]), [])
+        self.assertEqual(aggregate_to_region_parallel([], {}), [])
+
+
 if __name__ == "__main__":
     unittest.main()

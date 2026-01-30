@@ -9,7 +9,11 @@ from src.aggregators.time_aggregator import (
     CalendarAggregator,
     RollingWindowAggregator,
     RegionAggregator,
-    TimeAggregator
+    TimeAggregator,
+    aggregate_daily_to_weekly_parallel,
+    aggregate_daily_to_monthly_parallel,
+    aggregate_to_region_parallel,
+    CPU_COUNT
 )
 
 __all__ = [
@@ -17,5 +21,9 @@ __all__ = [
     "CalendarAggregator",
     "RollingWindowAggregator",
     "RegionAggregator",
-    "TimeAggregator"
+    "TimeAggregator",
+    "aggregate_daily_to_weekly_parallel",
+    "aggregate_daily_to_monthly_parallel",
+    "aggregate_to_region_parallel",
+    "CPU_COUNT"
 ]
