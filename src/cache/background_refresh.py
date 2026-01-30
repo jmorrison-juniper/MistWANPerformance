@@ -623,3 +623,235 @@ class BackgroundRefreshWorker:
     def is_running(self) -> bool:
         """Check if worker is currently running."""
         return self._running
+
+
+# ============================================================================
+# Site-Level SLE Background Collector
+# ============================================================================
+
+
+class SLEBackgroundWorker:
+    """
+    Background worker for collecting site-level SLE data.
+    
+    Prioritizes degraded sites first, then collects data for all sites.
+    Uses a separate thread to avoid blocking the main dashboard.
+    """
+    
+    def __init__(
+        self,
+        cache,
+        api_client,
+        data_provider,
+        min_delay_between_fetches: int = 1,
+        max_age_seconds: int = 3600,
+        on_site_collected: Optional[Callable] = None
+    ):
+        """
+        Initialize the SLE background worker.
+        
+        Args:
+            cache: Redis cache instance
+            api_client: Mist API client instance
+            data_provider: Dashboard data provider (for degraded sites list)
+            min_delay_between_fetches: Minimum seconds between API calls
+            max_age_seconds: Cache age threshold for staleness (default: 1 hour)
+            on_site_collected: Optional callback when a site is collected
+        """
+        self.cache = cache
+        self.api_client = api_client
+        self.data_provider = data_provider
+        self.min_delay = min_delay_between_fetches
+        self.max_age_seconds = max_age_seconds
+        self.on_site_collected = on_site_collected
+        
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._total_sites_collected = 0
+        self._degraded_sites_collected = 0
+        self._collection_cycles = 0
+        self._rate_limited = False
+        self._current_site: Optional[str] = None
+    
+    def start(self) -> None:
+        """Start the SLE background worker."""
+        if self._running:
+            logger.warning("[WARN] SLE background worker already running")
+            return
+        
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._collection_loop,
+            daemon=True,
+            name="SLEBackgroundWorker"
+        )
+        self._thread.start()
+        logger.info("[OK] SLE background worker started")
+    
+    def stop(self) -> None:
+        """Stop the SLE background worker."""
+        if not self._running:
+            return
+        
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+        
+        logger.info(
+            f"[OK] SLE background worker stopped "
+            f"(collected {self._total_sites_collected} sites, "
+            f"{self._degraded_sites_collected} degraded)"
+        )
+    
+    def _collection_loop(self) -> None:
+        """Main collection loop - runs continuously."""
+        logger.info("[...] SLE background collection starting")
+        
+        # Import here to avoid circular imports
+        from src.collectors.sle_collector import SLECollector
+        
+        sle_collector = SLECollector(
+            api_client=self.api_client,
+            cache=self.cache
+        )
+        
+        while self._running:
+            try:
+                # Check rate limit before API calls
+                if is_rate_limited():
+                    rate_status = get_rate_limit_status()
+                    remaining = rate_status.get("seconds_remaining", 60)
+                    self._rate_limited = True
+                    
+                    logger.warning(
+                        f"[RATE LIMIT] API rate limited - pausing SLE collection. "
+                        f"Resume in {int(remaining // 60)}m {int(remaining % 60)}s"
+                    )
+                    time.sleep(min(60, int(remaining) + 1))
+                    continue
+                
+                if self._rate_limited:
+                    self._rate_limited = False
+                    logger.info("[OK] Rate limit cleared - resuming SLE collection")
+                
+                self._collection_cycles += 1
+                self._run_collection_cycle(sle_collector)
+                
+                # Longer pause between cycles to avoid API pressure
+                time.sleep(30)
+                
+            except RateLimitError as rate_error:
+                self._rate_limited = True
+                wait_time = rate_error.seconds_remaining or 3600
+                logger.error(
+                    f"[RATE LIMIT] Hit 429 during SLE collection - pausing "
+                    f"{int(wait_time // 60)}m {int(wait_time % 60)}s"
+                )
+                time.sleep(int(wait_time) + 5)
+                
+            except Exception as error:
+                logger.error(f"[ERROR] SLE collection error: {error}", exc_info=True)
+                time.sleep(10)
+    
+    def _run_collection_cycle(self, sle_collector) -> None:
+        """Execute one SLE collection cycle."""
+        cycle_start = time.time()
+        
+        # Phase 1: Collect degraded sites first (priority)
+        degraded_sites = self.data_provider.get_sle_degraded_sites()
+        if degraded_sites:
+            logger.info(
+                f"[...] SLE cycle {self._collection_cycles}: "
+                f"Collecting {len(degraded_sites)} degraded sites first"
+            )
+            
+            for site in degraded_sites:
+                if not self._running:
+                    break
+                
+                site_id = site.get("site_id", "")
+                site_name = site.get("site_name", "Unknown")
+                
+                # Check if cache is fresh
+                if self.cache.is_site_sle_cache_fresh(site_id, self.max_age_seconds):
+                    continue
+                
+                self._current_site = site_name
+                result = sle_collector.collect_for_site(site_id, site_name)
+                
+                if result.success:
+                    self._degraded_sites_collected += 1
+                    self._total_sites_collected += 1
+                
+                if self.on_site_collected:
+                    self.on_site_collected(result)
+                
+                time.sleep(self.min_delay)
+        
+        # Phase 2: Collect all sites (fill gaps)
+        all_sites = self._get_all_sites_list()
+        sites_needing_refresh = self.cache.get_sites_needing_sle_refresh(
+            [s.get("site_id") for s in all_sites if s.get("site_id")],
+            self.max_age_seconds
+        )
+        
+        if sites_needing_refresh:
+            logger.info(
+                f"[...] SLE cycle {self._collection_cycles}: "
+                f"{len(sites_needing_refresh)} sites need refresh"
+            )
+            
+            # Limit to 50 sites per cycle to avoid long cycles
+            for site_id in sites_needing_refresh[:50]:
+                if not self._running:
+                    break
+                
+                site_name = self.data_provider.site_lookup.get(
+                    site_id, site_id[:8] + "..."
+                )
+                
+                self._current_site = site_name
+                result = sle_collector.collect_for_site(site_id, site_name)
+                
+                if result.success:
+                    self._total_sites_collected += 1
+                
+                if self.on_site_collected:
+                    self.on_site_collected(result)
+                
+                time.sleep(self.min_delay)
+        
+        cycle_duration = time.time() - cycle_start
+        
+        if self._collection_cycles <= 3 or self._collection_cycles % 10 == 0:
+            logger.info(
+                f"[OK] SLE cycle {self._collection_cycles} complete: "
+                f"{self._total_sites_collected} total collected in {cycle_duration:.1f}s"
+            )
+    
+    def _get_all_sites_list(self) -> List[Dict[str, Any]]:
+        """Get list of all sites from data provider."""
+        if hasattr(self.data_provider, 'sle_data') and self.data_provider.sle_data:
+            return [
+                {"site_id": r.get("site_id"), "site_name": self.data_provider.site_lookup.get(r.get("site_id"), "Unknown")}
+                for r in self.data_provider.sle_data.get("results", [])
+            ]
+        return []
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current worker status for monitoring."""
+        return {
+            "running": self._running,
+            "collection_cycles": self._collection_cycles,
+            "total_sites_collected": self._total_sites_collected,
+            "degraded_sites_collected": self._degraded_sites_collected,
+            "current_site": self._current_site,
+            "min_delay_seconds": self.min_delay,
+            "max_age_seconds": self.max_age_seconds,
+            "rate_limited": self._rate_limited
+        }
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if worker is currently running."""
+        return self._running

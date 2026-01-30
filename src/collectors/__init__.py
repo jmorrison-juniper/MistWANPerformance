@@ -11,11 +11,14 @@ from src.collectors.status_collector import (
     StatusCollector
 )
 from src.collectors.quality_collector import QualityCollector
+from src.collectors.sle_collector import SLECollector, SLECollectionResult
 
 __all__ = [
     "UtilizationCollector",
     "StatusRecordInput",
     "TimeWindow",
     "StatusCollector",
-    "QualityCollector"
+    "QualityCollector",
+    "SLECollector",
+    "SLECollectionResult"
 ]

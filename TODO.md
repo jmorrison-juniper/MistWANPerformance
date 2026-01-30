@@ -4,7 +4,7 @@
 
 ### Site-Level SLE Deep-Dive Data Collection
 
-**Status:** Not Started  
+**Status:** In Progress (Tasks F1-F3 Complete)  
 **Started:** 2026-01-29
 
 **Goal:** Collect detailed site-level SLE data for degraded sites. Use org-level API to identify degraded sites, then fetch detailed diagnostics only for those sites. Smart time-series fetching with 10-minute resolution across 7 days, using incremental fetching when historical data exists.
@@ -147,36 +147,37 @@
 #### Implementation Tasks
 
 ##### Task F1: MistAPIClient Site-Level SLE Methods
-- [ ] Add `get_site_sle_summary(site_id, metric, start, end, duration)` to MistAPIClient
-- [ ] Add `get_site_sle_histogram(site_id, metric, start, end, duration)` to MistAPIClient
-- [ ] Add `get_site_sle_threshold(site_id, metric)` to MistAPIClient
-- [ ] Add `get_site_sle_impacted_gateways(site_id, metric, start, end)` to MistAPIClient
-- [ ] Add `get_site_sle_impacted_interfaces(site_id, metric, start, end)` to MistAPIClient
-- [ ] Support smart start_time from cached last timestamp for incremental fetching
+- [x] Add `get_site_sle_summary(site_id, metric, start, end, duration)` to MistAPIClient
+- [x] Add `get_site_sle_histogram(site_id, metric, start, end, duration)` to MistAPIClient
+- [x] Add `get_site_sle_threshold(site_id, metric)` to MistAPIClient
+- [x] Add `get_site_sle_impacted_gateways(site_id, metric, start, end)` to MistAPIClient
+- [x] Add `get_site_sle_impacted_interfaces(site_id, metric, start, end)` to MistAPIClient
+- [x] Support smart start_time from cached last timestamp for incremental fetching
 
 ##### Task F2: Redis Storage Schema for Site-Level SLE
-- [ ] Design key patterns:
+- [x] Design key patterns:
   - `mistwan:site_sle:{site_id}:summary:{metric}` - Summary time-series
   - `mistwan:site_sle:{site_id}:histogram:{metric}` - Histogram data
   - `mistwan:site_sle:{site_id}:impacted_gateways:{metric}` - Impacted gateways
   - `mistwan:site_sle:{site_id}:impacted_interfaces:{metric}` - Impacted interfaces
   - `mistwan:site_sle:{site_id}:threshold:{metric}` - Threshold config
   - `mistwan:site_sle:last_fetch:{site_id}` - Last fetch timestamp for incremental
-- [ ] Add save methods: `save_site_sle_summary()`, `save_site_sle_histogram()`, etc.
-- [ ] Add get methods: `get_site_sle_summary()`, `get_site_sle_histogram()`, etc.
-- [ ] Add `get_last_site_sle_timestamp(site_id)` for incremental fetching
-- [ ] TTL: 7 days for all site-level SLE data
+- [x] Add save methods: `save_site_sle_summary()`, `save_site_sle_histogram()`, etc.
+- [x] Add get methods: `get_site_sle_summary()`, `get_site_sle_histogram()`, etc.
+- [x] Add `get_last_site_sle_timestamp(site_id)` for incremental fetching
+- [x] TTL: 7 days for all site-level SLE data
 
 ##### Task F3: Degraded Site Collection Workflow
-- [ ] Create `collect_degraded_site_details()` function:
-  1. Get degraded sites from `_data_provider.get_sle_degraded_sites()`
-  2. For each degraded site (limited to top N worst):
-     a. Check `get_last_site_sle_timestamp(site_id)`
-     b. If fresh data exists, adjust start_time for incremental fetch
-     c. Fetch summary, histogram, impacted gateways, impacted interfaces
-     d. Save all to Redis
-- [ ] Add to background refresh cycle (lower priority than port stats)
-- [ ] Rate limit to avoid 429 errors (1 site per 200ms)
+- [x] Create `SLECollector` class in `src/collectors/sle_collector.py`:
+  - `collect_for_site()` - Collect all SLE data for a single site
+  - `collect_for_degraded_sites()` - Priority collection for degraded sites
+  - `collect_for_all_sites()` - Background collection with cache freshness check
+- [x] Create `SLEBackgroundWorker` class in `src/cache/background_refresh.py`:
+  - Phase 1: Collect degraded sites first (priority)
+  - Phase 2: Collect all sites incrementally
+  - Rate limiting: 2 seconds between site API calls
+  - Integration with run_dashboard.py background workers
+- [x] Add `get_site_sle_details()` method to `DashboardDataProvider`
 
 ##### Task F4: Dashboard Integration
 - [ ] Add "Site Details" drill-down view when clicking degraded site row

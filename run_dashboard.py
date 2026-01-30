@@ -34,6 +34,7 @@ from src.models.facts import CircuitUtilizationRecord
 
 # Global references for background refresh and data loading
 _background_worker = None
+_sle_background_worker = None
 _api_client = None
 _cache = None
 _data_provider = None
@@ -919,7 +920,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
         
         # Start background refresh if cache is enabled
         if _cache is not None and _api_client is not None:
-            from src.cache.background_refresh import BackgroundRefreshWorker
+            from src.cache.background_refresh import BackgroundRefreshWorker, SLEBackgroundWorker
             
             def on_refresh_complete(fresh_stats):
                 """Callback when background refresh completes a cycle."""
@@ -954,6 +955,19 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             # Expose worker to data provider for status queries
             data_provider.background_worker = _background_worker
             logger.info("[OK] Background refresh enabled (continuous mode)")
+            
+            # Start SLE background worker (collects site-level SLE details)
+            global _sle_background_worker
+            _sle_background_worker = SLEBackgroundWorker(
+                cache=_cache,
+                api_client=_api_client,
+                data_provider=data_provider,
+                min_delay_between_fetches=2,  # 2 seconds between site API calls
+                max_age_seconds=3600  # Refresh cache older than 1 hour
+            )
+            _sle_background_worker.start()
+            data_provider.sle_background_worker = _sle_background_worker
+            logger.info("[OK] SLE background worker started (site-level collection)")
         
     except Exception as error:
         logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
@@ -1124,16 +1138,22 @@ def main():
         logger.info("[INFO] Dashboard stopped by user")
         if _background_worker:
             _background_worker.stop()
+        if _sle_background_worker:
+            _sle_background_worker.stop()
         return 0
     except ConnectionError as error:
         logger.error(f"[ERROR] API connection failed: {error}")
         if _background_worker:
             _background_worker.stop()
+        if _sle_background_worker:
+            _sle_background_worker.stop()
         return 1
     except Exception as error:
         logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
         if _background_worker:
             _background_worker.stop()
+        if _sle_background_worker:
+            _sle_background_worker.stop()
         return 1
     
     return 0

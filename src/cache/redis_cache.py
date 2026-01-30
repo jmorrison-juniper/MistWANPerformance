@@ -1721,6 +1721,321 @@ class RedisCache:
         except Exception:
             return False
 
+    # ==================== Site-Level SLE Data ====================
+    
+    PREFIX_SITE_SLE = "mistwan:site_sle"
+    
+    def save_site_sle_summary(
+        self,
+        site_id: str,
+        metric: str,
+        summary_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save site-level SLE summary with time-series and classifiers.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric (wan-link-health, gateway-health, application-health)
+            summary_data: Response from get_site_sle_summary()
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            timestamp = int(time.time())
+            ttl_seconds = ttl or (7 * 24 * 3600)  # 7 days
+            
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
+            self.client.setex(key, ttl_seconds, self._serialize(summary_data))
+            
+            # Update last fetch timestamp for this site
+            self.client.set(
+                f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}",
+                str(timestamp)
+            )
+            
+            logger.debug(f"Saved SLE summary for site {site_id} metric {metric}")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving site SLE summary: {error}")
+            return False
+    
+    def get_site_sle_summary(
+        self,
+        site_id: str,
+        metric: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Get cached site-level SLE summary.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric
+        
+        Returns:
+            Summary data or None if not cached
+        """
+        try:
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving site SLE summary: {error}")
+            return None
+    
+    def save_site_sle_histogram(
+        self,
+        site_id: str,
+        metric: str,
+        histogram_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save site-level SLE histogram data.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric
+            histogram_data: Response from get_site_sle_histogram()
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            ttl_seconds = ttl or (7 * 24 * 3600)
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
+            self.client.setex(key, ttl_seconds, self._serialize(histogram_data))
+            return True
+        except Exception as error:
+            logger.error(f"Error saving site SLE histogram: {error}")
+            return False
+    
+    def get_site_sle_histogram(
+        self,
+        site_id: str,
+        metric: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached site-level SLE histogram."""
+        try:
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving site SLE histogram: {error}")
+            return None
+    
+    def save_site_sle_impacted_gateways(
+        self,
+        site_id: str,
+        metric: str,
+        gateways_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save list of impacted gateways for a site.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric
+            gateways_data: Response from get_site_sle_impacted_gateways()
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            ttl_seconds = ttl or (7 * 24 * 3600)
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
+            self.client.setex(key, ttl_seconds, self._serialize(gateways_data))
+            return True
+        except Exception as error:
+            logger.error(f"Error saving site impacted gateways: {error}")
+            return False
+    
+    def get_site_sle_impacted_gateways(
+        self,
+        site_id: str,
+        metric: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached impacted gateways for a site."""
+        try:
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving site impacted gateways: {error}")
+            return None
+    
+    def save_site_sle_impacted_interfaces(
+        self,
+        site_id: str,
+        metric: str,
+        interfaces_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save list of impacted interfaces for a site.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric
+            interfaces_data: Response from get_site_sle_impacted_interfaces()
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            ttl_seconds = ttl or (7 * 24 * 3600)
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
+            self.client.setex(key, ttl_seconds, self._serialize(interfaces_data))
+            return True
+        except Exception as error:
+            logger.error(f"Error saving site impacted interfaces: {error}")
+            return False
+    
+    def get_site_sle_impacted_interfaces(
+        self,
+        site_id: str,
+        metric: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached impacted interfaces for a site."""
+        try:
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving site impacted interfaces: {error}")
+            return None
+    
+    def save_site_sle_threshold(
+        self,
+        site_id: str,
+        metric: str,
+        threshold_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save SLE threshold configuration for a site.
+        
+        Args:
+            site_id: Site UUID
+            metric: SLE metric
+            threshold_data: Response from get_site_sle_threshold()
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            ttl_seconds = ttl or (7 * 24 * 3600)
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
+            self.client.setex(key, ttl_seconds, self._serialize(threshold_data))
+            return True
+        except Exception as error:
+            logger.error(f"Error saving site SLE threshold: {error}")
+            return False
+    
+    def get_site_sle_threshold(
+        self,
+        site_id: str,
+        metric: str
+    ) -> Optional[Dict[str, Any]]:
+        """Get cached SLE threshold for a site."""
+        try:
+            key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving site SLE threshold: {error}")
+            return None
+    
+    def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
+        """
+        Get the timestamp of the last SLE fetch for a site.
+        
+        Used for incremental fetching - only fetch data newer than this.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            Unix timestamp or None if never fetched
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
+            return int(float(data)) if data else None
+        except Exception as error:
+            logger.error(f"Error getting last site SLE timestamp: {error}")
+            return None
+    
+    def is_site_sle_cache_fresh(
+        self,
+        site_id: str,
+        max_age_seconds: int = 3600
+    ) -> bool:
+        """
+        Check if site SLE cache is fresh enough.
+        
+        Args:
+            site_id: Site UUID
+            max_age_seconds: Maximum acceptable age (default: 1 hour)
+        
+        Returns:
+            True if cache is fresh, False if stale or missing
+        """
+        try:
+            last_fetch = self.get_last_site_sle_timestamp(site_id)
+            if not last_fetch:
+                return False
+            age = int(time.time()) - last_fetch
+            return age < max_age_seconds
+        except Exception:
+            return False
+    
+    def get_sites_needing_sle_refresh(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> List[str]:
+        """
+        Get list of sites that need SLE data refresh.
+        
+        Args:
+            site_ids: List of site UUIDs to check
+            max_age_seconds: Maximum acceptable cache age (default: 1 hour)
+        
+        Returns:
+            List of site IDs that need refresh (stale or no cache)
+        """
+        try:
+            stale_sites = []
+            current_time = int(time.time())
+            
+            # Use pipeline for efficient bulk check
+            pipe = self.client.pipeline()
+            for site_id in site_ids:
+                pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
+            
+            results = pipe.execute()
+            
+            for site_id, last_fetch_data in zip(site_ids, results):
+                if last_fetch_data is None:
+                    stale_sites.append(site_id)
+                else:
+                    last_fetch = int(float(last_fetch_data))
+                    if current_time - last_fetch >= max_age_seconds:
+                        stale_sites.append(site_id)
+            
+            return stale_sites
+        except Exception as error:
+            logger.error(f"Error checking site SLE freshness: {error}")
+            return site_ids  # Assume all need refresh on error
+
     # ==================== Cache Management ====================
     
     def clear_all(self) -> bool:
@@ -2091,6 +2406,93 @@ class NullCache:
     
     def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
         return []
+    
+    # Gateway inventory stubs
+    def save_gateway_inventory(self, inventory_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+        return False
+    
+    def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def get_disconnected_site_ids(self) -> set:
+        return set()
+    
+    def is_gateway_cache_fresh(self, max_age_seconds: int = 300) -> bool:
+        return False
+    
+    # Site-level SLE stubs
+    def save_site_sle_summary(
+        self,
+        site_id: str,
+        metric: str,
+        summary_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_site_sle_summary(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def save_site_sle_histogram(
+        self,
+        site_id: str,
+        metric: str,
+        histogram_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_site_sle_histogram(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def save_site_sle_impacted_gateways(
+        self,
+        site_id: str,
+        metric: str,
+        gateways_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def save_site_sle_impacted_interfaces(
+        self,
+        site_id: str,
+        metric: str,
+        interfaces_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def save_site_sle_threshold(
+        self,
+        site_id: str,
+        metric: str,
+        threshold_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_site_sle_threshold(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
+        return None
+    
+    def is_site_sle_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
+        return False
+    
+    def get_sites_needing_sle_refresh(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> List[str]:
+        return list(site_ids)
     
     def clear_all(self) -> bool:
         return True

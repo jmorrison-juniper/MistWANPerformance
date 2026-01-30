@@ -1110,6 +1110,286 @@ class MistInsightsOperations:
         logger.info(f"[OK] Retrieved {len(trend_points)} trend points for site {site_id}")
         return data
 
+    def get_site_sle_summary(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get detailed SLE summary with time-series and classifiers for a site.
+        
+        Returns hourly samples showing total, degraded, and value for the SLE metric,
+        plus breakdown by classifier (network-loss, jitter, latency, etc.).
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health", "application-health"
+            start_time: Start epoch timestamp (optional, for incremental fetch)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified ("1d", "7d")
+        
+        Returns:
+            Dictionary with SLE summary:
+            {
+                "start": epoch, "end": epoch,
+                "sle": {"name": str, "interval": 3600, "samples": {...}},
+                "impact": {"num_gateways": int, "total_gateways": int},
+                "classifiers": [{"name": str, "samples": {...}}]
+            }
+        """
+        logger.debug(f"[...] Retrieving SLE summary for site {site_id} (metric={metric})")
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "scope": "site",
+            "scope_id": site_id,
+            "metric": metric
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            f"Get site SLE summary ({metric})",
+            mistapi.api.v1.sites.sle.getSiteSleSummary,
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        data = response.data if hasattr(response, 'data') else {}
+        return data
+
+    def get_site_sle_histogram(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get SLE histogram showing distribution of scores for a site.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health", "application-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with histogram data:
+            {
+                "metric": str, "start": epoch, "end": epoch,
+                "data": [{"range": [min, max], "value": count}]
+            }
+        """
+        logger.debug(f"[...] Retrieving SLE histogram for site {site_id} (metric={metric})")
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "scope": "site",
+            "scope_id": site_id,
+            "metric": metric
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            f"Get site SLE histogram ({metric})",
+            mistapi.api.v1.sites.sle.getSiteSleHistogram,
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        return response.data if hasattr(response, 'data') else {}
+
+    def get_site_sle_threshold(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health"
+    ) -> Dict[str, Any]:
+        """
+        Get SLE threshold configuration for a site/metric.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health", "application-health"
+        
+        Returns:
+            Dictionary with threshold config:
+            {
+                "metric": str, "minimum": int, "maximum": int,
+                "default": int, "units": str, "direction": str, "threshold": int
+            }
+        """
+        logger.debug(f"[...] Retrieving SLE threshold for site {site_id} (metric={metric})")
+        
+        response = self.connection.execute_with_retry(
+            f"Get site SLE threshold ({metric})",
+            mistapi.api.v1.sites.sle.getSiteSleThreshold,
+            self.connection.session,
+            site_id=site_id,
+            scope="site",
+            scope_id=site_id,
+            metric=metric
+        )
+        
+        return response.data if hasattr(response, 'data') else {}
+
+    def get_site_sle_impacted_gateways(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get list of impacted gateways for a site's SLE metric.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with impacted gateways:
+            {
+                "start": epoch, "end": epoch, "metric": str,
+                "total_count": int, "gateways": [
+                    {"gateway_mac": str, "name": str, "duration": float,
+                     "degraded": float, "gateway_model": str, "gateway_version": str}
+                ]
+            }
+        """
+        logger.debug(f"[...] Retrieving impacted gateways for site {site_id}")
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "scope": "site",
+            "scope_id": site_id,
+            "metric": metric
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            f"Get site impacted gateways ({metric})",
+            mistapi.api.v1.sites.sle.listSiteSleImpactedGateways,
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        return response.data if hasattr(response, 'data') else {}
+
+    def get_site_sle_impacted_interfaces(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get list of impacted interfaces for a site's SLE metric.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with impacted interfaces:
+            {
+                "start": epoch, "end": epoch, "metric": str,
+                "total_count": int, "interfaces": [
+                    {"interface_name": str, "gateway_name": str,
+                     "gateway_mac": str, "duration": float, "degraded": float}
+                ]
+            }
+        """
+        logger.debug(f"[...] Retrieving impacted interfaces for site {site_id}")
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "scope": "site",
+            "scope_id": site_id,
+            "metric": metric
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            f"Get site impacted interfaces ({metric})",
+            mistapi.api.v1.sites.sle.listSiteSleImpactedInterfaces,
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        return response.data if hasattr(response, 'data') else {}
+
+    def get_site_sle_classifiers(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health"
+    ) -> List[str]:
+        """
+        Get list of available classifiers for a site's SLE metric.
+        
+        Classifiers represent root cause categories for SLE degradation:
+        - network-loss, network-jitter, network-latency
+        - interface-congestion, interface-port-down, interface-cable-issues
+        - isp-reachability-dhcp, isp-reachability-arp
+        - etc.
+        
+        Args:
+            site_id: The site UUID to query
+            metric: SLE metric - "wan-link-health", "gateway-health"
+        
+        Returns:
+            List of classifier names available for the metric
+        """
+        logger.debug(f"[...] Retrieving SLE classifiers for site {site_id}")
+        
+        response = self.connection.execute_with_retry(
+            f"Get site SLE classifiers ({metric})",
+            mistapi.api.v1.sites.sle.listSiteSleMetricClassifiers,
+            self.connection.session,
+            site_id=site_id,
+            scope="site",
+            scope_id=site_id,
+            metric=metric
+        )
+        
+        return response.data if hasattr(response, 'data') else []
+
 
 class MistAPIClient:
     """
@@ -1342,6 +1622,100 @@ class MistAPIClient:
             start_time=start_time,
             end_time=end_time,
             duration=duration
+        )
+
+    def get_site_sle_summary(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get detailed SLE summary with time-series and classifiers for a site.
+        
+        Returns hourly samples and classifier breakdown for root cause analysis.
+        """
+        return self.insights_ops.get_site_sle_summary(
+            site_id=site_id,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
+        )
+
+    def get_site_sle_histogram(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """Get SLE histogram showing distribution of scores for a site."""
+        return self.insights_ops.get_site_sle_histogram(
+            site_id=site_id,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
+        )
+
+    def get_site_sle_threshold(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health"
+    ) -> Dict[str, Any]:
+        """Get SLE threshold configuration for a site/metric."""
+        return self.insights_ops.get_site_sle_threshold(
+            site_id=site_id,
+            metric=metric
+        )
+
+    def get_site_sle_impacted_gateways(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """Get list of impacted gateways for a site's SLE metric."""
+        return self.insights_ops.get_site_sle_impacted_gateways(
+            site_id=site_id,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
+        )
+
+    def get_site_sle_impacted_interfaces(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """Get list of impacted interfaces for a site's SLE metric."""
+        return self.insights_ops.get_site_sle_impacted_interfaces(
+            site_id=site_id,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
+        )
+
+    def get_site_sle_classifiers(
+        self,
+        site_id: str,
+        metric: str = "wan-link-health"
+    ) -> List[str]:
+        """Get list of available classifiers for a site's SLE metric."""
+        return self.insights_ops.get_site_sle_classifiers(
+            site_id=site_id,
+            metric=metric
         )
     
     def close(self) -> None:

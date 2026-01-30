@@ -291,6 +291,50 @@ class DashboardDataProvider:
         
         return degraded_sites
     
+    def get_site_sle_details(self, site_id: str, metric: str = "wan-link-health") -> Dict[str, Any]:
+        """
+        Get detailed SLE data for a specific site from cache.
+        
+        Args:
+            site_id: Mist site UUID
+            metric: SLE metric name (default: wan-link-health)
+        
+        Returns:
+            Dictionary with SLE details including summary, histogram,
+            impacted gateways, and impacted interfaces
+        """
+        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+            return {"available": False, "error": "Cache not available"}
+        
+        try:
+            summary = self.redis_cache.get_site_sle_summary(site_id, metric)
+            histogram = self.redis_cache.get_site_sle_histogram(site_id, metric)
+            gateways = self.redis_cache.get_site_sle_impacted_gateways(site_id, metric)
+            interfaces = self.redis_cache.get_site_sle_impacted_interfaces(site_id, metric)
+            last_fetch = self.redis_cache.get_last_site_sle_timestamp(site_id)
+            
+            # Check if we have any data
+            has_data = any([summary, histogram, gateways, interfaces])
+            
+            site_name = self.site_lookup.get(site_id, site_id[:8] + "...")
+            
+            return {
+                "available": has_data,
+                "site_id": site_id,
+                "site_name": site_name,
+                "metric": metric,
+                "summary": summary,
+                "histogram": histogram,
+                "impacted_gateways": gateways,
+                "impacted_interfaces": interfaces,
+                "last_fetch_timestamp": last_fetch,
+                "cache_fresh": self.redis_cache.is_site_sle_cache_fresh(site_id)
+            }
+            
+        except Exception as error:
+            logger.warning(f"Failed to get site SLE details for {site_id}: {error}")
+            return {"available": False, "error": str(error)}
+    
     def get_alarms_summary(self) -> Dict[str, Any]:
         """
         Get alarms summary for dashboard display.
