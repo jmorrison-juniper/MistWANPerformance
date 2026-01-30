@@ -447,6 +447,31 @@ MistWANPerformance/
 
 ```json
 {
+  "26.02.02.10.30": {
+    "performance": [
+      "Async precomputers using asyncio.TaskGroup for I/O parallelism (50 sites concurrent)",
+      "ProcessPoolExecutor for CPU-bound computations (site status, utilization distribution, region summary)",
+      "Dedicated asyncio event loop running in background thread for precomputation",
+      "asyncio.gather() for parallel executor operations",
+      "asyncio.to_thread() for blocking Redis operations"
+    ],
+    "feature-additions": [
+      "AsyncDashboardPrecomputer: Parallelized dashboard data computation",
+      "AsyncSiteSlePrecomputer: Parallel per-site SLE precomputation (50 concurrent)",
+      "AsyncSiteVpnPrecomputer: Parallel per-site VPN precomputation (50 concurrent)",
+      "start_async_precomputers() and stop_async_precomputers() management functions"
+    ],
+    "api-changes": [
+      "New module: src/cache/async_precompute.py with async precomputers",
+      "CPU-bound functions: compute_site_statuses_cpu(), compute_utilization_distribution_cpu()",
+      "CPU-bound functions: compute_region_summary_cpu(), compute_top_congested_cpu()",
+      "Shared process pool via get_process_pool() / shutdown_process_pool()"
+    ],
+    "refactoring": [
+      "Replaced threading-based precomputers with asyncio-based implementations",
+      "Centralized graceful shutdown via stop_async_precomputers()"
+    ]
+  },
   "26.02.01.09.00": {
     "documentation": [
       "Comprehensive Mist API Endpoints Reference section added to README",

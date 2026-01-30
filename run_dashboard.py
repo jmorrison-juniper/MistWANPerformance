@@ -9,6 +9,7 @@ Features:
 - No batch limits: Fetches ALL available data
 - Async data loading: Dashboard starts immediately, data loads in background
 - Parallel processing: Multi-core port stats processing
+- Async precomputation: TaskGroup for I/O, ProcessPoolExecutor for CPU
 
 Usage:
     python run_dashboard.py
@@ -17,6 +18,7 @@ Usage:
 """
 
 import argparse
+import asyncio
 import logging
 import os
 import signal
@@ -24,7 +26,7 @@ import sys
 import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple, Dict, Any, Optional
 
 from src.utils.logging_config import setup_logging
 from src.utils.config import Config
@@ -32,8 +34,16 @@ from src.dashboard.app import WANPerformanceDashboard
 from src.dashboard.data_provider import DashboardDataProvider
 from src.models.dimensions import DimSite, DimCircuit
 from src.models.facts import CircuitUtilizationRecord
+
+# Import both legacy and async precomputers
 from src.cache.dashboard_precompute import DashboardPrecomputer
 from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
+from src.cache.async_precompute import (
+    AsyncDashboardPrecomputer,
+    AsyncSiteSlePrecomputer,
+    AsyncSiteVpnPrecomputer,
+    shutdown_process_pool,
+)
 
 # Global references for background refresh and data loading
 _background_worker = None
@@ -48,8 +58,146 @@ _data_provider = None
 _data_load_thread = None
 _shutdown_event = threading.Event()
 
+# Async event loop for precomputers (runs in dedicated thread)
+_async_loop: Optional[asyncio.AbstractEventLoop] = None
+_async_thread: Optional[threading.Thread] = None
+
 # CPU count for parallel processing (leave 1 core for system)
 CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
+
+
+def _run_async_event_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """
+    Run the asyncio event loop in a dedicated thread.
+    
+    This allows async precomputers to run alongside the synchronous
+    Dash/Flask application.
+    """
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_forever()
+    finally:
+        # Cleanup pending tasks
+        pending = asyncio.all_tasks(loop)
+        for task in pending:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        loop.close()
+
+
+def start_async_precomputers(cache, data_provider) -> None:
+    """
+    Start async precomputers in a dedicated asyncio event loop.
+    
+    Creates a new event loop running in a background thread,
+    allowing async TaskGroup parallelization for I/O-bound work
+    and ProcessPoolExecutor for CPU-bound computation.
+    """
+    global _async_loop, _async_thread
+    global _dashboard_precomputer, _site_sle_precomputer, _site_vpn_precomputer
+    
+    logger = logging.getLogger(__name__)
+    
+    # Create new event loop for async precomputers
+    _async_loop = asyncio.new_event_loop()
+    
+    # Create async precomputers (they will use the loop when started)
+    _dashboard_precomputer = AsyncDashboardPrecomputer(
+        cache=cache,
+        data_provider=data_provider,
+        refresh_interval=20  # 20 second cycle
+    )
+    
+    _site_sle_precomputer = AsyncSiteSlePrecomputer(
+        cache=cache,
+        data_provider=data_provider,
+        concurrent_sites=50,  # 50 sites in parallel
+        cycle_delay=1.0
+    )
+    
+    _site_vpn_precomputer = AsyncSiteVpnPrecomputer(
+        cache=cache,
+        data_provider=data_provider,
+        concurrent_sites=50,  # 50 sites in parallel
+        cycle_delay=1.0
+    )
+    
+    # Schedule precomputers to start in the event loop
+    def schedule_precomputers():
+        _dashboard_precomputer._task = _async_loop.create_task(
+            _dashboard_precomputer._precompute_loop()
+        )
+        _dashboard_precomputer._running = True
+        
+        _site_sle_precomputer._task = _async_loop.create_task(
+            _site_sle_precomputer._precompute_loop()
+        )
+        _site_sle_precomputer._running = True
+        
+        _site_vpn_precomputer._task = _async_loop.create_task(
+            _site_vpn_precomputer._precompute_loop()
+        )
+        _site_vpn_precomputer._running = True
+    
+    # Start the event loop in a background thread
+    _async_thread = threading.Thread(
+        target=_run_async_event_loop,
+        args=(_async_loop,),
+        daemon=True,
+        name="async-precompute-loop"
+    )
+    _async_thread.start()
+    
+    # Schedule precomputers (must be done after loop starts)
+    _async_loop.call_soon_threadsafe(schedule_precomputers)
+    
+    # Expose to data provider for status queries
+    data_provider.dashboard_precomputer = _dashboard_precomputer
+    data_provider.site_sle_precomputer = _site_sle_precomputer
+    data_provider.site_vpn_precomputer = _site_vpn_precomputer
+    
+    logger.info(
+        "[OK] Async precomputers started (TaskGroup I/O parallelism, "
+        "ProcessPoolExecutor CPU parallelism)"
+    )
+
+
+def stop_async_precomputers() -> None:
+    """Stop all async precomputers and shutdown the event loop."""
+    global _async_loop, _async_thread
+    global _dashboard_precomputer, _site_sle_precomputer, _site_vpn_precomputer
+    
+    logger = logging.getLogger(__name__)
+    
+    # Stop precomputers
+    if _dashboard_precomputer:
+        _dashboard_precomputer._running = False
+        if _dashboard_precomputer._task:
+            _async_loop.call_soon_threadsafe(_dashboard_precomputer._task.cancel)
+    
+    if _site_sle_precomputer:
+        _site_sle_precomputer._running = False
+        if _site_sle_precomputer._task:
+            _async_loop.call_soon_threadsafe(_site_sle_precomputer._task.cancel)
+    
+    if _site_vpn_precomputer:
+        _site_vpn_precomputer._running = False
+        if _site_vpn_precomputer._task:
+            _async_loop.call_soon_threadsafe(_site_vpn_precomputer._task.cancel)
+    
+    # Stop the event loop
+    if _async_loop and _async_loop.is_running():
+        _async_loop.call_soon_threadsafe(_async_loop.stop)
+    
+    # Wait for thread to finish
+    if _async_thread and _async_thread.is_alive():
+        _async_thread.join(timeout=5)
+    
+    # Shutdown process pool
+    shutdown_process_pool()
+    
+    logger.info("[OK] Async precomputers stopped")
+
 
 def calculate_utilization_pct(
     rx_bps: int,
@@ -989,45 +1137,13 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
             logger.info("[OK] VPN peer background worker started (peer path collection)")
             
-            # Start dashboard precomputer (offloads computation from browser)
-            global _dashboard_precomputer
-            _dashboard_precomputer = DashboardPrecomputer(
-                cache=_cache,
-                data_provider=data_provider,
-                refresh_interval=20  # Pre-compute every 20 seconds
-            )
-            _dashboard_precomputer.start()
-            data_provider.dashboard_precomputer = _dashboard_precomputer
-            logger.info("[OK] Dashboard precomputer started (20s refresh)")
-            
-            # Start per-site SLE precomputer (precomputes drill-down data)
-            global _site_sle_precomputer
-            _site_sle_precomputer = SiteSlePrecomputer(
-                cache=_cache,
-                data_provider=data_provider,
-                batch_size=50,
-                cycle_delay=0.5
-            )
-            _site_sle_precomputer.start()
-            data_provider.site_sle_precomputer = _site_sle_precomputer
-            logger.info("[OK] Site SLE precomputer started (per-site drill-down)")
-            
-            # Start per-site VPN precomputer (precomputes drill-down data)
-            global _site_vpn_precomputer
-            _site_vpn_precomputer = SiteVpnPrecomputer(
-                cache=_cache,
-                data_provider=data_provider,
-                batch_size=50,
-                cycle_delay=0.5
-            )
-            _site_vpn_precomputer.start()
-            data_provider.site_vpn_precomputer = _site_vpn_precomputer
-            logger.info("[OK] Site VPN precomputer started (per-site drill-down)")
+            # Start async precomputers (TaskGroup I/O + ProcessPoolExecutor CPU)
+            # These run in a dedicated asyncio event loop in a background thread
+            start_async_precomputers(_cache, data_provider)
         
     except Exception as error:
         logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
 
-import os
 
 def main():
     """Launch the WAN Performance dashboard."""
@@ -1065,16 +1181,11 @@ def main():
         logger.info(f"[SHUTDOWN] Received signal {sig_name}, initiating graceful shutdown...")
         _shutdown_event.set()
         
+        # Stop async precomputers (includes process pool shutdown)
+        logger.info("[SHUTDOWN] Stopping async precomputers...")
+        stop_async_precomputers()
+        
         # Stop background workers
-        if _dashboard_precomputer:
-            logger.info("[SHUTDOWN] Stopping dashboard precomputer...")
-            _dashboard_precomputer.stop()
-        if _site_sle_precomputer:
-            logger.info("[SHUTDOWN] Stopping site SLE precomputer...")
-            _site_sle_precomputer.stop()
-        if _site_vpn_precomputer:
-            logger.info("[SHUTDOWN] Stopping site VPN precomputer...")
-            _site_vpn_precomputer.stop()
         if _background_worker:
             logger.info("[SHUTDOWN] Stopping port stats background worker...")
             _background_worker.stop()
@@ -1247,40 +1358,9 @@ def main():
                 _data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
                 logger.info("[OK] VPN peer background worker started (peer path collection)")
                 
-                # Start dashboard precomputer (offloads computation from browser)
-                global _dashboard_precomputer
-                _dashboard_precomputer = DashboardPrecomputer(
-                    cache=_cache,
-                    data_provider=_data_provider,
-                    refresh_interval=20  # Pre-compute every 20 seconds
-                )
-                _dashboard_precomputer.start()
-                _data_provider.dashboard_precomputer = _dashboard_precomputer
-                logger.info("[OK] Dashboard precomputer started (20s refresh)")
-                
-                # Start per-site SLE precomputer (precomputes drill-down data)
-                global _site_sle_precomputer
-                _site_sle_precomputer = SiteSlePrecomputer(
-                    cache=_cache,
-                    data_provider=_data_provider,
-                    batch_size=50,
-                    cycle_delay=0.5
-                )
-                _site_sle_precomputer.start()
-                _data_provider.site_sle_precomputer = _site_sle_precomputer
-                logger.info("[OK] Site SLE precomputer started (per-site drill-down)")
-                
-                # Start per-site VPN precomputer (precomputes drill-down data)
-                global _site_vpn_precomputer
-                _site_vpn_precomputer = SiteVpnPrecomputer(
-                    cache=_cache,
-                    data_provider=_data_provider,
-                    batch_size=50,
-                    cycle_delay=0.5
-                )
-                _site_vpn_precomputer.start()
-                _data_provider.site_vpn_precomputer = _site_vpn_precomputer
-                logger.info("[OK] Site VPN precomputer started (per-site drill-down)")
+                # Start async precomputers (TaskGroup I/O + ProcessPoolExecutor CPU)
+                # These run in a dedicated asyncio event loop in a background thread
+                start_async_precomputers(_cache, _data_provider)
         except Exception as sle_worker_error:
             logger.warning(f"[WARN] Could not start SLE background worker: {sle_worker_error}")
         
@@ -1291,12 +1371,7 @@ def main():
         
     except KeyboardInterrupt:
         logger.info("[INFO] Dashboard stopped by user")
-        if _dashboard_precomputer:
-            _dashboard_precomputer.stop()
-        if _site_sle_precomputer:
-            _site_sle_precomputer.stop()
-        if _site_vpn_precomputer:
-            _site_vpn_precomputer.stop()
+        stop_async_precomputers()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1306,12 +1381,7 @@ def main():
         return 0
     except ConnectionError as error:
         logger.error(f"[ERROR] API connection failed: {error}")
-        if _dashboard_precomputer:
-            _dashboard_precomputer.stop()
-        if _site_sle_precomputer:
-            _site_sle_precomputer.stop()
-        if _site_vpn_precomputer:
-            _site_vpn_precomputer.stop()
+        stop_async_precomputers()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1321,12 +1391,7 @@ def main():
         return 1
     except Exception as error:
         logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
-        if _dashboard_precomputer:
-            _dashboard_precomputer.stop()
-        if _site_sle_precomputer:
-            _site_sle_precomputer.stop()
-        if _site_vpn_precomputer:
-            _site_vpn_precomputer.stop()
+        stop_async_precomputers()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
