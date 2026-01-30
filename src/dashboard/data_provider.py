@@ -359,11 +359,20 @@ class DashboardDataProvider:
         """
         Get all data needed for dashboard rendering.
         
+        OPTIMIZED: Returns pre-computed data from Redis if available.
+        Falls back to live computation only if precomputed data is stale.
+        
         Returns:
             Dictionary with all dashboard data structures.
             Returns loading state if no data available yet.
         """
-        # Return loading state if no data yet (async loading in progress)
+        # Try to get pre-computed data first (fast path)
+        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+            precomputed = self.dashboard_precomputer.get_precomputed("main")
+            if precomputed and not precomputed.get("loading", True):
+                return precomputed
+        
+        # Fallback: Return loading state if no data yet
         if not self.utilization_records:
             return {
                 "loading": True,
@@ -381,31 +390,21 @@ class DashboardDataProvider:
                 "throughput": []
             }
         
-        # Calculate site status counts
+        # Fallback: Compute live (only used if precomputer not running)
         site_statuses = self._calculate_site_statuses()
         
-        # Get top congested circuits
         top_congested = self.ranking_views.top_n_by_utilization(
             self.utilization_records, top_n=10
         )
         
-        # Get current alerts
         circuit_states = self._get_all_circuit_states()
         alerts = self.current_state_views.get_active_alerts(circuit_states)
         
-        # Get utilization distribution
         util_dist = self._calculate_utilization_distribution()
-        
-        # Get region summary
         region_summary = self._calculate_region_summary()
-        
-        # Get trends data (real-time utilization %)
         trends = self._calculate_trends()
-        
-        # Get throughput data (cumulative bytes converted to rates)
         throughput = self._calculate_throughput()
         
-        # Get active failovers
         active_failovers = self.current_state_views.get_failover_status(
             self.failover_records
         )
@@ -860,9 +859,17 @@ class DashboardDataProvider:
         """
         Get summary statistics for WAN circuits.
         
+        OPTIMIZED: Returns pre-computed data from Redis if available.
+        
         Returns:
             Dictionary with circuit counts and utilization summaries
         """
+        # Try precomputed data first
+        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+            precomputed = self.dashboard_precomputer.get_precomputed("circuit_summary")
+            if precomputed:
+                return precomputed
+        
         if not self.utilization_records:
             return {
                 "total_circuits": 0,
@@ -965,14 +972,17 @@ class DashboardDataProvider:
         """
         Get gateway device health summary.
         
+        OPTIMIZED: Returns pre-computed data from Redis if available.
+        
         Returns:
-            Dictionary with gateway health counts:
-            {
-                "total": int,
-                "connected": int (online/healthy),
-                "disconnected": int (offline)
-            }
+            Dictionary with gateway health counts
         """
+        # Try precomputed data first
+        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+            precomputed = self.dashboard_precomputer.get_precomputed("gateway_health")
+            if precomputed:
+                return precomputed
+        
         return {
             "total": self.gateways_total,
             "connected": self.gateways_connected,
@@ -985,16 +995,17 @@ class DashboardDataProvider:
         """
         Get org-level VPN peer path summary statistics.
         
+        OPTIMIZED: Returns pre-computed data from Redis if available.
+        
         Returns:
-            Dictionary with:
-            {
-                "total_peers": int,
-                "paths_up": int,
-                "paths_down": int,
-                "health_percentage": float (0-100),
-                "timestamp": float
-            }
+            Dictionary with total_peers, paths_up, paths_down, health_percentage
         """
+        # Try precomputed data first
+        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+            precomputed = self.dashboard_precomputer.get_precomputed("vpn_summary")
+            if precomputed:
+                return precomputed
+        
         try:
             if hasattr(self, 'redis_cache') and self.redis_cache is not None:
                 summary = self.redis_cache.get_vpn_peer_summary()

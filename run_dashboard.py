@@ -32,11 +32,13 @@ from src.dashboard.app import WANPerformanceDashboard
 from src.dashboard.data_provider import DashboardDataProvider
 from src.models.dimensions import DimSite, DimCircuit
 from src.models.facts import CircuitUtilizationRecord
+from src.cache.dashboard_precompute import DashboardPrecomputer
 
 # Global references for background refresh and data loading
 _background_worker = None
 _sle_background_worker = None
 _vpn_peer_background_worker = None
+_dashboard_precomputer = None
 _api_client = None
 _cache = None
 _data_provider = None
@@ -983,6 +985,17 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             _vpn_peer_background_worker.start()
             data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
             logger.info("[OK] VPN peer background worker started (peer path collection)")
+            
+            # Start dashboard precomputer (offloads computation from browser)
+            global _dashboard_precomputer
+            _dashboard_precomputer = DashboardPrecomputer(
+                cache=_cache,
+                data_provider=data_provider,
+                refresh_interval=20  # Pre-compute every 20 seconds
+            )
+            _dashboard_precomputer.start()
+            data_provider.dashboard_precomputer = _dashboard_precomputer
+            logger.info("[OK] Dashboard precomputer started (20s refresh)")
         
     except Exception as error:
         logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
@@ -1026,6 +1039,9 @@ def main():
         _shutdown_event.set()
         
         # Stop background workers
+        if _dashboard_precomputer:
+            logger.info("[SHUTDOWN] Stopping dashboard precomputer...")
+            _dashboard_precomputer.stop()
         if _background_worker:
             logger.info("[SHUTDOWN] Stopping port stats background worker...")
             _background_worker.stop()
@@ -1197,6 +1213,17 @@ def main():
                 _vpn_peer_background_worker.start()
                 _data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
                 logger.info("[OK] VPN peer background worker started (peer path collection)")
+                
+                # Start dashboard precomputer (offloads computation from browser)
+                global _dashboard_precomputer
+                _dashboard_precomputer = DashboardPrecomputer(
+                    cache=_cache,
+                    data_provider=_data_provider,
+                    refresh_interval=20  # Pre-compute every 20 seconds
+                )
+                _dashboard_precomputer.start()
+                _data_provider.dashboard_precomputer = _dashboard_precomputer
+                logger.info("[OK] Dashboard precomputer started (20s refresh)")
         except Exception as sle_worker_error:
             logger.warning(f"[WARN] Could not start SLE background worker: {sle_worker_error}")
         
@@ -1207,6 +1234,8 @@ def main():
         
     except KeyboardInterrupt:
         logger.info("[INFO] Dashboard stopped by user")
+        if _dashboard_precomputer:
+            _dashboard_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1216,6 +1245,8 @@ def main():
         return 0
     except ConnectionError as error:
         logger.error(f"[ERROR] API connection failed: {error}")
+        if _dashboard_precomputer:
+            _dashboard_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:
@@ -1225,6 +1256,8 @@ def main():
         return 1
     except Exception as error:
         logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
+        if _dashboard_precomputer:
+            _dashboard_precomputer.stop()
         if _background_worker:
             _background_worker.stop()
         if _sle_background_worker:

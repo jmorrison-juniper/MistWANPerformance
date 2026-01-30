@@ -2519,6 +2519,8 @@ class NullCache:
     
     def __init__(self):
         logger.warning("[WARN] Redis not available - caching disabled")
+        # In-memory storage for precomputed dashboard data (fallback)
+        self._precomputed: Dict[str, Any] = {}
     
     def is_connected(self) -> bool:
         return False

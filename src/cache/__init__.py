@@ -13,10 +13,12 @@ from src.cache.background_refresh import (
     AsyncBackgroundRefreshWorker,
     refresh_stale_sites_parallel,
 )
+from src.cache.dashboard_precompute import DashboardPrecomputer
 
 __all__ = [
     "RedisCache",
     "BackgroundRefreshWorker",
     "AsyncBackgroundRefreshWorker",
     "refresh_stale_sites_parallel",
+    "DashboardPrecomputer",
 ]
