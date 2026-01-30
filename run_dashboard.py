@@ -1022,6 +1022,16 @@ def main():
                 _data_provider.gateways_total = gateway_inventory.get("total", 0)
                 _data_provider.gateways_connected = gateway_inventory.get("connected", 0)
                 _data_provider.gateways_disconnected = gateway_inventory.get("disconnected", 0)
+                
+                # Build set of site IDs with disconnected gateways
+                disconnected_sites = set()
+                for gw in gateway_inventory.get("gateways", []):
+                    if not gw.get("connected", False):
+                        site_id = gw.get("site_id")
+                        if site_id:
+                            disconnected_sites.add(site_id)
+                _data_provider.disconnected_site_ids = disconnected_sites
+                
                 logger.info(
                     f"[OK] Gateway health: {_data_provider.gateways_connected} online, "
                     f"{_data_provider.gateways_disconnected} offline"

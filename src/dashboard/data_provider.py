@@ -97,6 +97,7 @@ class DashboardDataProvider:
         self.gateways_connected: int = 0
         self.gateways_disconnected: int = 0
         self.gateways_total: int = 0
+        self.disconnected_site_ids: set = set()  # Sites with offline gateways
         self.region_aggregates: List[AggregatedMetrics] = []
         
         # SLE (Service Level Experience) data
@@ -255,6 +256,11 @@ class DashboardDataProvider:
         
         for site in results:
             site_id = site.get("site_id", "")
+            
+            # Skip sites with disconnected/offline gateways
+            if site_id in self.disconnected_site_ids:
+                continue
+            
             gateway_health = site.get("gateway-health", 1.0)
             wan_link = site.get("wan-link-health", 1.0)
             app_health = site.get("application-health", 1.0)
