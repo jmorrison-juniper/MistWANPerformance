@@ -19,6 +19,7 @@ Usage:
 import argparse
 import logging
 import os
+import signal
 import sys
 import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
@@ -40,6 +41,7 @@ _api_client = None
 _cache = None
 _data_provider = None
 _data_load_thread = None
+_shutdown_event = threading.Event()
 
 # CPU count for parallel processing (leave 1 core for system)
 CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
@@ -1015,6 +1017,31 @@ def main():
     log_level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(level=log_level)
     logger = logging.getLogger(__name__)
+    
+    # Define graceful shutdown handler
+    def graceful_shutdown(signum, frame):
+        """Handle shutdown signals gracefully."""
+        sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        logger.info(f"[SHUTDOWN] Received signal {sig_name}, initiating graceful shutdown...")
+        _shutdown_event.set()
+        
+        # Stop background workers
+        if _background_worker:
+            logger.info("[SHUTDOWN] Stopping port stats background worker...")
+            _background_worker.stop()
+        if _sle_background_worker:
+            logger.info("[SHUTDOWN] Stopping SLE background worker...")
+            _sle_background_worker.stop()
+        if _vpn_peer_background_worker:
+            logger.info("[SHUTDOWN] Stopping VPN peer background worker...")
+            _vpn_peer_background_worker.stop()
+        
+        logger.info("[SHUTDOWN] Background workers stopped, exiting...")
+        sys.exit(0)
+    
+    # Register signal handlers for graceful shutdown
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
     
     logger.info("=" * 60)
     logger.info("MistWANPerformance - NOC Dashboard")

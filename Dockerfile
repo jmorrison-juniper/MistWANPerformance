@@ -61,6 +61,10 @@ WORKDIR /app
 COPY --chown=appuser:appgroup src/ ./src/
 COPY --chown=appuser:appgroup run_dashboard.py .
 COPY --chown=appuser:appgroup pyproject.toml .
+COPY --chown=appuser:appgroup entrypoint.sh .
+
+# Make entrypoint executable
+RUN chmod +x /app/entrypoint.sh
 
 # Create data directories with correct permissions
 RUN mkdir -p /app/data/logs /app/data/cache /app/data/exports && \
@@ -80,9 +84,9 @@ ENV REDIS_PORT=6379
 # Expose dashboard port
 EXPOSE 8050
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8050/')" || exit 1
+# Health check - verify dashboard responds
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
+    CMD python -c "import requests; requests.get('http://localhost:8050/', timeout=5)" || exit 1
 
-# Run the dashboard
-CMD ["python", "run_dashboard.py"]
+# Use entrypoint script for crash handling and auto-restart
+ENTRYPOINT ["/bin/bash", "/app/entrypoint.sh"]
