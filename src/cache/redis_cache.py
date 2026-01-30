@@ -1911,6 +1911,9 @@ class RedisCache:
         """
         Get VPN peer paths for a specific site.
         
+        OPTIMIZED: Uses site_id pattern to avoid loading all VPN data.
+        Keys are stored as: mistwan:vpn_peers:{site_id}:{mac}
+        
         Args:
             site_id: Site UUID
         
@@ -1919,22 +1922,36 @@ class RedisCache:
         """
         with PerformanceTimer("redis_get_site_vpn_peers", log_threshold_ms=100) as timer:
             try:
-                all_peers = self.get_all_vpn_peers()
+                # Use site-specific pattern to avoid loading all peers
+                with PerformanceTimer("redis_keys_scan_site_vpn", log_threshold_ms=50):
+                    pattern = f"{self.PREFIX_VPN_PEERS}:{site_id}:*"
+                    keys = self.client.keys(pattern)
+                
+                if not keys:
+                    logger.debug(f"[PERF] get_site_vpn_peers: 0 keys for site {site_id[:8]}")
+                    return []
+                
                 site_peers = []
+                with PerformanceTimer("redis_pipeline_get_site_vpn", log_threshold_ms=50):
+                    pipe = self.client.pipeline()
+                    for key in keys:
+                        pipe.get(key)
+                    values = pipe.execute()
                 
-                for cache_key, data in all_peers.items():
-                    peers_by_port = data.get("peers_by_port", {})
-                    
-                    for port_id, peers_list in peers_by_port.items():
-                        for peer in peers_list:
-                            peer_site_id = peer.get("site_id", "")
-                            if peer_site_id == site_id:
-                                # Include port_id in the peer record
-                                peer_record = dict(peer)
-                                peer_record["port_id"] = port_id
-                                site_peers.append(peer_record)
+                with PerformanceTimer("redis_deserialize_site_vpn", log_threshold_ms=20):
+                    for key, value in zip(keys, values):
+                        if value:
+                            data = self._deserialize(value)
+                            peers_by_port = data.get("peers_by_port", {})
+                            
+                            for port_id, peers_list in peers_by_port.items():
+                                for peer in peers_list:
+                                    # Include port_id in the peer record
+                                    peer_record = dict(peer)
+                                    peer_record["port_id"] = port_id
+                                    site_peers.append(peer_record)
                 
-                logger.debug(f"[PERF] get_site_vpn_peers: {len(site_peers)} peers for site, {timer.elapsed_ms:.1f}ms")
+                logger.debug(f"[PERF] get_site_vpn_peers: {len(keys)} keys, {len(site_peers)} peers, {timer.elapsed_ms:.1f}ms")
                 return site_peers
             except Exception as error:
                 logger.error(f"Error getting VPN peers for site {site_id}: {error}")
