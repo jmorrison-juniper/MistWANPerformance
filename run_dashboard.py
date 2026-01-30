@@ -35,6 +35,7 @@ from src.models.facts import CircuitUtilizationRecord
 # Global references for background refresh and data loading
 _background_worker = None
 _sle_background_worker = None
+_vpn_peer_background_worker = None
 _api_client = None
 _cache = None
 _data_provider = None
@@ -920,7 +921,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
         
         # Start background refresh if cache is enabled
         if _cache is not None and _api_client is not None:
-            from src.cache.background_refresh import BackgroundRefreshWorker, SLEBackgroundWorker
+            from src.cache.background_refresh import BackgroundRefreshWorker, SLEBackgroundWorker, VPNPeerBackgroundWorker
             
             def on_refresh_complete(fresh_stats):
                 """Callback when background refresh completes a cycle."""
@@ -968,6 +969,18 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             _sle_background_worker.start()
             data_provider.sle_background_worker = _sle_background_worker
             logger.info("[OK] SLE background worker started (site-level collection)")
+            
+            # Start VPN peer background worker (collects VPN peer path stats)
+            global _vpn_peer_background_worker
+            _vpn_peer_background_worker = VPNPeerBackgroundWorker(
+                cache=_cache,
+                api_client=_api_client,
+                min_delay_between_fetches=5,  # 5 seconds between API calls
+                refresh_interval_seconds=300  # Refresh every 5 minutes
+            )
+            _vpn_peer_background_worker.start()
+            data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
+            logger.info("[OK] VPN peer background worker started (peer path collection)")
         
     except Exception as error:
         logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
@@ -1129,6 +1142,37 @@ def main():
         )
         _data_load_thread.start()
         
+        # STEP 2b: Start SLE background worker immediately (doesn't depend on full load)
+        try:
+            if _cache is not None and quick_client is not None:
+                from src.cache.background_refresh import SLEBackgroundWorker, VPNPeerBackgroundWorker
+                
+                global _sle_background_worker
+                _sle_background_worker = SLEBackgroundWorker(
+                    cache=_cache,
+                    api_client=quick_client,
+                    data_provider=_data_provider,
+                    min_delay_between_fetches=2,  # 2 seconds between site API calls
+                    max_age_seconds=3600  # Refresh cache older than 1 hour
+                )
+                _sle_background_worker.start()
+                _data_provider.sle_background_worker = _sle_background_worker
+                logger.info("[OK] SLE background worker started (site-level collection)")
+                
+                # Start VPN peer background worker
+                global _vpn_peer_background_worker
+                _vpn_peer_background_worker = VPNPeerBackgroundWorker(
+                    cache=_cache,
+                    api_client=quick_client,
+                    min_delay_between_fetches=5,  # 5 seconds between API calls
+                    refresh_interval_seconds=300  # Refresh every 5 minutes
+                )
+                _vpn_peer_background_worker.start()
+                _data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
+                logger.info("[OK] VPN peer background worker started (peer path collection)")
+        except Exception as sle_worker_error:
+            logger.warning(f"[WARN] Could not start SLE background worker: {sle_worker_error}")
+        
         # STEP 3: Start dashboard immediately (shows cached data or loading state)
         dashboard = WANPerformanceDashboard(data_provider=_data_provider)
         logger.info(f"[OK] Dashboard starting at http://{args.host}:{args.port}")
@@ -1140,6 +1184,8 @@ def main():
             _background_worker.stop()
         if _sle_background_worker:
             _sle_background_worker.stop()
+        if _vpn_peer_background_worker:
+            _vpn_peer_background_worker.stop()
         return 0
     except ConnectionError as error:
         logger.error(f"[ERROR] API connection failed: {error}")
@@ -1147,6 +1193,8 @@ def main():
             _background_worker.stop()
         if _sle_background_worker:
             _sle_background_worker.stop()
+        if _vpn_peer_background_worker:
+            _vpn_peer_background_worker.stop()
         return 1
     except Exception as error:
         logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
@@ -1154,6 +1202,8 @@ def main():
             _background_worker.stop()
         if _sle_background_worker:
             _sle_background_worker.stop()
+        if _vpn_peer_background_worker:
+            _vpn_peer_background_worker.stop()
         return 1
     
     return 0

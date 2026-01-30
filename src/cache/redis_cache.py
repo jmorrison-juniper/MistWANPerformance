@@ -1721,6 +1721,216 @@ class RedisCache:
         except Exception:
             return False
 
+    # ==================== VPN Peer Path Data ====================
+    
+    PREFIX_VPN_PEERS = "mistwan:vpn_peers"
+    
+    def save_vpn_peers(
+        self,
+        gateway_id: str,
+        mac: str,
+        peers_by_port: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Store VPN peer paths for a gateway.
+        
+        Args:
+            gateway_id: Gateway device ID
+            mac: Gateway MAC address
+            peers_by_port: Dictionary of port_id -> list of peer path data
+            ttl: Time-to-live in seconds (default: 31 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            key = f"{self.PREFIX_VPN_PEERS}:{gateway_id}:{mac}"
+            data = {
+                "timestamp": time.time(),
+                "peers_by_port": peers_by_port
+            }
+            self.client.setex(
+                key,
+                ttl or self.HISTORY_TTL,
+                self._serialize(data)
+            )
+            return True
+        except Exception as error:
+            logger.error(f"Error storing VPN peers for {gateway_id}: {error}")
+            return False
+    
+    def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve VPN peer paths for a gateway.
+        
+        Args:
+            gateway_id: Gateway device ID
+            mac: Gateway MAC address
+        
+        Returns:
+            Dictionary with 'timestamp' and 'peers_by_port', or None if not cached
+        """
+        try:
+            key = f"{self.PREFIX_VPN_PEERS}:{gateway_id}:{mac}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving VPN peers for {gateway_id}: {error}")
+            return None
+    
+    def save_all_vpn_peers(
+        self,
+        all_peers: Dict[str, Dict[str, Any]],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Store all VPN peer paths in a single pipeline operation.
+        
+        Args:
+            all_peers: Dict mapping cache_key (gateway_id-mac) to peers_by_port data
+            ttl: Time-to-live in seconds (default: 31 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            pipe = self.client.pipeline()
+            timestamp = time.time()
+            
+            for cache_key, peers_by_port in all_peers.items():
+                key = f"{self.PREFIX_VPN_PEERS}:{cache_key}"
+                data = {
+                    "timestamp": timestamp,
+                    "peers_by_port": peers_by_port
+                }
+                pipe.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
+            
+            pipe.execute()
+            logger.info(f"[OK] Stored VPN peers for {len(all_peers)} gateways")
+            return True
+        except Exception as error:
+            logger.error(f"Error storing all VPN peers: {error}")
+            return False
+    
+    def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Retrieve all VPN peer paths from cache.
+        
+        Returns:
+            Dictionary mapping cache_key to peers data (with timestamp and peers_by_port)
+        """
+        try:
+            pattern = f"{self.PREFIX_VPN_PEERS}:*"
+            keys = self.client.keys(pattern)
+            
+            if not keys:
+                return {}
+            
+            result = {}
+            pipe = self.client.pipeline()
+            for key in keys:
+                pipe.get(key)
+            
+            values = pipe.execute()
+            
+            for key, value in zip(keys, values):
+                # Extract cache_key from redis key (remove prefix)
+                cache_key = key.replace(f"{self.PREFIX_VPN_PEERS}:", "")
+                if value:
+                    result[cache_key] = self._deserialize(value)
+            
+            return result
+        except Exception as error:
+            logger.error(f"Error retrieving all VPN peers: {error}")
+            return {}
+    
+    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+        """
+        Get org-level VPN peer path summary statistics.
+        
+        Returns:
+            Dictionary with total_peers, paths_up, paths_down, and site_breakdown
+        """
+        try:
+            all_peers = self.get_all_vpn_peers()
+            
+            total_peers = 0
+            paths_up = 0
+            paths_down = 0
+            site_stats = {}  # site_id -> {total, up, down}
+            
+            for cache_key, data in all_peers.items():
+                peers_by_port = data.get("peers_by_port", {})
+                
+                for port_id, peers_list in peers_by_port.items():
+                    for peer in peers_list:
+                        total_peers += 1
+                        is_up = peer.get("up", False)
+                        
+                        if is_up:
+                            paths_up += 1
+                        else:
+                            paths_down += 1
+                        
+                        # Track by site if site_id is available
+                        site_id = peer.get("site_id", "unknown")
+                        if site_id not in site_stats:
+                            site_stats[site_id] = {"total": 0, "up": 0, "down": 0}
+                        site_stats[site_id]["total"] += 1
+                        if is_up:
+                            site_stats[site_id]["up"] += 1
+                        else:
+                            site_stats[site_id]["down"] += 1
+            
+            return {
+                "total_peers": total_peers,
+                "paths_up": paths_up,
+                "paths_down": paths_down,
+                "site_breakdown": site_stats,
+                "timestamp": time.time()
+            }
+        except Exception as error:
+            logger.error(f"Error getting VPN peer summary: {error}")
+            return {
+                "total_peers": 0,
+                "paths_up": 0,
+                "paths_down": 0,
+                "site_breakdown": {},
+                "timestamp": time.time()
+            }
+    
+    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+        """
+        Get VPN peer paths for a specific site.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            List of peer path records with loss, latency, jitter, MOS
+        """
+        try:
+            all_peers = self.get_all_vpn_peers()
+            site_peers = []
+            
+            for cache_key, data in all_peers.items():
+                peers_by_port = data.get("peers_by_port", {})
+                
+                for port_id, peers_list in peers_by_port.items():
+                    for peer in peers_list:
+                        peer_site_id = peer.get("site_id", "")
+                        if peer_site_id == site_id:
+                            # Include port_id in the peer record
+                            peer_record = dict(peer)
+                            peer_record["port_id"] = port_id
+                            site_peers.append(peer_record)
+            
+            return site_peers
+        except Exception as error:
+            logger.error(f"Error getting VPN peers for site {site_id}: {error}")
+            return []
+
     # ==================== Site-Level SLE Data ====================
     
     PREFIX_SITE_SLE = "mistwan:site_sle"
@@ -2005,14 +2215,18 @@ class RedisCache:
         """
         Get list of sites that need SLE data refresh.
         
+        Missing sites (never cached) are returned FIRST to prioritize
+        initial population over refreshing stale data.
+        
         Args:
             site_ids: List of site UUIDs to check
             max_age_seconds: Maximum acceptable cache age (default: 1 hour)
         
         Returns:
-            List of site IDs that need refresh (stale or no cache)
+            List of site IDs that need refresh (missing sites first, then stale)
         """
         try:
+            missing_sites = []
             stale_sites = []
             current_time = int(time.time())
             
@@ -2025,16 +2239,65 @@ class RedisCache:
             
             for site_id, last_fetch_data in zip(site_ids, results):
                 if last_fetch_data is None:
-                    stale_sites.append(site_id)
+                    missing_sites.append(site_id)
                 else:
                     last_fetch = int(float(last_fetch_data))
                     if current_time - last_fetch >= max_age_seconds:
                         stale_sites.append(site_id)
             
-            return stale_sites
+            # Missing sites get priority - they've never been cached
+            return missing_sites + stale_sites
         except Exception as error:
             logger.error(f"Error checking site SLE freshness: {error}")
             return site_ids  # Assume all need refresh on error
+    
+    def get_site_sle_cache_status(
+        self,
+        site_ids: List[str],
+        max_age_seconds: int = 3600
+    ) -> Dict[str, int]:
+        """
+        Get cache status counts for SLE data (fresh/stale/missing).
+        
+        Args:
+            site_ids: List of site UUIDs to check
+            max_age_seconds: Maximum acceptable cache age (default: 1 hour)
+        
+        Returns:
+            Dictionary with 'fresh', 'stale', 'missing' counts
+        """
+        try:
+            fresh_count = 0
+            stale_count = 0
+            missing_count = 0
+            current_time = int(time.time())
+            
+            # Use pipeline for efficient bulk check
+            pipe = self.client.pipeline()
+            for site_id in site_ids:
+                pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
+            
+            results = pipe.execute()
+            
+            for last_fetch_data in results:
+                if last_fetch_data is None:
+                    missing_count += 1
+                else:
+                    last_fetch = int(float(last_fetch_data))
+                    if current_time - last_fetch >= max_age_seconds:
+                        stale_count += 1
+                    else:
+                        fresh_count += 1
+            
+            return {
+                "fresh": fresh_count,
+                "stale": stale_count,
+                "missing": missing_count,
+                "total": len(site_ids)
+            }
+        except Exception as error:
+            logger.error(f"Error getting SLE cache status: {error}")
+            return {"fresh": 0, "stale": 0, "missing": len(site_ids), "total": len(site_ids)}
 
     # ==================== Cache Management ====================
     
@@ -2419,6 +2682,41 @@ class NullCache:
     
     def is_gateway_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         return False
+    
+    # VPN peer path stubs
+    def save_vpn_peers(
+        self,
+        gateway_id: str,
+        mac: str,
+        peers_by_port: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def save_all_vpn_peers(
+        self,
+        all_peers: Dict[str, Dict[str, Any]],
+        ttl: Optional[int] = None
+    ) -> bool:
+        return False
+    
+    def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
+        return {}
+    
+    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+        return {
+            "total_peers": 0,
+            "paths_up": 0,
+            "paths_down": 0,
+            "site_breakdown": {},
+            "timestamp": time.time()
+        }
+    
+    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+        return []
     
     # Site-level SLE stubs
     def save_site_sle_summary(

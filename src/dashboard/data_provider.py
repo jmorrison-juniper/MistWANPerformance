@@ -978,3 +978,129 @@ class DashboardDataProvider:
             "connected": self.gateways_connected,
             "disconnected": self.gateways_disconnected
         }
+
+    # ==================== VPN Peer Path Methods ====================
+    
+    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+        """
+        Get org-level VPN peer path summary statistics.
+        
+        Returns:
+            Dictionary with:
+            {
+                "total_peers": int,
+                "paths_up": int,
+                "paths_down": int,
+                "health_percentage": float (0-100),
+                "timestamp": float
+            }
+        """
+        try:
+            if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                summary = self.redis_cache.get_vpn_peer_summary()
+                
+                total = summary.get("total_peers", 0)
+                up = summary.get("paths_up", 0)
+                down = summary.get("paths_down", 0)
+                
+                health_pct = (up / total * 100) if total > 0 else 0.0
+                
+                return {
+                    "total_peers": total,
+                    "paths_up": up,
+                    "paths_down": down,
+                    "health_percentage": round(health_pct, 1),
+                    "timestamp": summary.get("timestamp", 0)
+                }
+        except Exception as error:
+            logger.error(f"Error getting VPN peer summary: {error}")
+        
+        return {
+            "total_peers": 0,
+            "paths_up": 0,
+            "paths_down": 0,
+            "health_percentage": 0.0,
+            "timestamp": 0
+        }
+    
+    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+        """
+        Get VPN peer paths for a specific site.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            List of peer path records with:
+            - vpn_name: VPN tunnel name
+            - peer_router_name: Remote router name
+            - port_id: Local port
+            - peer_port_id: Remote port
+            - up: bool connection status
+            - latency: ms
+            - loss: percentage
+            - jitter: ms
+            - mos: MOS score (1-5)
+        """
+        try:
+            if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                return self.redis_cache.get_site_vpn_peers(site_id)
+        except Exception as error:
+            logger.error(f"Error getting VPN peers for site {site_id}: {error}")
+        
+        return []
+    
+    def get_vpn_peer_table_data(self, site_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get VPN peer data formatted for dashboard table display.
+        
+        Args:
+            site_id: Optional site UUID to filter by
+        
+        Returns:
+            List of records formatted for dash_table with columns:
+            - vpn_name, peer_router_name, port_id, peer_port_id
+            - status (Up/Down), latency, loss, jitter, mos
+        """
+        try:
+            if site_id:
+                peers = self.get_site_vpn_peers(site_id)
+            elif hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                all_data = self.redis_cache.get_all_vpn_peers()
+                peers = []
+                for cache_key, data in all_data.items():
+                    peers_by_port = data.get("peers_by_port", {})
+                    for port_id, peer_list in peers_by_port.items():
+                        for peer in peer_list:
+                            peer_copy = dict(peer)
+                            peer_copy["port_id"] = port_id
+                            peers.append(peer_copy)
+            else:
+                peers = []
+            
+            # Format for table display
+            table_data = []
+            for peer in peers:
+                site_name = self.site_lookup.get(peer.get("site_id", ""), "Unknown")
+                
+                table_data.append({
+                    "site_name": site_name,
+                    "vpn_name": peer.get("vpn_name", ""),
+                    "peer_router_name": peer.get("peer_router_name", ""),
+                    "port_id": peer.get("port_id", ""),
+                    "peer_port_id": peer.get("peer_port_id", ""),
+                    "status": "Up" if peer.get("up", False) else "Down",
+                    "latency_ms": round(peer.get("latency", 0), 1),
+                    "loss_pct": round(peer.get("loss", 0), 2),
+                    "jitter_ms": round(peer.get("jitter", 0), 1),
+                    "mos": round(peer.get("mos", 0), 2)
+                })
+            
+            # Sort by site name, then VPN name
+            table_data.sort(key=lambda r: (r.get("site_name", ""), r.get("vpn_name", "")))
+            
+            return table_data
+            
+        except Exception as error:
+            logger.error(f"Error getting VPN peer table data: {error}")
+            return []

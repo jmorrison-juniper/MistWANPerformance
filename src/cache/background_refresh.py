@@ -788,17 +788,27 @@ class SLEBackgroundWorker:
                 
                 time.sleep(self.min_delay)
         
-        # Phase 2: Collect all sites (fill gaps)
+        # Phase 2: Collect all sites (fill gaps) - missing sites prioritized by cache method
         all_sites = self._get_all_sites_list()
+        all_site_ids = [s.get("site_id") for s in all_sites if s.get("site_id")]
+        
+        # Get cache status for logging
+        sle_cache_status = self.cache.get_site_sle_cache_status(
+            all_site_ids,
+            self.max_age_seconds
+        )
+        
         sites_needing_refresh = self.cache.get_sites_needing_sle_refresh(
-            [s.get("site_id") for s in all_sites if s.get("site_id")],
+            all_site_ids,
             self.max_age_seconds
         )
         
         if sites_needing_refresh:
+            # Log with fresh/stale/missing breakdown
             logger.info(
                 f"[...] SLE cycle {self._collection_cycles}: "
-                f"{len(sites_needing_refresh)} sites need refresh"
+                f"{sle_cache_status['fresh']} fresh, {sle_cache_status['stale']} stale, "
+                f"{sle_cache_status['missing']} missing - refreshing {min(50, len(sites_needing_refresh))} sites"
             )
             
             # Limit to 50 sites per cycle to avoid long cycles
@@ -848,6 +858,209 @@ class SLEBackgroundWorker:
             "current_site": self._current_site,
             "min_delay_seconds": self.min_delay,
             "max_age_seconds": self.max_age_seconds,
+            "rate_limited": self._rate_limited
+        }
+    
+    @property
+    def is_running(self) -> bool:
+        """Check if worker is currently running."""
+        return self._running
+
+
+# ============================================================================
+# VPN Peer Path Background Collector
+# ============================================================================
+
+
+class VPNPeerBackgroundWorker:
+    """
+    Background worker for collecting VPN peer path statistics.
+    
+    Collects loss, latency, jitter, and MOS scores for VPN peer paths
+    across all gateways in the organization. Data is cached in Redis
+    for display on the dashboard.
+    """
+    
+    def __init__(
+        self,
+        cache,
+        api_client,
+        min_delay_between_fetches: int = 5,
+        refresh_interval_seconds: int = 300,
+        on_data_updated: Optional[Callable] = None
+    ):
+        """
+        Initialize the VPN peer background worker.
+        
+        Args:
+            cache: Redis cache instance
+            api_client: Mist API client instance
+            min_delay_between_fetches: Minimum seconds between API calls
+            refresh_interval_seconds: How often to refresh all data (default: 5 min)
+            on_data_updated: Optional callback when data is refreshed
+        """
+        self.cache = cache
+        self.api_client = api_client
+        self.min_delay = min_delay_between_fetches
+        self.refresh_interval = refresh_interval_seconds
+        self.on_data_updated = on_data_updated
+        
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
+        self._total_peers_collected = 0
+        self._collection_cycles = 0
+        self._rate_limited = False
+        self._last_collection_time: float = 0
+    
+    def start(self) -> None:
+        """Start the VPN peer background worker."""
+        if self._running:
+            logger.warning("[WARN] VPN peer background worker already running")
+            return
+        
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._collection_loop,
+            daemon=True,
+            name="VPNPeerBackgroundWorker"
+        )
+        self._thread.start()
+        logger.info("[OK] VPN peer background worker started")
+    
+    def stop(self) -> None:
+        """Stop the VPN peer background worker."""
+        if not self._running:
+            return
+        
+        self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+        
+        logger.info(
+            f"[OK] VPN peer background worker stopped "
+            f"(collected {self._total_peers_collected} peers in "
+            f"{self._collection_cycles} cycles)"
+        )
+    
+    def _collection_loop(self) -> None:
+        """Main collection loop - runs continuously."""
+        logger.info("[...] VPN peer background collection starting")
+        
+        while self._running:
+            try:
+                # Check rate limit before API calls
+                if is_rate_limited():
+                    rate_status = get_rate_limit_status()
+                    remaining = rate_status.get("seconds_remaining", 60)
+                    self._rate_limited = True
+                    
+                    logger.warning(
+                        f"[RATE LIMIT] API rate limited - pausing VPN collection. "
+                        f"Resume in {int(remaining // 60)}m {int(remaining % 60)}s"
+                    )
+                    time.sleep(min(60, int(remaining) + 1))
+                    continue
+                
+                if self._rate_limited:
+                    self._rate_limited = False
+                    logger.info("[OK] Rate limit cleared - resuming VPN collection")
+                
+                # Check if refresh is needed
+                time_since_last = time.time() - self._last_collection_time
+                if time_since_last < self.refresh_interval:
+                    time.sleep(10)  # Wait a bit before checking again
+                    continue
+                
+                self._collection_cycles += 1
+                self._run_collection_cycle()
+                
+                # Pause between cycles
+                time.sleep(self.min_delay)
+                
+            except RateLimitError as rate_error:
+                self._rate_limited = True
+                wait_time = rate_error.seconds_remaining or 3600
+                logger.error(
+                    f"[RATE LIMIT] Hit 429 during VPN collection - pausing "
+                    f"{int(wait_time // 60)}m {int(wait_time % 60)}s"
+                )
+                time.sleep(int(wait_time) + 5)
+                
+            except Exception as error:
+                logger.error(f"[ERROR] VPN collection error: {error}", exc_info=True)
+                time.sleep(30)
+    
+    def _run_collection_cycle(self) -> None:
+        """Execute one VPN peer collection cycle."""
+        cycle_start = time.time()
+        
+        logger.info(f"[...] VPN peer cycle {self._collection_cycles}: Starting collection")
+        
+        try:
+            # Fetch all VPN peer stats from the org-level endpoint
+            result = self.api_client.get_org_vpn_peer_stats()
+            
+            if result.get("success"):
+                peers_by_port = result.get("peers_by_port", {})
+                total_peers = result.get("total_peers", 0)
+                
+                # Group peers by gateway (mac address from peer records)
+                peers_by_gateway: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+                
+                for port_id, peers_list in peers_by_port.items():
+                    for peer in peers_list:
+                        mac = peer.get("mac", "unknown")
+                        site_id = peer.get("site_id", "")
+                        cache_key = f"{site_id}:{mac}" if site_id else mac
+                        
+                        if cache_key not in peers_by_gateway:
+                            peers_by_gateway[cache_key] = {}
+                        
+                        if port_id not in peers_by_gateway[cache_key]:
+                            peers_by_gateway[cache_key][port_id] = []
+                        
+                        peers_by_gateway[cache_key][port_id].append(peer)
+                
+                # Save all peers to cache in one operation
+                self.cache.save_all_vpn_peers(peers_by_gateway)
+                
+                self._total_peers_collected += total_peers
+                self._last_collection_time = time.time()
+                
+                # Call update callback if provided
+                if self.on_data_updated:
+                    self.on_data_updated({
+                        "total_peers": total_peers,
+                        "gateways_with_peers": len(peers_by_gateway)
+                    })
+                
+                cycle_duration = time.time() - cycle_start
+                logger.info(
+                    f"[OK] VPN peer cycle {self._collection_cycles} complete: "
+                    f"{total_peers} peers from {len(peers_by_gateway)} gateways "
+                    f"in {cycle_duration:.1f}s"
+                )
+            
+            elif result.get("rate_limited"):
+                logger.warning("[RATE LIMIT] VPN peer stats rate limited")
+                self._rate_limited = True
+            
+            else:
+                error_msg = result.get("error", "Unknown error")
+                logger.warning(f"[WARN] VPN peer collection failed: {error_msg}")
+                
+        except Exception as error:
+            logger.error(f"[ERROR] VPN peer collection cycle failed: {error}", exc_info=True)
+    
+    def get_status(self) -> Dict[str, Any]:
+        """Get current worker status for monitoring."""
+        return {
+            "running": self._running,
+            "collection_cycles": self._collection_cycles,
+            "total_peers_collected": self._total_peers_collected,
+            "last_collection_time": self._last_collection_time,
+            "refresh_interval_seconds": self.refresh_interval,
+            "min_delay_seconds": self.min_delay,
             "rate_limited": self._rate_limited
         }
     

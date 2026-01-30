@@ -1047,6 +1047,173 @@ class MistInsightsOperations:
         logger.info(f"[OK] Retrieved {len(all_results)} alarms (total: {total_count})")
         return result
 
+    # ==================== VPN Peer Path Statistics ====================
+    
+    def get_vpn_peer_stats(
+        self,
+        site_id: Optional[str] = None,
+        device_mac: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get VPN peer path statistics using the mistapi SDK with pagination.
+        
+        Uses searchOrgPeerPathStats endpoint to get peer path information
+        including loss, latency, jitter, and MOS scores. Handles pagination
+        to retrieve all results using search_after cursor.
+        
+        Args:
+            site_id: Optional site ID to filter results
+            device_mac: Optional device MAC address to filter results
+        
+        Returns:
+            Dictionary with:
+                - success: bool indicating if API call succeeded
+                - peers_by_port: Dict mapping port_id to list of peer records
+                - total_peers: Total number of peer paths found
+                - rate_limited: bool if request was rate limited
+        """
+        logger.debug(f"Fetching VPN peer stats (site={site_id}, mac={device_mac})")
+        
+        try:
+            all_results: List[Dict[str, Any]] = []
+            search_after: Optional[str] = None
+            page_num = 0
+            total_count = 0
+            
+            while True:
+                page_num += 1
+                
+                api_kwargs: Dict[str, Any] = {
+                    "org_id": self.connection.config.org_id,
+                    "limit": 1000
+                }
+                
+                if site_id:
+                    api_kwargs["site_id"] = site_id
+                if device_mac:
+                    api_kwargs["mac"] = device_mac
+                if search_after:
+                    api_kwargs["search_after"] = search_after
+                
+                response = self.connection.execute_with_retry(
+                    f"Search org peer path stats (page {page_num})",
+                    mistapi.api.v1.orgs.stats.searchOrgPeerPathStats,
+                    self.connection.session,
+                    **api_kwargs
+                )
+                
+                if hasattr(response, 'status_code') and response.status_code == 429:
+                    logger.warning("VPN peer stats rate limited")
+                    return {
+                        "success": False,
+                        "rate_limited": True,
+                        "peers_by_port": {},
+                        "total_peers": 0
+                    }
+                
+                data = response.data if hasattr(response, 'data') else {}
+                
+                if page_num == 1:
+                    total_count = data.get("total", 0)
+                    logger.info(f"[...] VPN peer paths total: {total_count}")
+                
+                batch = data.get("results", [])
+                all_results.extend(batch)
+                
+                logger.debug(f"Retrieved {len(batch)} peers (page {page_num})")
+                
+                next_cursor = data.get("next")
+                if not next_cursor or len(batch) < 1000:
+                    break
+                search_after = next_cursor
+            
+            peers_by_port = self._group_peers_by_port(all_results)
+            
+            logger.info(f"[OK] Retrieved {len(all_results)} VPN peer paths")
+            
+            return {
+                "success": True,
+                "rate_limited": False,
+                "peers_by_port": peers_by_port,
+                "total_peers": len(all_results)
+            }
+            
+        except Exception as error:
+            logger.error(f"Error fetching VPN peer stats: {error}")
+            return {
+                "success": False,
+                "rate_limited": False,
+                "peers_by_port": {},
+                "total_peers": 0,
+                "error": str(error)
+            }
+    
+    def _group_peers_by_port(
+        self,
+        results: List[Dict[str, Any]]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Group VPN peer path results by port_id.
+        
+        Args:
+            results: List of peer path records from API
+        
+        Returns:
+            Dictionary mapping port_id to list of peer records
+        """
+        peers_by_port: Dict[str, List[Dict[str, Any]]] = {}
+        
+        for peer in results:
+            port_id = peer.get("port_id", "unknown")
+            
+            if port_id not in peers_by_port:
+                peers_by_port[port_id] = []
+            
+            peer_record = {
+                "vpn_name": peer.get("vpn_name", ""),
+                "peer_router_name": peer.get("peer_router_name", ""),
+                "peer_port_id": peer.get("peer_port_id", ""),
+                "site_id": peer.get("site_id", ""),
+                "mac": peer.get("mac", ""),
+                "up": peer.get("up", False),
+                "is_active": peer.get("is_active", False),
+                "latency": peer.get("latency", 0),
+                "loss": peer.get("loss", 0),
+                "jitter": peer.get("jitter", 0),
+                "mos": peer.get("mos", 0),
+                "uptime": peer.get("uptime", 0),
+                "mtu": peer.get("mtu", 0),
+                "type": peer.get("type", ""),
+                "hop_count": peer.get("hop_count", 0)
+            }
+            peers_by_port[port_id].append(peer_record)
+        
+        return peers_by_port
+    
+    def get_org_vpn_peer_stats(self) -> Dict[str, Any]:
+        """
+        Get all VPN peer path statistics for the organization.
+        
+        This is a convenience wrapper that calls get_vpn_peer_stats
+        without filtering by site or device.
+        
+        Returns:
+            Dictionary with peers_by_port, total_peers, etc.
+        """
+        return self.get_vpn_peer_stats()
+    
+    def get_site_vpn_peer_stats(self, site_id: str) -> Dict[str, Any]:
+        """
+        Get VPN peer path statistics for a specific site.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            Dictionary with peers_by_port, total_peers, etc.
+        """
+        return self.get_vpn_peer_stats(site_id=site_id)
+
     def get_site_sle_trend(
         self,
         site_id: str,
@@ -1717,7 +1884,52 @@ class MistAPIClient:
             site_id=site_id,
             metric=metric
         )
-    
+
+    # -------------------------------------------------------------------------
+    # VPN Peer Path Operations
+    # -------------------------------------------------------------------------
+
+    def get_vpn_peer_stats(
+        self,
+        site_id: Optional[str] = None,
+        device_mac: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Get VPN peer path statistics.
+        
+        Args:
+            site_id: Optional site ID to filter results
+            device_mac: Optional device MAC to filter results
+        
+        Returns:
+            Dictionary with peers_by_port, total_peers, etc.
+        """
+        return self.insights_ops.get_vpn_peer_stats(
+            site_id=site_id,
+            device_mac=device_mac
+        )
+
+    def get_org_vpn_peer_stats(self) -> Dict[str, Any]:
+        """
+        Get all VPN peer path statistics for the organization.
+        
+        Returns:
+            Dictionary with peers_by_port, total_peers, etc.
+        """
+        return self.insights_ops.get_org_vpn_peer_stats()
+
+    def get_site_vpn_peer_stats(self, site_id: str) -> Dict[str, Any]:
+        """
+        Get VPN peer path statistics for a specific site.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            Dictionary with peers_by_port, total_peers, etc.
+        """
+        return self.insights_ops.get_site_vpn_peer_stats(site_id=site_id)
+
     def close(self) -> None:
         """Close the API session and clean up resources."""
         self.connection.close()

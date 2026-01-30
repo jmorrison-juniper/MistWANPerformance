@@ -33,6 +33,141 @@ MistWANPerformance provides reliable, historical visibility into Retail WAN circ
 - **Source**: Juniper Mist Cloud APIs (via mistapi SDK)
 - **Warehouse**: Snowflake (SNF)
 
+## Mist API Endpoints Reference
+
+This section documents all Mist API endpoints used by MistWANPerformance, their purpose, and how they're utilized.
+
+### Organization-Level Endpoints
+
+| Endpoint | SDK Method | Purpose | Usage |
+| -------- | ---------- | ------- | ----- |
+| `GET /api/v1/orgs/{org_id}` | `getOrg` | Get organization details | Validate API credentials and org access |
+| `GET /api/v1/orgs/{org_id}/sites` | `listOrgSites` | List all sites in org | Build site inventory and lookup table |
+| `GET /api/v1/orgs/{org_id}/sitegroups` | `listOrgSiteGroups` | List site groups | Map sites to regions/groups |
+| `GET /api/v1/orgs/{org_id}/inventory` | `getOrgInventory` | Get device inventory | Retrieve all gateway devices (type=gateway) |
+| `GET /api/v1/orgs/{org_id}/stats/devices` | `listOrgDevicesStats` | Get device statistics | Bulk device stats including uptime, CPU, memory |
+| `GET /api/v1/orgs/{org_id}/stats/ports/search` | `searchOrgSwOrGwPorts` | Search gateway port stats | WAN circuit utilization, rx/tx bytes, bandwidth |
+| `GET /api/v1/orgs/{org_id}/stats/wan_clients/search` | `searchOrgWanClientStats` | Search WAN client stats | Client connection metrics |
+| `GET /api/v1/orgs/{org_id}/alarms/search` | `searchOrgAlarms` | Search organization alarms | Active alerts, WAN down events |
+| `GET /api/v1/orgs/{org_id}/stats/vpn_peers/search` | `searchOrgPeerPathStats` | Search VPN peer path stats | VPN tunnel quality: loss, latency, jitter, MOS |
+| `GET /api/v1/orgs/{org_id}/insights/sites-sle` | `getOrgSitesSle` | Get org-wide SLE scores | Overview SLE health across all sites |
+| `GET /api/v1/orgs/{org_id}/insights/sle` | `getOrgSle` | Get org SLE aggregate | Organization-level SLE summary |
+
+### Site-Level Endpoints
+
+| Endpoint | SDK Method | Purpose | Usage |
+| -------- | ---------- | ------- | ----- |
+| `GET /api/v1/sites/{site_id}/devices` | `listSiteDevices` | List devices at site | Get gateway devices for a specific site |
+| `GET /api/v1/sites/{site_id}/stats/devices/{device_id}` | `getSiteDeviceStats` | Get device stats | Per-device detailed statistics |
+| `GET /api/v1/sites/{site_id}/devices/events/search` | `searchSiteDeviceEvents` | Search device events | Status changes, flaps, reboots |
+
+### Site SLE Endpoints (Deep-Dive)
+
+| Endpoint | SDK Method | Purpose | Usage |
+| -------- | ---------- | ------- | ----- |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/summary` | `getSiteSleSummary` | Get SLE summary | Current SLE score with classifier breakdown |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/summary-trend` | `getSiteSleSummaryTrend` | Get SLE trend | Historical SLE scores over time |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/histogram` | `getSiteSleHistogram` | Get SLE histogram | Score distribution for quality analysis |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/threshold` | `getSiteSleThreshold` | Get SLE threshold | Configured thresholds for SLE scoring |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/impacted-gateways` | `listSiteSleImpactedGateways` | Get impacted gateways | Gateways contributing to degradation |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/impacted-interfaces` | `listSiteSleImpactedInterfaces` | Get impacted interfaces | WAN interfaces with poor health |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/classifiers` | `listSiteSleMetricClassifiers` | Get SLE classifiers | List available classifier categories |
+| `GET /api/v1/sites/{site_id}/sle/{scope}/{scope_id}/metric/{metric}/classifier/{classifier}/summary` | `getSiteSleClassifierDetails` | Get classifier details | Detailed breakdown for specific classifier |
+
+**Scope Parameter** (`{scope}` and `{scope_id}`):
+
+| Scope | scope_id | Description |
+| ----- | -------- | ----------- |
+| `site` | site_id | Site-wide SLE metrics |
+| `gateway` | device_id | Per-gateway SLE metrics |
+| `ap` | device_id | Per-AP SLE metrics |
+| `switch` | device_id | Per-switch SLE metrics |
+| `client` | mac | Per-client SLE metrics |
+
+**SLE Metrics** (`{metric}` parameter):
+
+| Metric | Scope | Description |
+| ------ | ----- | ----------- |
+| `gateway-health` | site, gateway | Overall gateway health score |
+| `wan-link-health` | site, gateway | WAN circuit health (loss, jitter, latency) |
+| `application_health` | site, gateway | Application performance health |
+| `switch_health` | site, switch | Switch health metrics |
+| `switch_throughput` | site, switch | Switch throughput metrics |
+| `coverage` | site, ap | Wireless coverage metrics |
+| `capacity` | site, ap | Wireless capacity metrics |
+| `throughput` | site, ap | Wireless throughput metrics |
+| `time-to-connect` | site, ap | Wireless connection time |
+| `roaming` | site, ap | Wireless roaming metrics |
+
+**Classifiers** (`{classifier}` parameter - returned by `listSiteSleMetricClassifiers`):
+
+For `wan-link-health`:
+
+| Classifier | Description |
+| ---------- | ----------- |
+| `network-loss` | Packet loss percentage |
+| `network-jitter` | Network jitter in milliseconds |
+| `network-latency` | Round-trip latency in milliseconds |
+| `interface-congestion` | Interface congestion events |
+| `interface-port-down` | Port down events |
+| `isp-reachability-dhcp` | DHCP reachability issues |
+| `isp-reachability-arp` | ARP reachability issues |
+
+For `gateway-health`:
+
+| Classifier | Description |
+| ---------- | ----------- |
+| `cpu-usage` | Gateway CPU utilization |
+| `memory-usage` | Gateway memory utilization |
+| `disk-usage` | Gateway disk utilization |
+
+### API Usage Patterns
+
+**Pagination**: All list/search endpoints support pagination:
+
+- `limit`: Max items per page (default 1000)
+- `page`: Page number for page-based pagination
+- `search_after`: Cursor for cursor-based pagination (search endpoints)
+
+**Rate Limiting**: Mist API enforces rate limits:
+
+- 5000 calls per hour per org
+- 429 responses trigger automatic backoff
+- Rate limit state tracked and displayed in dashboard status bar
+
+#### Example: Get All VPN Peer Paths with Pagination
+
+```python
+from src.api.mist_client import MistAPIClient
+
+client = MistAPIClient()
+result = client.get_org_vpn_peer_stats()  # Handles pagination automatically
+
+if result["success"]:
+    print(f"Total peers: {result['total_peers']}")
+    for port_id, peers in result["peers_by_port"].items():
+        for peer in peers:
+            print(f"  {peer['vpn_name']}: latency={peer['latency']}ms, loss={peer['loss']}%")
+```
+
+#### Example: Get Site SLE Details
+
+```python
+from src.api.mist_client import MistAPIClient
+
+client = MistAPIClient()
+site_id = "your-site-uuid"
+
+# Get SLE summary
+summary = client.get_site_sle_summary(site_id, metric="wan-link-health", duration="1w")
+
+# Get impacted gateways
+gateways = client.get_site_sle_impacted_gateways(site_id, metric="wan-link-health", duration="1w")
+
+# Get classifier breakdown (loss, jitter, latency)
+classifiers = client.get_site_sle_classifiers(site_id, metric="wan-link-health", duration="1w")
+```
+
 ## KPI Definitions
 
 ### 1. Utilization (Site/Circuit Level)
@@ -312,6 +447,83 @@ MistWANPerformance/
 
 ```json
 {
+  "26.02.01.09.00": {
+    "documentation": [
+      "Comprehensive Mist API Endpoints Reference section added to README",
+      "All 20+ endpoints documented with SDK method, purpose, and usage",
+      "Code examples for pagination and SLE deep-dive queries"
+    ],
+    "feature-additions": [
+      "Dashboard status bar shows SLE cache status: fresh/stale/missing counts",
+      "SLE refresh activity shows collection cycles and degraded sites progress"
+    ],
+    "bug-fixes": [
+      "Missing sites now prioritized over stale sites in SLE refresh queue",
+      "get_sites_needing_sle_refresh() returns missing sites first, then stale"
+    ],
+    "api-changes": [
+      "RedisCache: get_site_sle_cache_status() for fresh/stale/missing counts",
+      "WANPerformanceDashboard: _get_sle_cache_status() helper method"
+    ],
+    "performance": [
+      "SLE background worker logs detailed coverage status per cycle"
+    ]
+  },
+  "26.01.31.16.30": {
+    "feature-additions": [
+      "VPN peer path metrics collection from Mist API",
+      "VPN peer path bricks on main dashboard (Total Peers, Paths Up, Paths Down, VPN Health %)",
+      "VPN peer path table in site SLE detail view with loss, latency, jitter, MOS",
+      "VPNPeerBackgroundWorker for continuous peer path collection (5-minute intervals)"
+    ],
+    "api-changes": [
+      "MistAPIClient: get_vpn_peer_stats() using searchOrgPeerPathStats endpoint",
+      "MistAPIClient: get_org_vpn_peer_stats(), get_site_vpn_peer_stats() convenience methods",
+      "DashboardDataProvider: get_vpn_peer_summary(), get_site_vpn_peers(), get_vpn_peer_table_data()"
+    ],
+    "data-model-changes": [
+      "Redis key pattern: mistwan:vpn_peers:{site_id}:{mac} for per-gateway storage",
+      "VPN peer data includes: vpn_name, peer_router_name, port_id, up, latency, loss, jitter, mos",
+      "6 new cache methods for VPN peer storage and retrieval"
+    ],
+    "dashboard": [
+      "New VPN Peer Path row with 4 status bricks on main overview",
+      "_build_vpn_peer_table() for site-level peer path display",
+      "_build_vpn_peer_section() for VPN section with count badge",
+      "Conditional styling: Up=green, Down=red, high loss=orange, low MOS=yellow"
+    ],
+    "performance": [
+      "5-minute refresh interval for VPN peer collection",
+      "Rate-limited collection: 5 seconds between API calls",
+      "31-day TTL for historical data persistence"
+    ]
+  },
+  "26.01.31.09.30": {
+    "feature-additions": [
+      "Site SLE detail drill-down view when clicking degraded site row",
+      "SLE summary time-series chart showing total vs degraded over time",
+      "SLE histogram bar chart showing score distribution",
+      "Impacted gateways table with degraded percentage",
+      "Impacted interfaces table with degraded percentage",
+      "Classifier breakdown display (network-loss, jitter, latency)"
+    ],
+    "api-changes": [
+      "_build_site_sle_detail() method for full detail view rendering",
+      "_build_sle_summary_chart() for time-series visualization",
+      "_build_sle_histogram_chart() for score distribution",
+      "_build_impacted_gateways_table() and _build_impacted_interfaces_table()"
+    ],
+    "dashboard": [
+      "SLE Degraded Sites table now has row_selectable=single",
+      "New callback: handle_sle_table_click() for drill-down navigation",
+      "New callback: handle_sle_back_click() to return to main view",
+      "Cache status badge (Fresh/Stale) in detail view header"
+    ],
+    "documentation": [
+      "Task F4: Dashboard Integration marked complete",
+      "Full Site-Level SLE Deep-Dive feature marked complete"
+    ]
+  },
   "26.01.30.23.45": {
     "feature-additions": [
       "Site-level SLE collector for degraded site deep-dives",

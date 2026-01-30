@@ -4,8 +4,9 @@
 
 ### Site-Level SLE Deep-Dive Data Collection
 
-**Status:** In Progress (Tasks F1-F3 Complete)  
-**Started:** 2026-01-29
+**Status:** Completed (Tasks F1-F4 Complete)  
+**Started:** 2026-01-29  
+**Completed:** 2026-01-30
 
 **Goal:** Collect detailed site-level SLE data for degraded sites. Use org-level API to identify degraded sites, then fetch detailed diagnostics only for those sites. Smart time-series fetching with 10-minute resolution across 7 days, using incremental fetching when historical data exists.
 
@@ -14,7 +15,7 @@
 #### Raw Endpoint Reference (Provided by User)
 
 | Endpoint | Method | Scope | Purpose |
-|----------|--------|-------|---------|
+| -------- | ------ | ----- | ------- |
 | `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/threshold` | `getSiteSleThreshold` | Site | Get SLE threshold config |
 | `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/summary` | `getSiteSleSummary` | Site | Get SLE summary with classifiers (time-series) |
 | `/sites/{site_id}/sle/site/{site_id}/metric/{metric}/histogram` | `getSiteSleHistogram` | Site | Get histogram distribution |
@@ -29,10 +30,12 @@
 #### Org-Level vs Site-Level Strategy
 
 **Org-Level (Already Implemented):**
+
 - `getOrgSitesSle(sle="wan")` - SLE scores for all sites (gateway-health, wan-link-health, application-health)
 - `getOrgSle(metric="worst-sites-by-sle")` - Worst performing sites list
 
 **Site-Level (New - For Degraded Sites Only):**
+
 - Use org-level API to identify sites with SLE < 90%
 - Fetch detailed site-level diagnostics ONLY for degraded sites
 - Reduces API calls from 3,208 sites to ~100-200 degraded sites
@@ -42,6 +45,7 @@
 #### API Testing Results (2026-01-29)
 
 **getSiteSleHistogram Response:**
+
 ```json
 {
   "metric": "wan-link-health-v2",
@@ -56,6 +60,7 @@
 ```
 
 **getSiteSleSummary Response (Time-Series):**
+
 ```json
 {
   "start": 1769660283,
@@ -80,6 +85,7 @@
 ```
 
 **listSiteSleImpactedGateways Response:**
+
 ```json
 {
   "start": 1769660301,
@@ -99,6 +105,7 @@
 ```
 
 **listSiteSleImpactedInterfaces Response:**
+
 ```json
 {
   "start": 1769660309,
@@ -116,6 +123,7 @@
 ```
 
 **getSiteSleThreshold Response:**
+
 ```json
 {
   "metric": "wan-link-health-v2",
@@ -129,6 +137,7 @@
 ```
 
 **Available WAN-Link-Health Classifiers:**
+
 - `interface-negotiation-failed`
 - `interface-port-down`
 - `interface-vpn`
@@ -147,6 +156,7 @@
 #### Implementation Tasks
 
 ##### Task F1: MistAPIClient Site-Level SLE Methods
+
 - [x] Add `get_site_sle_summary(site_id, metric, start, end, duration)` to MistAPIClient
 - [x] Add `get_site_sle_histogram(site_id, metric, start, end, duration)` to MistAPIClient
 - [x] Add `get_site_sle_threshold(site_id, metric)` to MistAPIClient
@@ -155,6 +165,7 @@
 - [x] Support smart start_time from cached last timestamp for incremental fetching
 
 ##### Task F2: Redis Storage Schema for Site-Level SLE
+
 - [x] Design key patterns:
   - `mistwan:site_sle:{site_id}:summary:{metric}` - Summary time-series
   - `mistwan:site_sle:{site_id}:histogram:{metric}` - Histogram data
@@ -168,6 +179,7 @@
 - [x] TTL: 7 days for all site-level SLE data
 
 ##### Task F3: Degraded Site Collection Workflow
+
 - [x] Create `SLECollector` class in `src/collectors/sle_collector.py`:
   - `collect_for_site()` - Collect all SLE data for a single site
   - `collect_for_degraded_sites()` - Priority collection for degraded sites
@@ -180,11 +192,12 @@
 - [x] Add `get_site_sle_details()` method to `DashboardDataProvider`
 
 ##### Task F4: Dashboard Integration
-- [ ] Add "Site Details" drill-down view when clicking degraded site row
-- [ ] Display SLE summary time-series chart
-- [ ] Display histogram as bar chart
-- [ ] List impacted gateways and interfaces in tables
-- [ ] Show classifier breakdown (network-loss, jitter, latency, etc.)
+
+- [x] Add "Site Details" drill-down view when clicking degraded site row
+- [x] Display SLE summary time-series chart
+- [x] Display histogram as bar chart
+- [x] List impacted gateways and interfaces in tables
+- [x] Show classifier breakdown (network-loss, jitter, latency, etc.)
 
 ---
 
@@ -197,8 +210,9 @@
 **Goal:** Improve performance by applying async I/O and parallel processing patterns where appropriate.
 
 **Analysis Summary:**
+
 | Module | Type | Current State | Recommended Optimization |
-|--------|------|---------------|-------------------------|
+| ------ | ---- | ------------- | ------------------------ |
 | `run_dashboard.py` | Mixed | ThreadPoolExecutor | Already parallel (no change) |
 | `redis_cache.py` | I/O-bound | sync redis loops | Redis Pipeline for bulk ops |
 | `kpi_calculator.py` | CPU-bound | single-threaded | ProcessPoolExecutor option |
@@ -211,6 +225,7 @@
 ### Implementation Order (Lowest Effort First)
 
 #### Task 1: Redis Pipeline for Bulk Operations
+
 - [x] **Status:** Completed (2026-01-29)
 - **Effort:** Low
 - **Impact:** Medium (5-10x faster bulk reads)
@@ -225,6 +240,7 @@
   - [x] Tested: Dashboard starts and runs without errors
 
 #### Task 2: ProcessPoolExecutor for KPI Bulk Calculations
+
 - [x] **Status:** Completed (2026-01-30)
 - **Effort:** Low
 - **Impact:** Medium (parallel CPU work for large datasets)
@@ -236,6 +252,7 @@
   - [x] Original methods preserved for backward compatibility
 
 #### Task 3: ProcessPoolExecutor for Time Aggregator
+
 - [x] **Status:** Completed (2026-01-30)
 - **Effort:** Low
 - **Impact:** Medium (parallel aggregation)
@@ -249,6 +266,7 @@
   - [x] Original class methods preserved for backward compatibility
 
 #### Task 4: Background Refresh Async
+
 - [x] **Status:** Completed (2026-01-30)
 - **Effort:** Medium
 - **Impact:** High (parallel site refresh)
@@ -265,6 +283,7 @@
   - [x] Legacy `BackgroundRefreshWorker` preserved for backward compatibility
 
 #### Task 5: Mist API Client Async
+
 - [x] **Status:** Completed (2026-01-30)
 - **Effort:** High
 - **Impact:** High (parallel API calls)
@@ -398,7 +417,7 @@ GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/application-health/summary
 
 ---
 
-#### Implementation Tasks
+#### SLE and Alarms Implementation Tasks
 
 ##### Task A: Org-Level SLE Data Collection
 

@@ -9,7 +9,7 @@ import csv
 import io
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import dash
 from dash import dcc, html, dash_table, callback, Input, Output, State
@@ -442,10 +442,10 @@ class WANPerformanceDashboard:
                         interval=self.REFRESH_INTERVAL_MS,
                         n_intervals=0
                     ),
-                    # Faster interval for status updates
+                    # Status bar interval (less frequent to reduce overhead)
                     dcc.Interval(
                         id="status-interval",
-                        interval=5000,  # 5 seconds
+                        interval=15000,  # 15 seconds
                         n_intervals=0
                     )
                 ], width=5)
@@ -487,6 +487,14 @@ class WANPerformanceDashboard:
                 dbc.Col(self._build_status_card("sle-degraded-sites", "SLE Degraded", "0", "warning"), width=2),
                 dbc.Col(self._build_status_card("alarms-total", "Alarms", "0", "high"), width=2),
                 dbc.Col(self._build_status_card("alarms-critical", "Critical", "0", "critical"), width=2),
+            ], className="mb-3"),
+            
+            # VPN Peer Path Row
+            dbc.Row([
+                dbc.Col(self._build_status_card("vpn-total-peers", "VPN Peers", "0", "info"), width=2),
+                dbc.Col(self._build_status_card("vpn-paths-up", "Paths Up", "0", "normal"), width=2),
+                dbc.Col(self._build_status_card("vpn-paths-down", "Paths Down", "0", "critical"), width=2),
+                dbc.Col(self._build_status_card("vpn-health-pct", "VPN Health %", "-", "info"), width=2),
             ], className="mb-4"),
             
             # Drilldown Content Area
@@ -913,6 +921,807 @@ class WANPerformanceDashboard:
         
         return fig
     
+    def _build_site_sle_detail(self, site_id: str, site_name: str) -> html.Div:
+        """
+        Build site SLE detail view with charts and tables.
+        
+        Shows:
+        - Back button to return to overview
+        - SLE summary time-series chart
+        - SLE histogram as bar chart
+        - Impacted gateways table
+        - Impacted interfaces table
+        - Classifier breakdown
+        
+        Args:
+            site_id: Mist site UUID
+            site_name: Human-readable site name
+        
+        Returns:
+            Dash HTML component with full site SLE detail view
+        """
+        if not self.data_provider:
+            return html.Div([
+                dbc.Alert("Data provider not available", color="warning")
+            ])
+        
+        # Get SLE details from cache
+        sle_details = self.data_provider.get_site_sle_details(site_id, "wan-link-health")
+        
+        if not sle_details.get("available", False):
+            return html.Div([
+                self._build_sle_detail_header(site_name, site_id),
+                dbc.Alert([
+                    html.Strong("SLE data not yet available for this site. "),
+                    html.Span("Background collection is in progress. Please check back shortly.")
+                ], color="info", className="mt-3")
+            ])
+        
+        # Build summary chart
+        summary_data = sle_details.get("summary", {})
+        summary_chart = self._build_sle_summary_chart(summary_data)
+        
+        # Build histogram chart (uses summary data to calculate health distribution)
+        histogram_chart = self._build_sle_histogram_chart(summary_data, sle_details.get("histogram", {}))
+        
+        # Build impacted tables
+        impacted_gateways = sle_details.get("impacted_gateways", {})
+        impacted_interfaces = sle_details.get("impacted_interfaces", {})
+        
+        # Extract classifier breakdown from summary
+        classifier_breakdown = self._extract_classifier_breakdown(sle_details.get("summary", {}))
+        
+        # Cache freshness indicator
+        cache_fresh = sle_details.get("cache_fresh", False)
+        last_fetch = sle_details.get("last_fetch_timestamp")
+        
+        cache_status = dbc.Badge(
+            "Fresh" if cache_fresh else "Stale",
+            color="success" if cache_fresh else "warning",
+            className="ms-2"
+        )
+        
+        last_fetch_text = ""
+        if last_fetch:
+            fetch_time = datetime.fromtimestamp(last_fetch, tz=timezone.utc)
+            last_fetch_text = fetch_time.strftime("%Y-%m-%d %H:%M UTC")
+        
+        return html.Div([
+            # Header with back button
+            self._build_sle_detail_header(site_name, site_id),
+            
+            # Cache status row
+            dbc.Row([
+                dbc.Col([
+                    html.Small([
+                        html.Span("Data Status: ", className="text-muted"),
+                        cache_status,
+                        html.Span(f" | Last Updated: {last_fetch_text}", className="text-muted ms-2") if last_fetch_text else ""
+                    ])
+                ])
+            ], className="mb-3"),
+            
+            # Charts row
+            dbc.Row([
+                # Summary time-series chart
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("SLE Health Over Time"),
+                        dbc.CardBody([
+                            dcc.Graph(
+                                id="sle-summary-chart",
+                                figure=summary_chart
+                            )
+                        ])
+                    ])
+                ], width=8),
+                
+                # Health time distribution chart
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Health Time Distribution"),
+                        dbc.CardBody([
+                            dcc.Graph(
+                                id="sle-histogram-chart",
+                                figure=histogram_chart
+                            )
+                        ])
+                    ])
+                ], width=4)
+            ], className="mb-4"),
+            
+            # Classifier breakdown row
+            dbc.Row([
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader("Classifier Breakdown (Root Cause Analysis)"),
+                        dbc.CardBody([
+                            self._build_classifier_breakdown_display(classifier_breakdown)
+                        ])
+                    ])
+                ])
+            ], className="mb-4"),
+            
+            # Impacted resources row
+            dbc.Row([
+                # Impacted gateways table
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader([
+                            html.Span("Impacted Gateways"),
+                            dbc.Badge(
+                                str(len(impacted_gateways.get("gateways", []))),
+                                color="warning",
+                                className="ms-2"
+                            )
+                        ]),
+                        dbc.CardBody([
+                            self._build_impacted_gateways_table(impacted_gateways)
+                        ])
+                    ])
+                ], width=6),
+                
+                # Impacted interfaces table
+                dbc.Col([
+                    dbc.Card([
+                        dbc.CardHeader([
+                            html.Span("Impacted Interfaces"),
+                            dbc.Badge(
+                                str(len(impacted_interfaces.get("interfaces", []))),
+                                color="warning",
+                                className="ms-2"
+                            )
+                        ]),
+                        dbc.CardBody([
+                            self._build_impacted_interfaces_table(impacted_interfaces)
+                        ])
+                    ])
+                ], width=6)
+            ]),
+            
+            # VPN Peer Paths row
+            self._build_vpn_peer_section(site_id)
+        ])
+    
+    def _build_sle_detail_header(self, site_name: str, site_id: str) -> dbc.Row:
+        """Build header row with back button and site info."""
+        return dbc.Row([
+            dbc.Col([
+                dbc.Button(
+                    [html.I(className="bi bi-arrow-left me-2"), "Back to Overview"],
+                    id="sle-detail-back-btn",
+                    color="secondary",
+                    size="sm",
+                    className="me-3"
+                ),
+                html.H4(f"Site SLE Details: {site_name}", className="d-inline")
+            ], className="d-flex align-items-center"),
+            dbc.Col([
+                html.Small(f"Site ID: {site_id}", className="text-muted float-end")
+            ], className="text-end")
+        ], className="mb-4 border-bottom pb-3")
+    
+    def _build_sle_summary_chart(self, summary_data: dict) -> go.Figure:
+        """
+        Build time-series chart showing SLE health percentage over time.
+        
+        Shows the actual SLE score (0-100%) which is more meaningful than
+        raw sample counts. Also shows a threshold line at 95%.
+        
+        Data structure from Mist API:
+        - sle.samples.value[]: array of SLE percentage values per interval
+        - sle.samples.total[]: total samples (used if value not available)
+        - sle.samples.degraded[]: degraded samples
+        - sle.interval: seconds between samples
+        
+        Returns:
+            Plotly figure with SLE health percentage over time
+        """
+        fig = go.Figure()
+        
+        # Extract data from Mist API structure
+        sle_data = summary_data.get("sle", {})
+        samples = sle_data.get("samples", {})
+        value_array = samples.get("value", [])
+        total_values = samples.get("total", [])
+        degraded_values = samples.get("degraded", [])
+        interval = sle_data.get("interval", 3600)
+        start_time = summary_data.get("start", 0)
+        
+        if not start_time:
+            fig.add_annotation(
+                text="No summary data available yet",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color=self.COLORS["text_secondary"])
+            )
+        else:
+            timestamps = []
+            sle_percentages = []
+            
+            # Use value[] if available, otherwise calculate from total/degraded
+            use_calculated = not value_array or all(v is None for v in value_array)
+            source_array = total_values if use_calculated else value_array
+            
+            for index, val in enumerate(source_array):
+                if val is None:
+                    continue
+                    
+                ts = start_time + (index * interval)
+                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                timestamps.append(dt)
+                
+                if use_calculated:
+                    # Calculate percentage: (total - degraded) / total * 100
+                    total = val
+                    degraded = degraded_values[index] if index < len(degraded_values) and degraded_values[index] else 0
+                    if total > 0:
+                        pct = ((total - degraded) / total) * 100
+                    else:
+                        pct = 100.0
+                    sle_percentages.append(pct)
+                else:
+                    # Use the value directly (already a percentage)
+                    sle_percentages.append(val)
+            
+            if timestamps:
+                # Add threshold line at 95%
+                fig.add_hline(
+                    y=95, 
+                    line_dash="dash", 
+                    line_color=self.COLORS["warning"],
+                    annotation_text="95% Target",
+                    annotation_position="right"
+                )
+                
+                # SLE percentage line with color gradient based on value
+                fig.add_trace(go.Scatter(
+                    x=timestamps,
+                    y=sle_percentages,
+                    mode="lines+markers",
+                    name="SLE Health",
+                    line=dict(color=self.COLORS["info"], width=2),
+                    marker=dict(size=4),
+                    fill="tozeroy",
+                    fillcolor="rgba(40, 167, 69, 0.2)",
+                    hovertemplate="Time: %{x}<br>SLE: %{y:.1f}%<extra></extra>"
+                ))
+                
+                # Add colored regions to show health status
+                for i, (ts, pct) in enumerate(zip(timestamps, sle_percentages)):
+                    if pct < 90:
+                        fig.add_trace(go.Scatter(
+                            x=[ts],
+                            y=[pct],
+                            mode="markers",
+                            marker=dict(color=self.COLORS["critical"], size=8),
+                            showlegend=False,
+                            hoverinfo="skip"
+                        ))
+                    elif pct < 95:
+                        fig.add_trace(go.Scatter(
+                            x=[ts],
+                            y=[pct],
+                            mode="markers",
+                            marker=dict(color=self.COLORS["warning"], size=6),
+                            showlegend=False,
+                            hoverinfo="skip"
+                        ))
+        
+        fig.update_layout(
+            template="plotly_dark",
+            height=300,
+            margin=dict(l=40, r=20, t=20, b=40),
+            xaxis_title="Time",
+            yaxis_title="SLE Health %",
+            yaxis=dict(range=[0, 105]),  # 0-100% with some headroom
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        
+        return fig
+    
+    def _build_sle_histogram_chart(self, summary_data: dict, histogram_data: dict) -> go.Figure:
+        """
+        Build bar chart showing SLE health score distribution.
+        
+        Creates a meaningful histogram showing how much time was spent
+        at different health levels (e.g., how many hours at 95-100%,
+        how many at 90-95%, etc.)
+        
+        Args:
+            summary_data: Contains sle.samples arrays for calculating distribution
+            histogram_data: Original histogram from API (used as fallback)
+        
+        Returns:
+            Plotly figure with SLE score distribution bars
+        """
+        fig = go.Figure()
+        
+        # Try to build meaningful distribution from summary data
+        sle_data = summary_data.get("sle", {})
+        samples = sle_data.get("samples", {})
+        value_array = samples.get("value", [])
+        total_values = samples.get("total", [])
+        degraded_values = samples.get("degraded", [])
+        interval = sle_data.get("interval", 3600)  # seconds per sample
+        
+        # Calculate SLE percentages for each interval
+        sle_percentages = []
+        use_calculated = not value_array or all(v is None for v in value_array)
+        source_array = total_values if use_calculated else value_array
+        
+        for index, val in enumerate(source_array):
+            if val is None:
+                continue
+            
+            if use_calculated:
+                total = val
+                degraded = degraded_values[index] if index < len(degraded_values) and degraded_values[index] else 0
+                if total > 0:
+                    pct = ((total - degraded) / total) * 100
+                else:
+                    pct = 100.0
+                sle_percentages.append(pct)
+            else:
+                sle_percentages.append(val)
+        
+        if not sle_percentages:
+            fig.add_annotation(
+                text="No SLE data available for distribution",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=14, color=self.COLORS["text_secondary"])
+            )
+        else:
+            # Create buckets for SLE health distribution
+            # Focus on the ranges that matter: <80%, 80-90%, 90-95%, 95-99%, 99-100%
+            buckets = {
+                "< 80%": 0,
+                "80-90%": 0,
+                "90-95%": 0,
+                "95-99%": 0,
+                "99-100%": 0
+            }
+            
+            hours_per_sample = interval / 3600  # Convert interval to hours
+            
+            for pct in sle_percentages:
+                if pct < 80:
+                    buckets["< 80%"] += hours_per_sample
+                elif pct < 90:
+                    buckets["80-90%"] += hours_per_sample
+                elif pct < 95:
+                    buckets["90-95%"] += hours_per_sample
+                elif pct < 99:
+                    buckets["95-99%"] += hours_per_sample
+                else:
+                    buckets["99-100%"] += hours_per_sample
+            
+            labels = list(buckets.keys())
+            values = list(buckets.values())
+            
+            # Color based on health level (green = good, red = bad)
+            colors = [
+                self.COLORS["critical"],   # < 80% - red
+                self.COLORS["warning"],    # 80-90% - orange
+                "#ffc107",                 # 90-95% - yellow
+                self.COLORS["info"],       # 95-99% - blue
+                self.COLORS["healthy"]     # 99-100% - green
+            ]
+            
+            fig.add_trace(go.Bar(
+                x=labels,
+                y=values,
+                marker_color=colors,
+                text=[f"{v:.1f}h" for v in values],
+                textposition="auto",
+                hovertemplate="Health Range: %{x}<br>Time: %{y:.1f} hours<extra></extra>"
+            ))
+        
+        fig.update_layout(
+            template="plotly_dark",
+            height=300,
+            margin=dict(l=40, r=20, t=20, b=40),
+            xaxis_title="SLE Health Range",
+            yaxis_title="Hours",
+            showlegend=False
+        )
+        
+        return fig
+    
+    def _extract_classifier_breakdown(self, summary_data: dict) -> dict:
+        """
+        Extract classifier breakdown from summary data.
+        
+        Mist API structure has classifiers[] array with:
+        - name: classifier name (e.g., 'interface-port-down')
+        - impact.num_gateways: number of gateways impacted
+        - samples.duration[]: array of degraded minutes per interval
+        
+        Returns:
+            Dictionary with classifier names and their total impact minutes
+        """
+        classifiers = {}
+        
+        classifier_list = summary_data.get("classifiers", [])
+        
+        for classifier in classifier_list:
+            name = classifier.get("name", "Unknown")
+            impact = classifier.get("impact", {})
+            samples = classifier.get("samples", {})
+            duration_array = samples.get("duration", [])
+            
+            # Calculate total degraded time from duration array
+            total_minutes = sum(d for d in duration_array if d is not None and d > 0)
+            
+            # Only include classifiers with impact
+            if total_minutes > 0 or impact.get("num_gateways", 0) > 0:
+                # Format name for display (replace hyphens with spaces, title case)
+                display_name = name.replace("-", " ").title()
+                classifiers[display_name] = round(total_minutes, 1)
+        
+        return classifiers
+    
+    def _build_classifier_breakdown_display(self, classifiers: dict) -> html.Div:
+        """
+        Build visual display for classifier breakdown.
+        
+        Args:
+            classifiers: Dictionary of classifier names and degraded minutes
+        
+        Returns:
+            Dash HTML component with classifier breakdown
+        """
+        if not classifiers:
+            return html.Div(
+                html.P("No classifier data available", className="text-muted"),
+                className="text-center"
+            )
+        
+        # Sort by minutes descending to show worst first
+        sorted_classifiers = sorted(classifiers.items(), key=lambda x: x[1], reverse=True)
+        
+        # Find max value for scaling bars
+        max_minutes = max(classifiers.values()) if classifiers.values() else 1
+        
+        items = []
+        for name, minutes in sorted_classifiers:
+            # Format time display
+            if minutes >= 60:
+                hours = minutes / 60
+                display_value = f"{hours:.1f} hrs"
+            else:
+                display_value = f"{minutes:.1f} min"
+            
+            # Calculate bar width as percentage of max
+            bar_pct = (minutes / max_minutes) * 100 if max_minutes > 0 else 0
+            
+            # Color based on severity (more minutes = worse)
+            if minutes > 120:  # More than 2 hours
+                bar_color = "danger"
+            elif minutes > 30:  # More than 30 minutes
+                bar_color = "warning"
+            else:
+                bar_color = "success"
+            
+            items.append(
+                dbc.Row([
+                    dbc.Col([
+                        html.Span(name, className="fw-bold", style={"fontSize": "0.85rem"})
+                    ], width=4),
+                    dbc.Col([
+                        dbc.Progress(
+                            value=bar_pct,
+                            color=bar_color,
+                            className="mb-1",
+                            style={"height": "18px"}
+                        )
+                    ], width=5),
+                    dbc.Col([
+                        html.Span(display_value, className="text-muted", style={"fontSize": "0.85rem"})
+                    ], width=3, className="text-end")
+                ], className="mb-2")
+            )
+        
+        return html.Div(items)
+    
+    def _build_impacted_gateways_table(self, gateways_data: dict) -> dash_table.DataTable:
+        """
+        Build table showing impacted gateways.
+        
+        Mist API structure has gateways[] array with:
+        - gateway_mac, name, duration, degraded, total
+        - gateway_model, gateway_version
+        
+        Returns:
+            Dash DataTable component
+        """
+        gateways = gateways_data.get("gateways", [])
+        
+        # Transform data for table display
+        table_data = []
+        for gw in gateways:
+            total = gw.get("total", 0) or 1  # Avoid division by zero
+            degraded = gw.get("degraded", 0) or 0
+            degraded_pct = round((degraded / total) * 100, 1) if total > 0 else 0
+            
+            table_data.append({
+                "gateway_name": gw.get("name", gw.get("gateway_mac", "Unknown")),
+                "mac": gw.get("gateway_mac", ""),
+                "model": gw.get("gateway_model", ""),
+                "degraded_min": round(degraded, 1),
+                "degraded_pct": degraded_pct
+            })
+        
+        return dash_table.DataTable(
+            columns=[
+                {"name": "Gateway Name", "id": "gateway_name"},
+                {"name": "MAC", "id": "mac"},
+                {"name": "Model", "id": "model"},
+                {"name": "Degraded Min", "id": "degraded_min"},
+                {"name": "Degraded %", "id": "degraded_pct"}
+            ],
+            data=table_data,
+            style_cell={
+                "backgroundColor": self.COLORS["bg_secondary"],
+                "color": self.COLORS["text_primary"],
+                "textAlign": "left",
+                "border": f"1px solid {self.COLORS['bg_border']}",
+                "padding": "6px"
+            },
+            style_header={
+                "backgroundColor": self.COLORS["bg_card"],
+                "fontWeight": "bold",
+                "borderBottom": f"2px solid {self.COLORS['primary']}"
+            },
+            style_data_conditional=cast(Any, [
+                {
+                    "if": {"filter_query": "{degraded_pct} > 50"},
+                    "backgroundColor": "#dc3545",
+                    "color": "white"
+                },
+                {
+                    "if": {"filter_query": "{degraded_pct} > 20 && {degraded_pct} <= 50"},
+                    "backgroundColor": "#fd7e14",
+                    "color": "white"
+                }
+            ]),
+            page_size=5,
+            sort_action="native"
+        )
+    
+    def _build_impacted_interfaces_table(self, interfaces_data: dict) -> dash_table.DataTable:
+        """
+        Build table showing impacted interfaces.
+        
+        Mist API structure has interfaces[] array with:
+        - interface_name, gateway_name, gateway_mac
+        - duration, degraded, total
+        
+        Returns:
+            Dash DataTable component
+        """
+        interfaces = interfaces_data.get("interfaces", [])
+        
+        # Transform data for table display
+        table_data = []
+        for iface in interfaces:
+            total = iface.get("total", 0) or 1  # Avoid division by zero
+            degraded = iface.get("degraded", 0) or 0
+            degraded_pct = round((degraded / total) * 100, 1) if total > 0 else 0
+            
+            table_data.append({
+                "interface_name": iface.get("interface_name", "Unknown"),
+                "gateway_name": iface.get("gateway_name", ""),
+                "degraded_min": round(degraded, 1),
+                "degraded_pct": degraded_pct
+            })
+        
+        return dash_table.DataTable(
+            columns=[
+                {"name": "Interface", "id": "interface_name"},
+                {"name": "Gateway", "id": "gateway_name"},
+                {"name": "Degraded Min", "id": "degraded_min"},
+                {"name": "Degraded %", "id": "degraded_pct"}
+            ],
+            data=table_data,
+            style_cell={
+                "backgroundColor": self.COLORS["bg_secondary"],
+                "color": self.COLORS["text_primary"],
+                "textAlign": "left",
+                "border": f"1px solid {self.COLORS['bg_border']}",
+                "padding": "6px"
+            },
+            style_header={
+                "backgroundColor": self.COLORS["bg_card"],
+                "fontWeight": "bold",
+                "borderBottom": f"2px solid {self.COLORS['primary']}"
+            },
+            style_data_conditional=cast(Any, [
+                {
+                    "if": {"filter_query": "{degraded_pct} > 50"},
+                    "backgroundColor": "#dc3545",
+                    "color": "white"
+                },
+                {
+                    "if": {"filter_query": "{degraded_pct} > 20 && {degraded_pct} <= 50"},
+                    "backgroundColor": "#fd7e14",
+                    "color": "white"
+                }
+            ]),
+            page_size=5,
+            sort_action="native"
+        )
+    
+    def _build_vpn_peer_table(self, site_id: str) -> dash_table.DataTable:
+        """
+        Build VPN peer paths table for a specific site.
+        
+        Shows:
+        - VPN Name
+        - Peer Router
+        - Status (Up/Down)
+        - Latency (ms)
+        - Loss (%)
+        - Jitter (ms)
+        - MOS score
+        
+        Args:
+            site_id: Mist site UUID
+        
+        Returns:
+            Dash DataTable component with VPN peer data
+        """
+        if not self.data_provider:
+            return dash_table.DataTable(
+                columns=[{"name": "Status", "id": "status"}],
+                data=[{"status": "Data provider not available"}],
+                style_cell={"backgroundColor": self.COLORS["bg_secondary"]}
+            )
+        
+        # Get VPN peer data for this site
+        table_data = self.data_provider.get_vpn_peer_table_data(site_id)
+        
+        if not table_data:
+            return dash_table.DataTable(
+                columns=[{"name": "Status", "id": "status"}],
+                data=[{"status": "No VPN peer paths found for this site"}],
+                style_cell={
+                    "backgroundColor": self.COLORS["bg_secondary"],
+                    "color": self.COLORS["text_secondary"],
+                    "textAlign": "center",
+                    "padding": "20px"
+                }
+            )
+        
+        return dash_table.DataTable(
+            id="vpn-peer-table",
+            columns=[
+                {"name": "VPN Name", "id": "vpn_name"},
+                {"name": "Peer Router", "id": "peer_router_name"},
+                {"name": "Local Port", "id": "port_id"},
+                {"name": "Remote Port", "id": "peer_port_id"},
+                {"name": "Status", "id": "status"},
+                {"name": "Latency (ms)", "id": "latency_ms", "type": "numeric"},
+                {"name": "Loss (%)", "id": "loss_pct", "type": "numeric"},
+                {"name": "Jitter (ms)", "id": "jitter_ms", "type": "numeric"},
+                {"name": "MOS", "id": "mos", "type": "numeric"}
+            ],
+            data=table_data,
+            style_cell={
+                "backgroundColor": self.COLORS["bg_secondary"],
+                "color": self.COLORS["text_primary"],
+                "textAlign": "left",
+                "border": f"1px solid {self.COLORS['bg_border']}",
+                "padding": "8px",
+                "minWidth": "80px"
+            },
+            style_header={
+                "backgroundColor": self.COLORS["bg_card"],
+                "fontWeight": "bold",
+                "borderBottom": f"2px solid {self.COLORS['primary']}"
+            },
+            style_data_conditional=cast(Any, [
+                {
+                    "if": {"filter_query": "{status} = 'Down'"},
+                    "backgroundColor": "#dc3545",
+                    "color": "white"
+                },
+                {
+                    "if": {"filter_query": "{status} = 'Up'"},
+                    "backgroundColor": "#198754",
+                    "color": "white"
+                },
+                {
+                    "if": {"filter_query": "{loss_pct} > 1"},
+                    "backgroundColor": "#fd7e14",
+                    "color": "white"
+                },
+                {
+                    "if": {"filter_query": "{mos} < 3"},
+                    "backgroundColor": "#ffc107",
+                    "color": "black"
+                }
+            ]),
+            page_size=10,
+            sort_action="native",
+            filter_action="native",
+            style_table={"overflowX": "auto"}
+        )
+    
+    def _build_vpn_peer_section(self, site_id: str) -> dbc.Row:
+        """
+        Build the complete VPN peer paths section with header and table.
+        
+        Args:
+            site_id: Mist site UUID
+        
+        Returns:
+            dbc.Row containing VPN peer card with count badge
+        """
+        # Get peer count for badge
+        peer_count = 0
+        if self.data_provider:
+            peers = self.data_provider.get_vpn_peer_table_data(site_id)
+            peer_count = len(peers)
+        
+        # Determine badge color based on count
+        badge_color = "info"
+        if peer_count == 0:
+            badge_color = "secondary"
+        
+        return dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.Span("VPN Peer Paths"),
+                        dbc.Badge(
+                            str(peer_count),
+                            color=badge_color,
+                            className="ms-2"
+                        )
+                    ]),
+                    dbc.CardBody([
+                        self._build_vpn_peer_table(site_id)
+                    ])
+                ])
+            ])
+        ], className="mt-4")
+    
+    def _get_sle_cache_status(self) -> Optional[Dict[str, int]]:
+        """
+        Get SLE cache status (fresh/stale/missing counts).
+        
+        Returns:
+            Dictionary with 'fresh', 'stale', 'missing', 'total' counts or None
+        """
+        try:
+            if not self.data_provider:
+                return None
+            
+            # Get all site IDs from data provider
+            site_ids = []
+            if hasattr(self.data_provider, 'sle_data') and self.data_provider.sle_data:
+                results = self.data_provider.sle_data.get("results", [])
+                site_ids = [r.get("site_id") for r in results if r.get("site_id")]
+            elif hasattr(self.data_provider, 'sites'):
+                site_ids = [s.get("id") for s in self.data_provider.sites if s.get("id")]
+            
+            if not site_ids:
+                return None
+            
+            # Get cache instance and check status
+            from src.cache.redis_cache import RedisCache
+            cache = RedisCache()
+            if not cache.is_connected():
+                return None
+            
+            return cache.get_site_sle_cache_status(site_ids, max_age_seconds=3600)
+            
+        except Exception as error:
+            logger.debug(f"Error getting SLE cache status: {error}")
+            return None
+    
     def _get_loading_state(self, timestamp: str) -> list:
         """
         Return loading state values for all dashboard components.
@@ -977,6 +1786,11 @@ class WANPerformanceDashboard:
             "0",    # sle degraded sites
             "0",    # alarms total
             "0",    # alarms critical
+            # VPN peer path metrics
+            "...",  # vpn total peers
+            "...",  # vpn paths up
+            "...",  # vpn paths down
+            "-",    # vpn health pct
             # Tables and charts
             [],     # congested table data
             [],     # sle degraded table data
@@ -1017,6 +1831,11 @@ class WANPerformanceDashboard:
                 Output("sle-degraded-sites", "children"),
                 Output("alarms-total", "children"),
                 Output("alarms-critical", "children"),
+                # VPN peer path metrics
+                Output("vpn-total-peers", "children"),
+                Output("vpn-paths-up", "children"),
+                Output("vpn-paths-down", "children"),
+                Output("vpn-health-pct", "children"),
                 # Tables and charts
                 Output("top-congested-table", "data"),
                 Output("sle-degraded-table", "data"),
@@ -1093,21 +1912,24 @@ class WANPerformanceDashboard:
             alarms_total = str(alarms_summary.get("total", 0))
             alarms_critical = str(alarms_summary.get("critical_count", 0))
             
-            # Charts - log what data we're passing
+            # Charts data
             util_dist = data.get("utilization_dist", {})
             region_summary = data.get("region_summary", [])
             trends_data = data.get("trends", [])
             throughput_data = data.get("throughput", [])
             
-            logger.info(f"[CHART] Utilization dist: {util_dist}")
-            logger.info(f"[CHART] Region summary: {len(region_summary)} regions")
-            logger.info(f"[CHART] Trends: {len(trends_data)} points")
-            logger.info(f"[CHART] Throughput: {len(throughput_data)} points")
-            
             util_chart = self._build_utilization_chart(util_dist)
             region_chart = self._build_region_chart(region_summary)
             trends_chart = self._build_trends_chart(trends_data)
             throughput_chart = self._build_throughput_chart(throughput_data)
+            
+            # VPN peer path summary
+            vpn_summary = self.data_provider.get_vpn_peer_summary()
+            vpn_total_peers = str(vpn_summary.get("total_peers", 0))
+            vpn_paths_up = str(vpn_summary.get("paths_up", 0))
+            vpn_paths_down = str(vpn_summary.get("paths_down", 0))
+            vpn_health_pct = vpn_summary.get("health_percentage", 0)
+            vpn_health_str = f"{vpn_health_pct:.1f}%" if vpn_summary.get("total_peers", 0) > 0 else "-"
             
             return [
                 f"Last updated: {timestamp}",
@@ -1135,6 +1957,11 @@ class WANPerformanceDashboard:
                 sle_degraded,
                 alarms_total,
                 alarms_critical,
+                # VPN peer path metrics
+                vpn_total_peers,
+                vpn_paths_up,
+                vpn_paths_down,
+                vpn_health_str,
                 # Tables and charts
                 congested_data,
                 sle_degraded_data,
@@ -1208,15 +2035,23 @@ class WANPerformanceDashboard:
                 sites_count = len(self.data_provider.sites) if hasattr(self.data_provider, 'sites') else 0
                 records_count = len(self.data_provider.utilization_records) if has_records else 0
                 
-                # Get cache info - prioritize showing actual data counts
+                # Get cache info - show SLE fresh/stale/missing status
                 try:
                     if has_records and sites_count > 0:
-                        # Data is loaded - show useful stats
-                        wan_down = getattr(self.data_provider, 'wan_down_count', 0)
-                        wan_disabled = getattr(self.data_provider, 'wan_disabled_count', 0)
-                        cache_status = f"Cache: {sites_count} sites, {records_count} circuits"
-                        if wan_down > 0 or wan_disabled > 0:
-                            cache_status += f" (down:{wan_down}, disabled:{wan_disabled})"
+                        # Get SLE cache status for detailed breakdown
+                        sle_status = self._get_sle_cache_status()
+                        if sle_status and sle_status.get("total", 0) > 0:
+                            fresh = sle_status.get("fresh", 0)
+                            stale = sle_status.get("stale", 0)
+                            missing = sle_status.get("missing", 0)
+                            cache_status = f"SLE: {fresh} fresh, {stale} stale, {missing} missing"
+                        else:
+                            # Fallback to basic info
+                            wan_down = getattr(self.data_provider, 'wan_down_count', 0)
+                            wan_disabled = getattr(self.data_provider, 'wan_disabled_count', 0)
+                            cache_status = f"Cache: {sites_count} sites, {records_count} circuits"
+                            if wan_down > 0 or wan_disabled > 0:
+                                cache_status += f" (down:{wan_down}, disabled:{wan_disabled})"
                     elif sites_count > 0:
                         cache_status = f"Cache: {sites_count} sites (loading circuits...)"
                     elif hasattr(self.data_provider, 'cache_status'):
@@ -1231,8 +2066,21 @@ class WANPerformanceDashboard:
                     else:
                         cache_status = "Cache: Loading..."
                     
-                    # Refresh activity - check background worker first (most reliable)
-                    if hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
+                    # Refresh activity - check SLE background worker status
+                    if hasattr(self.data_provider, 'sle_background_worker') and self.data_provider.sle_background_worker:
+                        status = self.data_provider.sle_background_worker.get_status()
+                        cycles = status.get('collection_cycles', 0)
+                        collected = status.get('total_sites_collected', 0)
+                        degraded = status.get('degraded_sites_collected', 0)
+                        rate_limited = status.get('rate_limited', False)
+                        
+                        if rate_limited:
+                            refresh_activity = f"Refresh: RATE LIMITED (cycle {cycles})"
+                        elif status.get('running', False):
+                            refresh_activity = f"Refresh: Cycle {cycles} ({collected} sites, {degraded} degraded)"
+                        else:
+                            refresh_activity = f"Refresh: Idle (cycle {cycles})"
+                    elif hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
                         status = self.data_provider.background_worker.get_status()
                         cycles = status.get('refresh_cycles', 0)
                         refreshed = status.get('total_sites_refreshed', 0)
@@ -1343,6 +2191,54 @@ class WANPerformanceDashboard:
                 }
             
             raise PreventUpdate
+        
+        # SLE Degraded table row click handler for site detail view
+        @self.app.callback(
+            [
+                Output("drilldown-content", "children"),
+                Output("main-content", "style")
+            ],
+            [Input("sle-degraded-table", "active_cell")],
+            [State("sle-degraded-table", "data")],
+            prevent_initial_call=True
+        )
+        def handle_sle_table_click(active_cell, table_data):
+            """Handle click on SLE degraded table row to show site detail."""
+            if not active_cell or not table_data:
+                raise PreventUpdate
+            
+            row_index = active_cell.get("row")
+            if row_index is None or row_index >= len(table_data):
+                raise PreventUpdate
+            
+            row = table_data[row_index]
+            site_id = row.get("site_id")
+            site_name = row.get("site_name", "Unknown Site")
+            
+            if site_id:
+                # Build site SLE detail view
+                detail_view = self._build_site_sle_detail(site_id, site_name)
+                # Hide main content, show drilldown content
+                return detail_view, {"display": "none"}
+            
+            raise PreventUpdate
+        
+        # Back button handler to return to main view
+        @self.app.callback(
+            [
+                Output("drilldown-content", "children", allow_duplicate=True),
+                Output("main-content", "style", allow_duplicate=True)
+            ],
+            [Input("sle-detail-back-btn", "n_clicks")],
+            prevent_initial_call=True
+        )
+        def handle_sle_back_click(n_clicks):
+            """Handle back button click to return to main overview."""
+            if not n_clicks:
+                raise PreventUpdate
+            
+            # Clear drilldown content, show main content
+            return None, {"display": "block"}
         
         # CSV Export callbacks
         @self.app.callback(
