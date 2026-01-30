@@ -141,3 +141,7 @@ desktop.ini
 *.key
 credentials.json
 secrets.json
+
+# Large archive files
+*.tar
+*.tar.gz
