@@ -19,6 +19,7 @@ from src.models.facts import (
 from src.models.dimensions import DimSite, DimCircuit
 from src.views.rankings import RankingViews
 from src.views.current_state import CurrentStateViews
+from src.utils.performance import PerformanceTimer, timed
 
 
 logger = logging.getLogger(__name__)
@@ -306,11 +307,12 @@ class DashboardDataProvider:
             impacted gateways, and impacted interfaces
         """
         # Try precomputed data first (fast path)
-        if hasattr(self, 'site_sle_precomputer') and self.site_sle_precomputer:
-            precomputed = self.site_sle_precomputer.get_precomputed(site_id)
-            if precomputed and precomputed.get("available", False):
-                logger.info(f"[PRECOMPUTED] Using cached SLE for site {site_id[:8]}")
-                return precomputed
+        with PerformanceTimer("sle_precomputed_lookup", log_threshold_ms=10):
+            if hasattr(self, 'site_sle_precomputer') and self.site_sle_precomputer:
+                precomputed = self.site_sle_precomputer.get_precomputed(site_id)
+                if precomputed and precomputed.get("available", False):
+                    logger.info(f"[PRECOMPUTED] Using cached SLE for site {site_id[:8]}")
+                    return precomputed
         
         # Fallback: compute live
         logger.info(f"[LIVE] Computing SLE for site {site_id[:8]}")
@@ -319,10 +321,14 @@ class DashboardDataProvider:
             return {"available": False, "error": "Cache not available"}
         
         try:
-            summary = self.redis_cache.get_site_sle_summary(site_id, metric)
-            histogram = self.redis_cache.get_site_sle_histogram(site_id, metric)
-            gateways = self.redis_cache.get_site_sle_impacted_gateways(site_id, metric)
-            interfaces = self.redis_cache.get_site_sle_impacted_interfaces(site_id, metric)
+            with PerformanceTimer("redis_get_sle_summary", log_threshold_ms=50):
+                summary = self.redis_cache.get_site_sle_summary(site_id, metric)
+            with PerformanceTimer("redis_get_sle_histogram", log_threshold_ms=50):
+                histogram = self.redis_cache.get_site_sle_histogram(site_id, metric)
+            with PerformanceTimer("redis_get_sle_gateways", log_threshold_ms=50):
+                gateways = self.redis_cache.get_site_sle_impacted_gateways(site_id, metric)
+            with PerformanceTimer("redis_get_sle_interfaces", log_threshold_ms=50):
+                interfaces = self.redis_cache.get_site_sle_impacted_interfaces(site_id, metric)
             last_fetch = self.redis_cache.get_last_site_sle_timestamp(site_id)
             
             # Check if we have any data
@@ -1100,11 +1106,12 @@ class DashboardDataProvider:
             - status (Up/Down), latency, loss, jitter, mos
         """
         # Try precomputed data first for per-site requests (fast path)
-        if site_id and hasattr(self, 'site_vpn_precomputer') and self.site_vpn_precomputer:
-            precomputed = self.site_vpn_precomputer.get_precomputed(site_id)
-            if precomputed and precomputed.get("available", False):
-                logger.info(f"[PRECOMPUTED] Using cached VPN for site {site_id[:8]}")
-                return precomputed.get("peers", [])
+        with PerformanceTimer("vpn_precomputed_lookup", log_threshold_ms=10):
+            if site_id and hasattr(self, 'site_vpn_precomputer') and self.site_vpn_precomputer:
+                precomputed = self.site_vpn_precomputer.get_precomputed(site_id)
+                if precomputed and precomputed.get("available", False):
+                    logger.info(f"[PRECOMPUTED] Using cached VPN for site {site_id[:8]}")
+                    return precomputed.get("peers", [])
         
         # Log if computing live
         if site_id:

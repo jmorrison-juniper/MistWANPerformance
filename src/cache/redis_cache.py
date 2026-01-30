@@ -20,6 +20,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from src.utils.performance import PerformanceTimer
+
 logger = logging.getLogger(__name__)
 
 # Handle optional redis dependency
@@ -1820,30 +1822,35 @@ class RedisCache:
         Returns:
             Dictionary mapping cache_key to peers data (with timestamp and peers_by_port)
         """
-        try:
-            pattern = f"{self.PREFIX_VPN_PEERS}:*"
-            keys = self.client.keys(pattern)
-            
-            if not keys:
+        with PerformanceTimer("redis_get_all_vpn_peers", log_threshold_ms=100) as timer:
+            try:
+                with PerformanceTimer("redis_keys_scan_vpn", log_threshold_ms=50):
+                    pattern = f"{self.PREFIX_VPN_PEERS}:*"
+                    keys = self.client.keys(pattern)
+                
+                if not keys:
+                    return {}
+                
+                result = {}
+                with PerformanceTimer("redis_pipeline_get_vpn", log_threshold_ms=50):
+                    pipe = self.client.pipeline()
+                    for key in keys:
+                        pipe.get(key)
+                    
+                    values = pipe.execute()
+                
+                with PerformanceTimer("redis_deserialize_vpn", log_threshold_ms=50):
+                    for key, value in zip(keys, values):
+                        # Extract cache_key from redis key (remove prefix)
+                        cache_key = key.replace(f"{self.PREFIX_VPN_PEERS}:", "")
+                        if value:
+                            result[cache_key] = self._deserialize(value)
+                
+                logger.debug(f"[PERF] get_all_vpn_peers: {len(keys)} keys, {timer.elapsed_ms:.1f}ms")
+                return result
+            except Exception as error:
+                logger.error(f"Error retrieving all VPN peers: {error}")
                 return {}
-            
-            result = {}
-            pipe = self.client.pipeline()
-            for key in keys:
-                pipe.get(key)
-            
-            values = pipe.execute()
-            
-            for key, value in zip(keys, values):
-                # Extract cache_key from redis key (remove prefix)
-                cache_key = key.replace(f"{self.PREFIX_VPN_PEERS}:", "")
-                if value:
-                    result[cache_key] = self._deserialize(value)
-            
-            return result
-        except Exception as error:
-            logger.error(f"Error retrieving all VPN peers: {error}")
-            return {}
     
     def get_vpn_peer_summary(self) -> Dict[str, Any]:
         """
@@ -1910,26 +1917,28 @@ class RedisCache:
         Returns:
             List of peer path records with loss, latency, jitter, MOS
         """
-        try:
-            all_peers = self.get_all_vpn_peers()
-            site_peers = []
-            
-            for cache_key, data in all_peers.items():
-                peers_by_port = data.get("peers_by_port", {})
+        with PerformanceTimer("redis_get_site_vpn_peers", log_threshold_ms=100) as timer:
+            try:
+                all_peers = self.get_all_vpn_peers()
+                site_peers = []
                 
-                for port_id, peers_list in peers_by_port.items():
-                    for peer in peers_list:
-                        peer_site_id = peer.get("site_id", "")
-                        if peer_site_id == site_id:
-                            # Include port_id in the peer record
-                            peer_record = dict(peer)
-                            peer_record["port_id"] = port_id
-                            site_peers.append(peer_record)
-            
-            return site_peers
-        except Exception as error:
-            logger.error(f"Error getting VPN peers for site {site_id}: {error}")
-            return []
+                for cache_key, data in all_peers.items():
+                    peers_by_port = data.get("peers_by_port", {})
+                    
+                    for port_id, peers_list in peers_by_port.items():
+                        for peer in peers_list:
+                            peer_site_id = peer.get("site_id", "")
+                            if peer_site_id == site_id:
+                                # Include port_id in the peer record
+                                peer_record = dict(peer)
+                                peer_record["port_id"] = port_id
+                                site_peers.append(peer_record)
+                
+                logger.debug(f"[PERF] get_site_vpn_peers: {len(site_peers)} peers for site, {timer.elapsed_ms:.1f}ms")
+                return site_peers
+            except Exception as error:
+                logger.error(f"Error getting VPN peers for site {site_id}: {error}")
+                return []
 
     # ==================== Site-Level SLE Data ====================
     

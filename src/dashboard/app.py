@@ -21,6 +21,7 @@ from plotly.subplots import make_subplots
 
 from src.views.current_state import CurrentStateViews, CircuitCurrentState, AlertSeverity
 from src.views.rankings import RankingViews, RankedCircuit
+from src.utils.performance import PerformanceTimer, timed, format_perf_report
 
 
 logger = logging.getLogger(__name__)
@@ -940,148 +941,152 @@ class WANPerformanceDashboard:
         Returns:
             Dash HTML component with full site SLE detail view
         """
-        if not self.data_provider:
+        with PerformanceTimer("build_site_sle_detail_total", log_threshold_ms=200) as total_timer:
+            if not self.data_provider:
+                return html.Div([
+                    dbc.Alert("Data provider not available", color="warning")
+                ])
+            
+            # Get SLE details from cache
+            with PerformanceTimer("get_site_sle_details", log_threshold_ms=100):
+                sle_details = self.data_provider.get_site_sle_details(site_id, "wan-link-health")
+            
+            if not sle_details.get("available", False):
+                return html.Div([
+                    self._build_sle_detail_header(site_name, site_id),
+                    dbc.Alert([
+                        html.Strong("SLE data not yet available for this site. "),
+                        html.Span("Background collection is in progress. Please check back shortly.")
+                    ], color="info", className="mt-3")
+                ])
+            
+            # Build summary chart
+            summary_data = sle_details.get("summary", {})
+            with PerformanceTimer("build_sle_summary_chart", log_threshold_ms=50):
+                summary_chart = self._build_sle_summary_chart(summary_data)
+            
+            # Build histogram chart (uses summary data to calculate health distribution)
+            with PerformanceTimer("build_sle_histogram_chart", log_threshold_ms=50):
+                histogram_chart = self._build_sle_histogram_chart(summary_data, sle_details.get("histogram", {}))
+            
+            # Build impacted tables
+            impacted_gateways = sle_details.get("impacted_gateways", {})
+            impacted_interfaces = sle_details.get("impacted_interfaces", {})
+            
+            # Extract classifier breakdown from summary
+            classifier_breakdown = self._extract_classifier_breakdown(sle_details.get("summary", {}))
+            
+            # Cache freshness indicator
+            cache_fresh = sle_details.get("cache_fresh", False)
+            last_fetch = sle_details.get("last_fetch_timestamp")
+            
+            cache_status = dbc.Badge(
+                "Fresh" if cache_fresh else "Stale",
+                color="success" if cache_fresh else "warning",
+                className="ms-2"
+            )
+            
+            last_fetch_text = ""
+            if last_fetch:
+                fetch_time = datetime.fromtimestamp(last_fetch, tz=timezone.utc)
+                last_fetch_text = fetch_time.strftime("%Y-%m-%d %H:%M UTC")
+            
             return html.Div([
-                dbc.Alert("Data provider not available", color="warning")
-            ])
-        
-        # Get SLE details from cache
-        sle_details = self.data_provider.get_site_sle_details(site_id, "wan-link-health")
-        
-        if not sle_details.get("available", False):
-            return html.Div([
+                # Header with back button
                 self._build_sle_detail_header(site_name, site_id),
-                dbc.Alert([
-                    html.Strong("SLE data not yet available for this site. "),
-                    html.Span("Background collection is in progress. Please check back shortly.")
-                ], color="info", className="mt-3")
+                
+                # Cache status row
+                dbc.Row([
+                    dbc.Col([
+                        html.Small([
+                            html.Span("Data Status: ", className="text-muted"),
+                            cache_status,
+                            html.Span(f" | Last Updated: {last_fetch_text}", className="text-muted ms-2") if last_fetch_text else ""
+                        ])
+                    ])
+                ], className="mb-3"),
+                
+                # Charts row
+                dbc.Row([
+                    # Summary time-series chart
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader("SLE Health Over Time"),
+                            dbc.CardBody([
+                                dcc.Graph(
+                                    id="sle-summary-chart",
+                                    figure=summary_chart
+                                )
+                            ])
+                        ])
+                    ], width=8),
+                    
+                    # Health time distribution chart
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader("Health Time Distribution"),
+                            dbc.CardBody([
+                                dcc.Graph(
+                                    id="sle-histogram-chart",
+                                    figure=histogram_chart
+                                )
+                            ])
+                        ])
+                    ], width=4)
+                ], className="mb-4"),
+                
+                # Classifier breakdown row
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader("Classifier Breakdown (Root Cause Analysis)"),
+                            dbc.CardBody([
+                                self._build_classifier_breakdown_display(classifier_breakdown)
+                            ])
+                        ])
+                    ])
+                ], className="mb-4"),
+                
+                # Impacted resources row
+                dbc.Row([
+                    # Impacted gateways table
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("Impacted Gateways"),
+                                dbc.Badge(
+                                    str(len(impacted_gateways.get("gateways", []))),
+                                    color="warning",
+                                    className="ms-2"
+                                )
+                            ]),
+                            dbc.CardBody([
+                                self._build_impacted_gateways_table(impacted_gateways)
+                            ])
+                        ])
+                    ], width=6),
+                    
+                    # Impacted interfaces table
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("Impacted Interfaces"),
+                                dbc.Badge(
+                                    str(len(impacted_interfaces.get("interfaces", []))),
+                                    color="warning",
+                                    className="ms-2"
+                                )
+                            ]),
+                            dbc.CardBody([
+                                self._build_impacted_interfaces_table(impacted_interfaces)
+                            ])
+                        ])
+                    ], width=6)
+                ]),
+                
+                # VPN Peer Paths row
+                self._build_vpn_peer_section(site_id)
             ])
-        
-        # Build summary chart
-        summary_data = sle_details.get("summary", {})
-        summary_chart = self._build_sle_summary_chart(summary_data)
-        
-        # Build histogram chart (uses summary data to calculate health distribution)
-        histogram_chart = self._build_sle_histogram_chart(summary_data, sle_details.get("histogram", {}))
-        
-        # Build impacted tables
-        impacted_gateways = sle_details.get("impacted_gateways", {})
-        impacted_interfaces = sle_details.get("impacted_interfaces", {})
-        
-        # Extract classifier breakdown from summary
-        classifier_breakdown = self._extract_classifier_breakdown(sle_details.get("summary", {}))
-        
-        # Cache freshness indicator
-        cache_fresh = sle_details.get("cache_fresh", False)
-        last_fetch = sle_details.get("last_fetch_timestamp")
-        
-        cache_status = dbc.Badge(
-            "Fresh" if cache_fresh else "Stale",
-            color="success" if cache_fresh else "warning",
-            className="ms-2"
-        )
-        
-        last_fetch_text = ""
-        if last_fetch:
-            fetch_time = datetime.fromtimestamp(last_fetch, tz=timezone.utc)
-            last_fetch_text = fetch_time.strftime("%Y-%m-%d %H:%M UTC")
-        
-        return html.Div([
-            # Header with back button
-            self._build_sle_detail_header(site_name, site_id),
-            
-            # Cache status row
-            dbc.Row([
-                dbc.Col([
-                    html.Small([
-                        html.Span("Data Status: ", className="text-muted"),
-                        cache_status,
-                        html.Span(f" | Last Updated: {last_fetch_text}", className="text-muted ms-2") if last_fetch_text else ""
-                    ])
-                ])
-            ], className="mb-3"),
-            
-            # Charts row
-            dbc.Row([
-                # Summary time-series chart
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("SLE Health Over Time"),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                id="sle-summary-chart",
-                                figure=summary_chart
-                            )
-                        ])
-                    ])
-                ], width=8),
-                
-                # Health time distribution chart
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("Health Time Distribution"),
-                        dbc.CardBody([
-                            dcc.Graph(
-                                id="sle-histogram-chart",
-                                figure=histogram_chart
-                            )
-                        ])
-                    ])
-                ], width=4)
-            ], className="mb-4"),
-            
-            # Classifier breakdown row
-            dbc.Row([
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("Classifier Breakdown (Root Cause Analysis)"),
-                        dbc.CardBody([
-                            self._build_classifier_breakdown_display(classifier_breakdown)
-                        ])
-                    ])
-                ])
-            ], className="mb-4"),
-            
-            # Impacted resources row
-            dbc.Row([
-                # Impacted gateways table
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader([
-                            html.Span("Impacted Gateways"),
-                            dbc.Badge(
-                                str(len(impacted_gateways.get("gateways", []))),
-                                color="warning",
-                                className="ms-2"
-                            )
-                        ]),
-                        dbc.CardBody([
-                            self._build_impacted_gateways_table(impacted_gateways)
-                        ])
-                    ])
-                ], width=6),
-                
-                # Impacted interfaces table
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader([
-                            html.Span("Impacted Interfaces"),
-                            dbc.Badge(
-                                str(len(impacted_interfaces.get("interfaces", []))),
-                                color="warning",
-                                className="ms-2"
-                            )
-                        ]),
-                        dbc.CardBody([
-                            self._build_impacted_interfaces_table(impacted_interfaces)
-                        ])
-                    ])
-                ], width=6)
-            ]),
-            
-            # VPN Peer Paths row
-            self._build_vpn_peer_section(site_id)
-        ])
     
     def _build_sle_detail_header(self, site_name: str, site_id: str) -> dbc.Row:
         """Build header row with back button and site info."""
@@ -1660,10 +1665,12 @@ class WANPerformanceDashboard:
             dbc.Row containing VPN peer card with count badge
         """
         # Get peer count for badge
-        peer_count = 0
-        if self.data_provider:
-            peers = self.data_provider.get_vpn_peer_table_data(site_id)
-            peer_count = len(peers)
+        with PerformanceTimer("build_vpn_peer_section", log_threshold_ms=100):
+            peer_count = 0
+            if self.data_provider:
+                with PerformanceTimer("get_vpn_peer_table_data", log_threshold_ms=50):
+                    peers = self.data_provider.get_vpn_peer_table_data(site_id)
+                peer_count = len(peers)
         
         # Determine badge color based on count
         badge_color = "info"
