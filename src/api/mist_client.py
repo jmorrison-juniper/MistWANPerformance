@@ -463,6 +463,72 @@ class MistSiteOperations:
         logger.debug(f"Found {len(devices)} WAN edge devices")
         return devices
 
+    def get_gateway_inventory(self) -> Dict[str, Any]:
+        """
+        Get organization gateway inventory with connection status.
+        
+        Uses the org inventory API to retrieve all gateways and their
+        connected/disconnected status.
+        
+        Returns:
+            Dictionary with gateway counts:
+            {
+                "total": int,
+                "connected": int,
+                "disconnected": int,
+                "gateways": List[Dict]  # Raw gateway inventory data
+            }
+        """
+        logger.info("[...] Retrieving gateway inventory status")
+        
+        all_gateways = []
+        page = 1
+        
+        while True:
+            response = self.connection.execute_with_retry(
+                f"Get gateway inventory (page {page})",
+                mistapi.api.v1.orgs.inventory.getOrgInventory,  # type: ignore[union-attr]
+                self.connection.session,
+                self.connection.config.org_id,
+                type="gateway",  # Filter to gateway devices only
+                limit=1000,
+                page=page
+            )
+            
+            batch = response.data if hasattr(response, 'data') else []
+            all_gateways.extend(batch)
+            
+            logger.debug(f"Retrieved {len(batch)} gateways from inventory page {page}")
+            
+            if len(batch) < 1000:
+                break
+            page += 1
+        
+        # Count connected vs disconnected
+        connected_count = 0
+        disconnected_count = 0
+        
+        for gateway in all_gateways:
+            # The inventory API returns 'connected' as boolean
+            is_connected = gateway.get("connected", False)
+            if is_connected:
+                connected_count += 1
+            else:
+                disconnected_count += 1
+        
+        result = {
+            "total": len(all_gateways),
+            "connected": connected_count,
+            "disconnected": disconnected_count,
+            "gateways": all_gateways
+        }
+        
+        logger.info(
+            f"[OK] Gateway inventory: {result['total']} total, "
+            f"{result['connected']} connected, {result['disconnected']} disconnected"
+        )
+        return result
+
 
 class MistStatsOperations:
     """
@@ -722,6 +788,266 @@ class MistStatsOperations:
         return results
 
 
+class MistInsightsOperations:
+    """
+    Handles SLE (Service Level Experience) and Alarms operations.
+    
+    Responsibilities:
+    - Get org-level SLE metrics for all sites
+    - Get worst sites by SLE metric
+    - Search org-level alarms
+    """
+    
+    def __init__(self, connection: MistConnection):
+        """
+        Initialize insights operations.
+        
+        Args:
+            connection: MistConnection instance for API access
+        """
+        self.connection = connection
+    
+    def get_org_sites_sle(
+        self,
+        sle: str = "wan",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d",
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Get SLE scores for all sites in the organization.
+        
+        Args:
+            sle: SLE type - "wan", "wifi", or "wired"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified ("1h", "1d", "7d")
+            limit: Max results per page (default 1000)
+        
+        Returns:
+            Dictionary with SLE data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "total": count,
+                "results": [
+                    {
+                        "site_id": "uuid",
+                        "gateway-health": 0.0-1.0,
+                        "wan-link-health": 0.0-1.0,
+                        "application-health": 0.0-1.0,
+                        "gateway-bandwidth": 0.0-1.0,
+                        "num_gateways": int,
+                        "num_clients": int
+                    }
+                ]
+            }
+        """
+        logger.info(f"[...] Retrieving org SLE scores (sle={sle}, duration={duration})")
+        
+        all_results: List[Dict[str, Any]] = []
+        page = 1
+        total_count = 0
+        response_metadata: Dict[str, Any] = {}
+        
+        while True:
+            api_kwargs: Dict[str, Any] = {
+                "org_id": self.connection.config.org_id,
+                "sle": sle,
+                "limit": limit,
+                "page": page
+            }
+            
+            if start_time:
+                api_kwargs["start"] = start_time
+            if end_time:
+                api_kwargs["end"] = end_time
+            if not start_time and not end_time:
+                api_kwargs["duration"] = duration
+            
+            response = self.connection.execute_with_retry(
+                f"Get org sites SLE (page {page})",
+                mistapi.api.v1.orgs.insights.getOrgSitesSle,  # type: ignore[union-attr]
+                self.connection.session,
+                **api_kwargs
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            
+            if page == 1:
+                response_metadata = {
+                    "start": data.get("start"),
+                    "end": data.get("end"),
+                    "total": data.get("total", 0)
+                }
+                total_count = data.get("total", 0)
+            
+            batch = data.get("results", [])
+            all_results.extend(batch)
+            
+            logger.debug(f"Retrieved {len(batch)} SLE records from page {page}")
+            
+            if len(batch) < limit or len(all_results) >= total_count:
+                break
+            page += 1
+        
+        response_metadata["results"] = all_results
+        logger.info(f"[OK] Retrieved SLE scores for {len(all_results)} sites")
+        return response_metadata
+    
+    def get_org_worst_sites_by_sle(
+        self,
+        sle: str = "gateway-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get worst performing sites by SLE metric.
+        
+        Args:
+            sle: SLE metric - "gateway-health", "wan-link-health", "application-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with worst sites data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "results": [{"site_id": "uuid", "gateway-health": 0.0}]
+            }
+        """
+        logger.info(f"[...] Retrieving worst sites by SLE (metric={sle})")
+        
+        api_kwargs: Dict[str, Any] = {
+            "org_id": self.connection.config.org_id,
+            "metric": "worst-sites-by-sle",
+            "sle": sle
+        }
+        
+        if start_time:
+            api_kwargs["start"] = str(start_time)
+        if end_time:
+            api_kwargs["end"] = str(end_time)
+        if not start_time and not end_time:
+            api_kwargs["duration"] = duration
+        
+        response = self.connection.execute_with_retry(
+            "Get org worst sites by SLE",
+            mistapi.api.v1.orgs.insights.getOrgSle,  # type: ignore[union-attr]
+            self.connection.session,
+            **api_kwargs
+        )
+        
+        data = response.data if hasattr(response, 'data') else {}
+        results = data.get("results", [])
+        logger.info(f"[OK] Retrieved {len(results)} worst sites by {sle}")
+        return data
+    
+    def search_org_alarms(
+        self,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d",
+        alarm_type: Optional[str] = None,
+        site_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Search organization alarms.
+        
+        Args:
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+            alarm_type: Filter by alarm type (comma-separated for multiple)
+                        e.g., "infra_dhcp_failure,infra_dns_failure"
+            site_id: Filter by site ID (optional)
+            status: Filter by status (optional)
+            limit: Max results per page
+        
+        Returns:
+            Dictionary with alarm data:
+            {
+                "total": count,
+                "results": [
+                    {
+                        "id": "alarm-uuid",
+                        "site_id": "site-uuid",
+                        "type": "infra_dhcp_failure",
+                        "severity": "critical",
+                        "group": "infrastructure",
+                        "timestamp": epoch,
+                        "last_seen": epoch,
+                        "incident_count": int
+                    }
+                ]
+            }
+        """
+        logger.info(f"[...] Searching org alarms (type={alarm_type})")
+        
+        all_results: List[Dict[str, Any]] = []
+        total_count = 0
+        search_after: Optional[str] = None
+        page_num = 0
+        
+        while True:
+            page_num += 1
+            api_kwargs: Dict[str, Any] = {
+                "org_id": self.connection.config.org_id,
+                "limit": limit
+            }
+            
+            if start_time:
+                api_kwargs["start"] = str(start_time)
+            if end_time:
+                api_kwargs["end"] = str(end_time)
+            if not start_time and not end_time:
+                api_kwargs["duration"] = duration
+            if alarm_type:
+                api_kwargs["type"] = alarm_type
+            if site_id:
+                api_kwargs["site_id"] = site_id
+            if status:
+                api_kwargs["status"] = status
+            if search_after:
+                api_kwargs["search_after"] = search_after
+            
+            response = self.connection.execute_with_retry(
+                f"Search org alarms (page {page_num})",
+                mistapi.api.v1.orgs.alarms.searchOrgAlarms,  # type: ignore[union-attr]
+                self.connection.session,
+                **api_kwargs
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            
+            if page_num == 1:
+                total_count = data.get("total", 0)
+            
+            batch = data.get("results", [])
+            all_results.extend(batch)
+            
+            logger.debug(f"Retrieved {len(batch)} alarms from page {page_num}")
+            
+            # Check for next page using search_after cursor
+            next_cursor = data.get("next")
+            if not next_cursor or len(batch) < limit:
+                break
+            search_after = next_cursor
+        
+        result = {
+            "total": total_count,
+            "results": all_results
+        }
+        logger.info(f"[OK] Retrieved {len(all_results)} alarms (total: {total_count})")
+        return result
+
+
 class MistAPIClient:
     """
     Facade for Mist Cloud API operations.
@@ -730,6 +1056,7 @@ class MistAPIClient:
     - MistConnection: Session and rate limiting
     - MistSiteOperations: Site and device retrieval
     - MistStatsOperations: Statistics and events retrieval
+    - MistInsightsOperations: SLE metrics and alarms
     """
     
     def __init__(self, mist_config: MistConfig, operational_config: OperationalConfig):
@@ -743,6 +1070,7 @@ class MistAPIClient:
         self.connection = MistConnection(mist_config, operational_config)
         self.site_ops = MistSiteOperations(self.connection)
         self.stats_ops = MistStatsOperations(self.connection)
+        self.insights_ops = MistInsightsOperations(self.connection)
         
         # Expose config for backward compatibility
         self.config = mist_config
@@ -770,6 +1098,15 @@ class MistAPIClient:
     def get_site_wan_edges(self, site_id: str) -> List[Dict[str, Any]]:
         """Get WAN edge devices (gateways) for a specific site."""
         return self.site_ops.get_site_wan_edges(site_id)
+    
+    def get_gateway_inventory(self) -> Dict[str, Any]:
+        """
+        Get organization gateway inventory with connection status.
+        
+        Returns:
+            Dictionary with total, connected, disconnected counts and raw data
+        """
+        return self.site_ops.get_gateway_inventory()
     
     def get_org_gateway_port_stats(
         self,
@@ -818,6 +1155,100 @@ class MistAPIClient:
     ) -> List[Dict[str, Any]]:
         """Get organization-wide WAN client statistics."""
         return self.stats_ops.get_org_wan_client_stats(start_time, end_time)
+    
+    # -------------------------------------------------------------------------
+    # Insights Operations (SLE and Alarms)
+    # -------------------------------------------------------------------------
+    
+    def get_org_sites_sle(
+        self,
+        sle: str = "wan",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d",
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Get SLE scores for all sites in the organization.
+        
+        Args:
+            sle: SLE type - "wan", "wifi", or "wired"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified ("1h", "1d", "7d")
+            limit: Max results per page (default 1000)
+        
+        Returns:
+            Dictionary with SLE data including site scores
+        """
+        return self.insights_ops.get_org_sites_sle(
+            sle=sle,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration,
+            limit=limit
+        )
+    
+    def get_org_worst_sites_by_sle(
+        self,
+        sle: str = "gateway-health",
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d"
+    ) -> Dict[str, Any]:
+        """
+        Get worst performing sites by SLE metric.
+        
+        Args:
+            sle: SLE metric - "gateway-health", "wan-link-health", "application-health"
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+        
+        Returns:
+            Dictionary with worst sites data
+        """
+        return self.insights_ops.get_org_worst_sites_by_sle(
+            sle=sle,
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration
+        )
+    
+    def search_org_alarms(
+        self,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        duration: str = "1d",
+        alarm_type: Optional[str] = None,
+        site_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 1000
+    ) -> Dict[str, Any]:
+        """
+        Search organization alarms.
+        
+        Args:
+            start_time: Start epoch timestamp (optional)
+            end_time: End epoch timestamp (optional)
+            duration: Time duration if start/end not specified
+            alarm_type: Filter by type (e.g., "infra_dhcp_failure,infra_dns_failure")
+            site_id: Filter by site ID (optional)
+            status: Filter by status (optional)
+            limit: Max results per page
+        
+        Returns:
+            Dictionary with alarm data
+        """
+        return self.insights_ops.search_org_alarms(
+            start_time=start_time,
+            end_time=end_time,
+            duration=duration,
+            alarm_type=alarm_type,
+            site_id=site_id,
+            status=status,
+            limit=limit
+        )
     
     def close(self) -> None:
         """Close the API session and clean up resources."""

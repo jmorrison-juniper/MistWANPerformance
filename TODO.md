@@ -81,7 +81,174 @@
 
 ## Medium Priority
 
-No items yet.
+### SLE and Alarms Time-Series Data Collection
+
+**Status:** API Testing Complete  
+**Started:** 2026-01-30
+
+**Goal:** Collect WAN SLE metrics, gateway health, and alarms with 10-minute resolution over 7 days. Use smart time-series handling to only pull incremental data.
+
+---
+
+#### API Testing Results (2026-01-30)
+
+**getOrgSitesSle Response Structure:**
+
+```json
+{
+  "start": 1769650531,
+  "end": 1769736931,
+  "limit": 10,
+  "page": 1,
+  "total": 3208,
+  "results": [
+    {
+      "site_id": "uuid",
+      "gateway-health": 1.0,
+      "wan-link-health": 0.95,
+      "wan-link-health-v2": 0.95,
+      "application-health": 0.97,
+      "gateway-bandwidth": 1.0,
+      "num_gateways": 1,
+      "num_clients": 98
+    }
+  ]
+}
+```
+
+**getOrgSle (worst-sites-by-sle) Response Structure:**
+
+```json
+{
+  "start": 1769652000,
+  "end": 1769738400,
+  "interval": 3600,
+  "limit": 10,
+  "results": [
+    {"site_id": "uuid", "gateway-health": 0.0}
+  ]
+}
+```
+
+**searchOrgAlarms Response Structure:**
+
+```json
+{
+  "total": 80840,
+  "results": [
+    {
+      "id": "alarm-uuid",
+      "site_id": "site-uuid",
+      "type": "infra_dhcp_failure",
+      "severity": "critical",
+      "group": "infrastructure",
+      "timestamp": 1769132146,
+      "last_seen": 1769132146,
+      "incident_count": 20,
+      "count": 1
+    }
+  ]
+}
+```
+
+**Observed Alarm Types:** `infra_dhcp_failure`, `infra_dns_failure`, `honeypot_ssid`
+**Observed Alarm Groups:** `infrastructure`, `security`
+
+---
+
+#### API Endpoints Research
+
+| Endpoint | mistapi Method | Scope | Purpose |
+| -------- | -------------- | ----- | ------- |
+| `/api/v1/orgs/{org_id}/insights/sites-sle` | `mistapi.api.v1.orgs.insights.getOrgSitesSle()` | Org | WAN SLE per site (interval param for resolution) |
+| `/api/v1/orgs/{org_id}/insights/{metric}` | `mistapi.api.v1.orgs.insights.getOrgSle()` | Org | Worst sites by SLE metric (gateway-health, wan-link-health) |
+| `/api/v1/orgs/{org_id}/alarms/search` | `mistapi.api.v1.orgs.alarms.searchOrgAlarms()` | Org | Active/historical alarms by type |
+| `/api/v1/sites/{site_id}/sle/site/{site_id}/metric/{metric}/summary-trend` | `mistapi.api.v1.sites.sle.getSiteSleSummaryTrend()` | Site | Per-site SLE time-series (fallback if org-level lacks detail) |
+
+---
+
+#### Raw Endpoint Examples (User Provided)
+
+```text
+# Org-level SLE (WAN) with 7-day window
+GET /api/v1/orgs/{org_id}/insights/sites-sle?sle=wan&limit=100&start={epoch}&end={epoch}&timeInterval=7d
+
+# Org-level Alarms Search (Marvis group)
+GET /api/v1/orgs/{org_id}/alarms/search?group=marvis&limit=1000&start={epoch}&end={epoch}
+
+# Org-level Alarms Search (infrastructure types)
+GET /api/v1/orgs/{org_id}/alarms/search?type=loop_detected_by_ap,infra_dhcp_failure,infra_dns_failure,infra_arp_failure&limit=1000&start={epoch}&end={epoch}
+
+# Org-level Worst Sites by Gateway Health
+GET /api/v1/orgs/{org_id}/insights/worst-sites-by-sle?sle=gateway-health&start={epoch}&end={epoch}
+
+# Site-level SLE Summary Trend (gateway-health)
+GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/gateway-health/summary-trend?start={epoch}&end={epoch}
+
+# Site-level SLE Summary Trend (wan-link-health)
+GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/wan-link-health/summary-trend?start={epoch}&end={epoch}
+
+# Site-level SLE Summary Trend (application-health)
+GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/application-health/summary-trend?start={epoch}&end={epoch}
+```
+
+---
+
+#### Implementation Tasks
+
+##### Task A: Org-Level SLE Data Collection
+
+- [x] Add `get_org_sites_sle()` to `MistAPIClient`
+  - Call `mistapi.api.v1.orgs.insights.getOrgSitesSle(sle="wan", interval="10m", duration="7d")`
+  - Parameters: start/end epoch, interval for 10-min resolution
+- [x] Add `get_org_worst_sites_by_sle()` to `MistAPIClient`
+  - Call `mistapi.api.v1.orgs.insights.getOrgSle(metric="worst-sites-by-sle", sle="gateway-health")`
+- [x] Smart time-series: `get_last_sle_timestamp()` enables incremental fetching
+- [x] Store in Redis with `save_sle_snapshot()` and `save_worst_sites_sle()`
+
+##### Task B: Org-Level Alarms Collection
+
+- [x] Add `search_org_alarms()` to `MistAPIClient`
+  - Call `mistapi.api.v1.orgs.alarms.searchOrgAlarms()`
+  - Support type filtering (infrastructure alarms)
+  - Support group filtering (Marvis alerts)
+- [x] Handle pagination with `search_after` for large result sets
+- [x] Smart time-series: `get_last_alarms_timestamp()` enables incremental fetching
+- [x] Store in Redis with `save_alarms()` and individual alarm keys for deduplication
+
+##### Task C: Site-Level SLE (Fallback)
+
+- [ ] Add `get_site_sle_trend()` to `MistAPIClient` (if org-level lacks detail)
+  - Call `mistapi.api.v1.sites.sle.getSiteSleSummaryTrend()`
+  - Metrics: gateway-health, wan-link-health, application-health
+- [ ] Only use for specific site deep-dives, not bulk collection
+
+##### Task D: Redis Storage Schema
+
+- [x] Design time-series storage for 10-min resolution
+- [x] Key patterns implemented:
+  - `mistwan:sle:current` - Current SLE snapshot
+  - `mistwan:sle:history` - SLE time-series (sorted set)
+  - `mistwan:sle:worst:{metric}` - Worst sites by metric
+  - `mistwan:alarms:current` - Current alarms snapshot
+  - `mistwan:alarms:id:{alarm_id}` - Individual alarms for deduplication
+- [x] TTL: 7 days for SLE/alarms data
+- [x] Implemented `get_last_sle_timestamp()` for incremental fetching
+- [x] Implemented `get_last_alarms_timestamp()` for incremental fetching
+- [x] Added filter methods: `get_alarms_by_type()`, `get_alarms_by_site()`
+
+##### Task E: Dashboard Integration
+
+- [x] Add SLE cards to dashboard (SLE Gateway, SLE WAN Link, SLE App, SLE Degraded)
+- [x] Add alarms cards to dashboard (Total Alarms, Critical Alarms)
+- [x] Display gateway-health and wan-link-health metrics in dashboard
+- [x] Wire up SLE/Alarms loading in `run_dashboard.py` startup sequence
+- [x] Added `update_sle_data()`, `update_alarms()`, `get_sle_summary()`, `get_alarms_summary()` to DashboardDataProvider
+- [x] SLE shows average health scores across all sites (percentage)
+- [x] SLE Degraded shows count of sites with gateway-health below 90%
+- [x] Alarms shows total count and critical count from last 24 hours
+
+---
 
 ---
 

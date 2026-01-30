@@ -147,7 +147,7 @@ def load_from_cache(cache, config: Config) -> tuple:
         logger.info(f"[OK] Loaded {len(port_stats)} port stats from global cache")
     
     # Process port stats into utilization records (same logic as live data)
-    circuits, utilization_records = process_port_stats_to_utilization(
+    circuits, utilization_records, wan_down, wan_disabled = process_port_stats_to_utilization(
         port_stats, site_lookup, sitegroup_map
     )
     
@@ -157,6 +157,8 @@ def load_from_cache(cache, config: Config) -> tuple:
     # Create data provider with Redis cache reference for trends
     provider = DashboardDataProvider(sites=sites, circuits=circuits)
     provider.redis_cache = cache  # Enable historical trends storage/retrieval
+    provider.wan_down_count = wan_down
+    provider.wan_disabled_count = wan_disabled
     provider.update_utilization(utilization_records)
     
     # Store snapshot for trends history
@@ -174,6 +176,8 @@ def load_from_cache(cache, config: Config) -> tuple:
     if config.mist is None:
         raise ValueError("Mist configuration is required")
     _api_client = MistAPIClient(config.mist, config.operational)
+    
+    # Note: Gateway inventory is loaded at startup (main function)
     
     return provider, all_site_ids
 
@@ -292,7 +296,7 @@ def process_port_stats_to_utilization(
         sitegroup_map: Dictionary mapping sitegroup_id to name
     
     Returns:
-        Tuple of (circuits list, utilization_records list)
+        Tuple of (circuits list, utilization_records list, wan_down_count, wan_disabled_count)
     """
     logger = logging.getLogger(__name__)
     current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
@@ -444,7 +448,7 @@ def process_port_stats_to_utilization(
         logger.info(f"[INFO] WAN ports down: {total_wan_down}, disabled: {total_wan_disabled}")
     logger.info(f"[OK] Created {len(utilization_records)} utilization records")
     
-    return circuits, utilization_records
+    return circuits, utilization_records, total_wan_down, total_wan_disabled
 
 
 def check_redis_persistence(cache, logger) -> None:
@@ -559,7 +563,7 @@ def quick_load_from_cache(config: Config) -> tuple:
         logger.info(f"[OK] Quick cache load: {len(port_stats)} port stats from {len(raw_sites)} sites")
         
         # Process into utilization records
-        circuits, utilization_records = process_port_stats_to_utilization(
+        circuits, utilization_records, wan_down, wan_disabled = process_port_stats_to_utilization(
             port_stats, site_lookup, sitegroup_map
         )
         
@@ -570,6 +574,8 @@ def quick_load_from_cache(config: Config) -> tuple:
         # Create data provider with cached data and Redis cache reference
         provider = DashboardDataProvider(sites=sites, circuits=circuits)
         provider.redis_cache = cache  # Enable historical trends storage/retrieval
+        provider.wan_down_count = wan_down
+        provider.wan_disabled_count = wan_disabled
         provider.update_utilization(utilization_records)
         
         # Store snapshot for trends history
@@ -581,6 +587,7 @@ def quick_load_from_cache(config: Config) -> tuple:
             f"[OK] Cached data ready: {len(sites)} sites, "
             f"{len(utilization_records)} records (age: {age_str})"
         )
+        logger.info("[OK] Dashboard will display cached data immediately")
         
         return provider, cache
         
@@ -824,7 +831,7 @@ def load_live_data(config: Config) -> tuple:
     logger.info(f"[OK] Total port stats: {len(port_stats)} records")
     
     # Use shared parallel processing function
-    circuits, utilization_records = process_port_stats_to_utilization(
+    circuits, utilization_records, wan_down, wan_disabled = process_port_stats_to_utilization(
         port_stats, site_lookup, sitegroup_map
     )
     
@@ -838,6 +845,11 @@ def load_live_data(config: Config) -> tuple:
     # Create data provider with Redis cache reference for trends
     provider = DashboardDataProvider(sites=sites, circuits=circuits)
     provider.redis_cache = cache  # Enable historical trends storage/retrieval
+    provider.wan_down_count = wan_down
+    provider.wan_disabled_count = wan_disabled
+    
+    # Note: Gateway inventory is loaded at startup (quick API call)
+    # No need to reload here - it's already in _data_provider
     
     # Load the real utilization data
     provider.update_utilization(utilization_records)
@@ -999,6 +1011,54 @@ def main():
             _data_provider = DashboardDataProvider(sites=[], circuits=[])
             _cache = cache_instance  # May still be valid for saving new data
             logger.info("[INFO] No cached data - dashboard will load fresh data")
+        
+        # STEP 1b: Quick fetch gateway inventory (single API call, independent of full load)
+        try:
+            from src.api.mist_client import MistAPIClient
+            if config.mist is not None:
+                logger.info("[...] Fetching gateway inventory (quick API call)")
+                quick_client = MistAPIClient(config.mist, config.operational)
+                gateway_inventory = quick_client.get_gateway_inventory()
+                _data_provider.gateways_total = gateway_inventory.get("total", 0)
+                _data_provider.gateways_connected = gateway_inventory.get("connected", 0)
+                _data_provider.gateways_disconnected = gateway_inventory.get("disconnected", 0)
+                logger.info(
+                    f"[OK] Gateway health: {_data_provider.gateways_connected} online, "
+                    f"{_data_provider.gateways_disconnected} offline"
+                )
+        except Exception as gateway_error:
+            logger.warning(f"[WARN] Could not fetch gateway inventory: {gateway_error}")
+        
+        # STEP 1c: Quick fetch SLE metrics and alarms (single API call each)
+        try:
+            if config.mist is not None and quick_client is not None:
+                logger.info("[...] Fetching SLE metrics and alarms (quick API calls)")
+                
+                # Get SLE data for all sites (gateway-health metric)
+                sle_data = quick_client.get_org_sites_sle(sle="gateway-health")
+                if sle_data:
+                    _data_provider.update_sle_data(sle_data)
+                    logger.info(f"[OK] SLE data loaded: {sle_data.get('total', 0)} sites")
+                
+                # Get worst sites by gateway health
+                worst_gateway = quick_client.get_org_worst_sites_by_sle(sle="gateway-health")
+                worst_wan = quick_client.get_org_worst_sites_by_sle(sle="wan-link-health")
+                if worst_gateway or worst_wan:
+                    _data_provider.update_worst_sites(
+                        gateway_health=worst_gateway,
+                        wan_link=worst_wan
+                    )
+                
+                # Get recent alarms (last 24 hours)
+                alarms_data = quick_client.search_org_alarms(duration="1d", limit=1000)
+                if alarms_data:
+                    _data_provider.update_alarms(alarms_data)
+                    logger.info(f"[OK] Alarms loaded: {alarms_data.get('total', 0)} alarms")
+                    
+        except Exception as sle_error:
+            logger.warning(f"[WARN] Could not fetch SLE/alarms data: {sle_error}")
+        except Exception as gateway_error:
+            logger.warning(f"[WARN] Could not fetch gateway inventory: {gateway_error}")
         
         # STEP 2: Start background thread to refresh data (stale or missing)
         logger.info("[INFO] Starting background data refresh...")

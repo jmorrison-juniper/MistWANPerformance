@@ -67,6 +67,8 @@ class RedisCache:
     PREFIX_UTILIZATION = "mistwan:utilization"
     PREFIX_METADATA = "mistwan:metadata"
     PREFIX_HISTORY = "mistwan:history"
+    PREFIX_SLE = "mistwan:sle"
+    PREFIX_ALARMS = "mistwan:alarms"
     
     # Default TTL: 5 minutes (for current/live data that changes frequently)
     DEFAULT_TTL = 300
@@ -1334,6 +1336,269 @@ class RedisCache:
             logger.error(f"Error appending site port stats for {site_id}: {error}")
             return False
 
+    # ==================== SLE (Service Level Experience) Data ====================
+    
+    def save_sle_snapshot(
+        self,
+        sle_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save SLE snapshot for all sites.
+        
+        Stores both the current snapshot and appends to time-series history.
+        
+        Args:
+            sle_data: SLE response from get_org_sites_sle()
+                     Contains: start, end, total, results[]
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            timestamp = sle_data.get("end", int(time.time()))
+            
+            # Save current snapshot (quick lookup)
+            current_key = f"{self.PREFIX_SLE}:current"
+            self.client.setex(
+                current_key,
+                ttl or (7 * 24 * 3600),  # 7 days default
+                self._serialize(sle_data)
+            )
+            
+            # Also store in time-series sorted set for historical queries
+            history_key = f"{self.PREFIX_SLE}:history"
+            self.client.zadd(history_key, {self._serialize(sle_data): timestamp})
+            self.client.expire(history_key, ttl or (7 * 24 * 3600))
+            
+            # Update last SLE fetch timestamp
+            self.client.set(f"{self.PREFIX_METADATA}:last_sle_fetch", str(timestamp))
+            
+            logger.debug(f"Saved SLE snapshot with {sle_data.get('total', 0)} sites")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving SLE snapshot: {error}")
+            return False
+    
+    def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent SLE snapshot.
+        
+        Returns:
+            SLE data dictionary or None if not cached
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_SLE}:current")
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving SLE snapshot: {error}")
+            return None
+    
+    def get_last_sle_timestamp(self) -> Optional[int]:
+        """
+        Get the timestamp of the last SLE fetch.
+        
+        Used for incremental fetching - only fetch data newer than this.
+        
+        Returns:
+            Unix timestamp or None if never fetched
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_METADATA}:last_sle_fetch")
+            return int(float(data)) if data else None
+        except Exception as error:
+            logger.error(f"Error getting last SLE timestamp: {error}")
+            return None
+    
+    def save_worst_sites_sle(
+        self,
+        metric: str,
+        data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save worst sites by SLE metric.
+        
+        Args:
+            metric: SLE metric name (gateway-health, wan-link-health, etc.)
+            data: Response from get_org_worst_sites_by_sle()
+            ttl: Time-to-live in seconds (default: 1 hour)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            key = f"{self.PREFIX_SLE}:worst:{metric}"
+            self.client.setex(
+                key,
+                ttl or 3600,  # 1 hour default (changes frequently)
+                self._serialize(data)
+            )
+            return True
+        except Exception as error:
+            logger.error(f"Error saving worst sites for {metric}: {error}")
+            return False
+    
+    def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached worst sites by SLE metric.
+        
+        Args:
+            metric: SLE metric name
+        
+        Returns:
+            Worst sites data or None if not cached
+        """
+        try:
+            key = f"{self.PREFIX_SLE}:worst:{metric}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving worst sites for {metric}: {error}")
+            return None
+    
+    # ==================== Alarms Data ====================
+    
+    def save_alarms(
+        self,
+        alarms_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save alarms snapshot.
+        
+        Stores current alarms and individual alarm records for deduplication.
+        
+        Args:
+            alarms_data: Response from search_org_alarms()
+                        Contains: total, results[]
+            ttl: Time-to-live in seconds (default: 7 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            timestamp = int(time.time())
+            ttl_seconds = ttl or (7 * 24 * 3600)  # 7 days default
+            
+            # Save current alarms snapshot
+            current_key = f"{self.PREFIX_ALARMS}:current"
+            self.client.setex(
+                current_key,
+                ttl_seconds,
+                self._serialize(alarms_data)
+            )
+            
+            # Store individual alarms by ID for deduplication
+            results = alarms_data.get("results", [])
+            pipe = self.client.pipeline()
+            for alarm in results:
+                alarm_id = alarm.get("id")
+                if alarm_id:
+                    alarm_key = f"{self.PREFIX_ALARMS}:id:{alarm_id}"
+                    pipe.setex(alarm_key, ttl_seconds, self._serialize(alarm))
+            pipe.execute()
+            
+            # Update last alarms fetch timestamp
+            self.client.set(f"{self.PREFIX_METADATA}:last_alarms_fetch", str(timestamp))
+            
+            logger.debug(f"Saved {len(results)} alarms")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving alarms: {error}")
+            return False
+    
+    def get_alarms(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent alarms snapshot.
+        
+        Returns:
+            Alarms data dictionary or None if not cached
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_ALARMS}:current")
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving alarms: {error}")
+            return None
+    
+    def get_last_alarms_timestamp(self) -> Optional[int]:
+        """
+        Get the timestamp of the last alarms fetch.
+        
+        Used for incremental fetching - only fetch alarms newer than this.
+        
+        Returns:
+            Unix timestamp or None if never fetched
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_METADATA}:last_alarms_fetch")
+            return int(float(data)) if data else None
+        except Exception as error:
+            logger.error(f"Error getting last alarms timestamp: {error}")
+            return None
+    
+    def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific alarm by ID.
+        
+        Args:
+            alarm_id: Alarm UUID
+        
+        Returns:
+            Alarm data or None if not found
+        """
+        try:
+            key = f"{self.PREFIX_ALARMS}:id:{alarm_id}"
+            data = self.client.get(key)
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving alarm {alarm_id}: {error}")
+            return None
+    
+    def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
+        """
+        Get all cached alarms of a specific type.
+        
+        Args:
+            alarm_type: Alarm type (e.g., "infra_dhcp_failure")
+        
+        Returns:
+            List of matching alarms
+        """
+        try:
+            alarms_data = self.get_alarms()
+            if not alarms_data:
+                return []
+            
+            results = alarms_data.get("results", [])
+            return [a for a in results if a.get("type") == alarm_type]
+        except Exception as error:
+            logger.error(f"Error filtering alarms by type {alarm_type}: {error}")
+            return []
+    
+    def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all cached alarms for a specific site.
+        
+        Args:
+            site_id: Site UUID
+        
+        Returns:
+            List of matching alarms
+        """
+        try:
+            alarms_data = self.get_alarms()
+            if not alarms_data:
+                return []
+            
+            results = alarms_data.get("results", [])
+            return [a for a in results if a.get("site_id") == site_id]
+        except Exception as error:
+            logger.error(f"Error filtering alarms by site {site_id}: {error}")
+            return []
+
     # ==================== Cache Management ====================
     
     def clear_all(self) -> bool:
@@ -1389,6 +1654,13 @@ class RedisCache:
             
             history_keys = self.client.keys(f"{self.PREFIX_HISTORY}:*")
             stats["keys"]["history_series"] = len(history_keys)
+            
+            # Count SLE and Alarms keys
+            sle_keys = self.client.keys(f"{self.PREFIX_SLE}:*")
+            stats["keys"]["sle_keys"] = len(sle_keys)
+            
+            alarms_keys = self.client.keys(f"{self.PREFIX_ALARMS}:*")
+            stats["keys"]["alarms_keys"] = len(alarms_keys)
             
             # Get persistence configuration
             stats["persistence"] = self.get_persistence_config()
@@ -1662,6 +1934,41 @@ class NullCache:
         cursor: Optional[str] = None
     ) -> int:
         return 0
+    
+    # SLE stubs
+    def save_sle_snapshot(self, sle_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+        return False
+    
+    def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def get_last_sle_timestamp(self) -> Optional[int]:
+        return None
+    
+    def save_worst_sites_sle(self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+        return False
+    
+    def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    # Alarms stubs
+    def save_alarms(self, alarms_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+        return False
+    
+    def get_alarms(self) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def get_last_alarms_timestamp(self) -> Optional[int]:
+        return None
+    
+    def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
+        return None
+    
+    def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
+        return []
+    
+    def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
+        return []
     
     def clear_all(self) -> bool:
         return True

@@ -88,7 +88,26 @@ class DashboardDataProvider:
         self.data_load_complete: bool = False  # Tracks if initial load finished
         self.failover_records: List[FailoverEventRecord] = []
         self.daily_aggregates: List[AggregatedMetrics] = []
+        
+        # WAN port status counts (set externally after port processing)
+        self.wan_down_count: int = 0
+        self.wan_disabled_count: int = 0
+        
+        # Gateway health counts (set externally from inventory API)
+        self.gateways_connected: int = 0
+        self.gateways_disconnected: int = 0
+        self.gateways_total: int = 0
         self.region_aggregates: List[AggregatedMetrics] = []
+        
+        # SLE (Service Level Experience) data
+        self.sle_data: Optional[Dict[str, Any]] = None
+        self.worst_sites_gateway_health: Optional[Dict[str, Any]] = None
+        self.worst_sites_wan_link: Optional[Dict[str, Any]] = None
+        
+        # Alarms data
+        self.alarms_data: Optional[Dict[str, Any]] = None
+        self.alarms_by_severity: Dict[str, int] = {}
+        self.alarms_by_type: Dict[str, int] = {}
         
         logger.debug("DashboardDataProvider initialized")
     
@@ -121,6 +140,122 @@ class DashboardDataProvider:
         self.daily_aggregates = daily
         self.region_aggregates = region
         logger.debug(f"Updated {len(daily)} daily, {len(region)} region aggregates")
+    
+    def update_sle_data(self, sle_data: Dict[str, Any]):
+        """
+        Update SLE data cache.
+        
+        Args:
+            sle_data: Response from get_org_sites_sle() API call
+        """
+        self.sle_data = sle_data
+        logger.debug(f"Updated SLE data for {sle_data.get('total', 0)} sites")
+    
+    def update_worst_sites(
+        self,
+        gateway_health: Optional[Dict[str, Any]] = None,
+        wan_link: Optional[Dict[str, Any]] = None
+    ):
+        """
+        Update worst sites by SLE metric.
+        
+        Args:
+            gateway_health: Worst sites by gateway-health
+            wan_link: Worst sites by wan-link-health
+        """
+        if gateway_health:
+            self.worst_sites_gateway_health = gateway_health
+            logger.debug(f"Updated {len(gateway_health.get('results', []))} worst gateway-health sites")
+        if wan_link:
+            self.worst_sites_wan_link = wan_link
+            logger.debug(f"Updated {len(wan_link.get('results', []))} worst wan-link sites")
+    
+    def update_alarms(self, alarms_data: Dict[str, Any]):
+        """
+        Update alarms data cache and compute summary stats.
+        
+        Args:
+            alarms_data: Response from search_org_alarms() API call
+        """
+        self.alarms_data = alarms_data
+        
+        # Compute severity counts
+        self.alarms_by_severity = {}
+        self.alarms_by_type = {}
+        
+        for alarm in alarms_data.get("results", []):
+            severity = alarm.get("severity", "unknown")
+            alarm_type = alarm.get("type", "unknown")
+            
+            self.alarms_by_severity[severity] = self.alarms_by_severity.get(severity, 0) + 1
+            self.alarms_by_type[alarm_type] = self.alarms_by_type.get(alarm_type, 0) + 1
+        
+        total = alarms_data.get("total", len(alarms_data.get("results", [])))
+        logger.debug(f"Updated {total} alarms ({len(self.alarms_by_type)} types)")
+    
+    def get_sle_summary(self) -> Dict[str, Any]:
+        """
+        Get SLE summary for dashboard display.
+        
+        Returns:
+            Dictionary with SLE metrics summary
+        """
+        if not self.sle_data:
+            return {"available": False}
+        
+        results = self.sle_data.get("results", [])
+        
+        # Calculate average SLE scores across all sites
+        gateway_health_scores = []
+        wan_link_scores = []
+        app_health_scores = []
+        
+        for site in results:
+            if "gateway-health" in site:
+                gateway_health_scores.append(site["gateway-health"])
+            if "wan-link-health" in site:
+                wan_link_scores.append(site["wan-link-health"])
+            if "application-health" in site:
+                app_health_scores.append(site["application-health"])
+        
+        def avg(lst: List[float]) -> float:
+            return sum(lst) / len(lst) if lst else 0.0
+        
+        def count_below_threshold(lst: List[float], threshold: float) -> int:
+            return len([v for v in lst if v < threshold])
+        
+        return {
+            "available": True,
+            "total_sites": len(results),
+            "gateway_health_avg": round(avg(gateway_health_scores) * 100, 1),
+            "wan_link_avg": round(avg(wan_link_scores) * 100, 1),
+            "app_health_avg": round(avg(app_health_scores) * 100, 1),
+            "sites_gateway_degraded": count_below_threshold(gateway_health_scores, 0.9),
+            "sites_wan_degraded": count_below_threshold(wan_link_scores, 0.9),
+            "sites_app_degraded": count_below_threshold(app_health_scores, 0.9),
+            "worst_gateway_health": self.worst_sites_gateway_health,
+            "worst_wan_link": self.worst_sites_wan_link
+        }
+    
+    def get_alarms_summary(self) -> Dict[str, Any]:
+        """
+        Get alarms summary for dashboard display.
+        
+        Returns:
+            Dictionary with alarm counts and breakdown
+        """
+        if not self.alarms_data:
+            return {"available": False, "total": 0}
+        
+        return {
+            "available": True,
+            "total": self.alarms_data.get("total", 0),
+            "by_severity": self.alarms_by_severity,
+            "by_type": self.alarms_by_type,
+            "critical_count": self.alarms_by_severity.get("critical", 0),
+            "warn_count": self.alarms_by_severity.get("warn", 0),
+            "recent_alarms": self.alarms_data.get("results", [])[:10]  # Top 10 recent
+        }
     
     def get_dashboard_data(self) -> Dict[str, Any]:
         """
@@ -189,7 +324,9 @@ class DashboardDataProvider:
             "utilization_dist": util_dist,
             "region_summary": region_summary,
             "trends": trends,
-            "throughput": throughput
+            "throughput": throughput,
+            "sle_summary": self.get_sle_summary(),
+            "alarms_summary": self.get_alarms_summary()
         }
     
     def _calculate_site_statuses(self) -> Dict[str, int]:
@@ -631,7 +768,8 @@ class DashboardDataProvider:
             return {
                 "total_circuits": 0,
                 "circuits_up": 0,
-                "circuits_down": 0,
+                "circuits_down": self.wan_down_count,
+                "circuits_disabled": self.wan_disabled_count,
                 "avg_utilization": 0.0,
                 "max_utilization": 0.0,
                 "circuits_above_70": 0,
@@ -674,8 +812,9 @@ class DashboardDataProvider:
         
         return {
             "total_circuits": len(circuit_ids),
-            "circuits_up": len(circuit_ids) - circuits_down,
-            "circuits_down": circuits_down,
+            "circuits_up": len(circuit_ids),
+            "circuits_down": self.wan_down_count,
+            "circuits_disabled": self.wan_disabled_count,
             "avg_utilization": sum(circuit_max_util.values()) / len(circuit_max_util) if circuit_max_util else 0.0,
             "max_utilization": max(circuit_max_util.values()) if circuit_max_util else 0.0,
             "circuits_above_70": above_70,
@@ -722,3 +861,21 @@ class DashboardDataProvider:
             secondary_status=sorted(secondary_status, key=lambda r: r.hour_key),
             failover_records=self.failover_records
         )
+
+    def get_gateway_health_summary(self) -> Dict[str, Any]:
+        """
+        Get gateway device health summary.
+        
+        Returns:
+            Dictionary with gateway health counts:
+            {
+                "total": int,
+                "connected": int (online/healthy),
+                "disconnected": int (offline)
+            }
+        """
+        return {
+            "total": self.gateways_total,
+            "connected": self.gateways_connected,
+            "disconnected": self.gateways_disconnected
+        }

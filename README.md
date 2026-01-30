@@ -312,6 +312,53 @@ MistWANPerformance/
 
 ```json
 {
+  "26.01.30.20.25": {
+    "feature-additions": [
+      "Dashboard SLE cards: SLE Gateway, SLE WAN Link, SLE App, SLE Degraded Sites",
+      "Dashboard Alarms cards: Total Alarms, Critical Alarms (24h)",
+      "SLE data loading at dashboard startup (3208 sites, gateway-health scores)",
+      "Worst sites retrieval for gateway-health and wan-link-health metrics",
+      "Alarms search with pagination (10,393 alarms in 24h)"
+    ],
+    "api-changes": [
+      "DashboardDataProvider.update_sle_data() - stores SLE snapshot",
+      "DashboardDataProvider.update_worst_sites() - stores worst performing sites",
+      "DashboardDataProvider.update_alarms() - stores alarms with severity/type breakdown",
+      "DashboardDataProvider.get_sle_summary() - computes SLE metrics for display",
+      "DashboardDataProvider.get_alarms_summary() - computes alarm counts for display"
+    ],
+    "documentation": [
+      "Updated TODO.md Task E as complete with implementation details"
+    ]
+  },
+  "26.01.29.20.45": {
+    "feature-additions": [
+      "Redis caching for SLE data: save_sle_snapshot(), get_sle_snapshot(), save_worst_sites_sle()",
+      "Redis caching for Alarms: save_alarms(), get_alarms(), get_alarm_by_id()",
+      "Incremental fetch support: get_last_sle_timestamp(), get_last_alarms_timestamp()",
+      "Alarm filter methods: get_alarms_by_type(), get_alarms_by_site()"
+    ],
+    "data-model-changes": [
+      "Added PREFIX_SLE and PREFIX_ALARMS to RedisCache",
+      "SLE cached with 7-day TTL, worst sites with 1-hour TTL",
+      "Individual alarms stored by ID for deduplication"
+    ]
+  },
+  "26.01.29.20.15": {
+    "feature-additions": [
+      "Added MistInsightsOperations class for SLE and Alarms API operations",
+      "Added get_org_sites_sle() - retrieves SLE scores for all 3208 sites",
+      "Added get_org_worst_sites_by_sle() - retrieves worst performing sites by metric",
+      "Added search_org_alarms() - searches org alarms with type filtering and pagination"
+    ],
+    "api-changes": [
+      "Integrated MistInsightsOperations into MistAPIClient facade",
+      "Added new insights_ops property to MistAPIClient"
+    ],
+    "documentation": [
+      "Updated TODO.md with SLE/Alarms API testing results and response structures"
+    ]
+  },
   "25.01.30.14.30": {
     "feature-additions": [
       "ProcessPoolExecutor support for bulk KPI calculations (calculate_availability_bulk, create_daily_aggregates_parallel)",

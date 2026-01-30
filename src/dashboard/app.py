@@ -461,14 +461,32 @@ class WANPerformanceDashboard:
                 dbc.Col(self._build_status_card("active-alerts", "Alerts", "0", "high"), width=2),
             ], className="mb-3"),
             
-            # WAN Circuit Summary Cards Row
+            # Gateway Health Row
             dbc.Row([
-                dbc.Col(self._build_status_card("total-circuits", "Total Circuits", "0"), width=2),
-                dbc.Col(self._build_status_card("circuits-up", "Circuits Up", "0", "healthy"), width=2),
-                dbc.Col(self._build_status_card("circuits-down", "Circuits Down", "0", "critical"), width=2),
+                dbc.Col(self._build_status_card("gateways-online", "Gateways Online", "0", "healthy"), width=2),
+                dbc.Col(self._build_status_card("gateways-offline", "Gateways Offline", "0", "critical"), width=2),
+                # WAN Circuit Summary - moved to same row for space efficiency
+                dbc.Col(self._build_status_card("total-circuits", "Circuits Up", "0", "healthy"), width=2),
+                dbc.Col(self._build_status_card("circuits-down", "Down", "0", "critical"), width=1),
+                dbc.Col(self._build_status_card("circuits-disabled", "Disabled", "0", "normal"), width=1),
                 dbc.Col(self._build_status_card("circuits-above-80", "Above 80%", "0", "high"), width=2),
                 dbc.Col(self._build_status_card("avg-utilization", "Avg Util %", "0.0", "info"), width=2),
+            ], className="mb-3"),
+            
+            # Additional Metrics Row
+            dbc.Row([
+                dbc.Col(self._build_status_card("max-utilization", "Max Util %", "0.0", "warning"), width=2),
                 dbc.Col(self._build_status_card("total-bandwidth", "Total BW (Gbps)", "0.0", "info"), width=2),
+            ], className="mb-3"),
+            
+            # SLE (Service Level Experience) Row
+            dbc.Row([
+                dbc.Col(self._build_status_card("sle-gateway-health", "SLE Gateway", "-", "info"), width=2),
+                dbc.Col(self._build_status_card("sle-wan-link", "SLE WAN Link", "-", "info"), width=2),
+                dbc.Col(self._build_status_card("sle-app-health", "SLE App", "-", "info"), width=2),
+                dbc.Col(self._build_status_card("sle-degraded-sites", "SLE Degraded", "0", "warning"), width=2),
+                dbc.Col(self._build_status_card("alarms-total", "Alarms", "0", "high"), width=2),
+                dbc.Col(self._build_status_card("alarms-critical", "Critical", "0", "critical"), width=2),
             ], className="mb-4"),
             
             # Drilldown Content Area
@@ -867,13 +885,24 @@ class WANPerformanceDashboard:
             "...",  # critical
             "...",  # failovers
             "...",  # alerts
+            # Gateway health
+            "...",  # gateways online
+            "...",  # gateways offline
             # Circuit summary cards
-            "...",  # total circuits
             "...",  # circuits up
             "...",  # circuits down
+            "...",  # circuits disabled
             "...",  # circuits above 80%
             "...",  # avg utilization
+            "...",  # max utilization
             "...",  # total bandwidth
+            # SLE metrics
+            "-",    # sle gateway health
+            "-",    # sle wan link
+            "-",    # sle app health
+            "0",    # sle degraded sites
+            "0",    # alarms total
+            "0",    # alarms critical
             # Tables and charts
             [],     # congested table data
             loading_alert,
@@ -895,13 +924,24 @@ class WANPerformanceDashboard:
                 Output("critical-sites", "children"),
                 Output("active-failovers", "children"),
                 Output("active-alerts", "children"),
+                # Gateway health
+                Output("gateways-online", "children"),
+                Output("gateways-offline", "children"),
                 # Circuit summary cards
                 Output("total-circuits", "children"),
-                Output("circuits-up", "children"),
                 Output("circuits-down", "children"),
+                Output("circuits-disabled", "children"),
                 Output("circuits-above-80", "children"),
                 Output("avg-utilization", "children"),
+                Output("max-utilization", "children"),
                 Output("total-bandwidth", "children"),
+                # SLE metrics
+                Output("sle-gateway-health", "children"),
+                Output("sle-wan-link", "children"),
+                Output("sle-app-health", "children"),
+                Output("sle-degraded-sites", "children"),
+                Output("alarms-total", "children"),
+                Output("alarms-critical", "children"),
                 # Tables and charts
                 Output("top-congested-table", "data"),
                 Output("alerts-list", "children"),
@@ -935,13 +975,19 @@ class WANPerformanceDashboard:
             failovers = data.get("active_failovers", 0)
             alerts = data.get("alert_count", 0)
             
+            # Gateway health summary
+            gateway_health = self.data_provider.get_gateway_health_summary()
+            gateways_online = gateway_health.get("connected", 0)
+            gateways_offline = gateway_health.get("disconnected", 0)
+            
             # Circuit summary stats
             circuit_summary = self.data_provider.get_circuit_summary()
-            total_circuits = circuit_summary.get("total_circuits", 0)
             circuits_up = circuit_summary.get("circuits_up", 0)
             circuits_down = circuit_summary.get("circuits_down", 0)
+            circuits_disabled = circuit_summary.get("circuits_disabled", 0)
             circuits_above_80 = circuit_summary.get("circuits_above_80", 0)
             avg_utilization = circuit_summary.get("avg_utilization", 0.0)
+            max_utilization = circuit_summary.get("max_utilization", 0.0)
             total_bandwidth = circuit_summary.get("total_bandwidth_gbps", 0.0)
             
             # Top congested table
@@ -949,6 +995,24 @@ class WANPerformanceDashboard:
             
             # Alerts list
             alerts_list = self._build_alerts_list(data.get("alerts", []))
+            
+            # SLE metrics
+            sle_summary = data.get("sle_summary", {"available": False})
+            alarms_summary = data.get("alarms_summary", {"available": False, "total": 0})
+            
+            if sle_summary.get("available", False):
+                sle_gateway = f"{sle_summary.get('gateway_health_avg', 0):.1f}%"
+                sle_wan = f"{sle_summary.get('wan_link_avg', 0):.1f}%"
+                sle_app = f"{sle_summary.get('app_health_avg', 0):.1f}%"
+                sle_degraded = str(sle_summary.get('sites_gateway_degraded', 0))
+            else:
+                sle_gateway = "-"
+                sle_wan = "-"
+                sle_app = "-"
+                sle_degraded = "0"
+            
+            alarms_total = str(alarms_summary.get("total", 0))
+            alarms_critical = str(alarms_summary.get("critical_count", 0))
             
             # Charts - log what data we're passing
             util_dist = data.get("utilization_dist", {})
@@ -974,13 +1038,24 @@ class WANPerformanceDashboard:
                 str(critical),
                 str(failovers),
                 str(alerts),
+                # Gateway health
+                str(gateways_online),
+                str(gateways_offline),
                 # Circuit summary
-                str(total_circuits),
                 str(circuits_up),
                 str(circuits_down),
+                str(circuits_disabled),
                 str(circuits_above_80),
                 f"{avg_utilization:.1f}",
+                f"{max_utilization:.1f}",
                 f"{total_bandwidth:.1f}",
+                # SLE metrics
+                sle_gateway,
+                sle_wan,
+                sle_app,
+                sle_degraded,
+                alarms_total,
+                alarms_critical,
                 # Tables and charts
                 congested_data,
                 alerts_list,
@@ -1049,66 +1124,60 @@ class WANPerformanceDashboard:
             
             if self.data_provider:
                 # Determine data load state
-                data_loaded = hasattr(self.data_provider, 'data_load_complete') and self.data_provider.data_load_complete
                 has_records = len(self.data_provider.utilization_records) > 0 if hasattr(self.data_provider, 'utilization_records') else False
+                sites_count = len(self.data_provider.sites) if hasattr(self.data_provider, 'sites') else 0
+                records_count = len(self.data_provider.utilization_records) if has_records else 0
                 
-                # Get cache info
+                # Get cache info - prioritize showing actual data counts
                 try:
-                    if hasattr(self.data_provider, 'cache_status'):
+                    if has_records and sites_count > 0:
+                        # Data is loaded - show useful stats
+                        wan_down = getattr(self.data_provider, 'wan_down_count', 0)
+                        wan_disabled = getattr(self.data_provider, 'wan_disabled_count', 0)
+                        cache_status = f"Cache: {sites_count} sites, {records_count} circuits"
+                        if wan_down > 0 or wan_disabled > 0:
+                            cache_status += f" (down:{wan_down}, disabled:{wan_disabled})"
+                    elif sites_count > 0:
+                        cache_status = f"Cache: {sites_count} sites (loading circuits...)"
+                    elif hasattr(self.data_provider, 'cache_status'):
                         cs = self.data_provider.cache_status
                         fresh = cs.get('fresh_sites', 0)
                         stale = cs.get('stale_sites', 0)
-                        missing = cs.get('missing_sites', 0)
-                        total = fresh + stale + missing
+                        total = fresh + stale
                         if total > 0:
-                            cache_status = f"Cache: {fresh}/{total} fresh, {stale} stale"
-                        else:
-                            cache_status = "Cache: Loading sites..."
-                    else:
-                        # Fallback to record count
-                        records = len(self.data_provider.utilization_records) if has_records else 0
-                        sites = len(self.data_provider.sites) if hasattr(self.data_provider, 'sites') else 0
-                        if records > 0:
-                            cache_status = f"Cache: {sites} sites, {records} records"
-                        elif sites > 0:
-                            cache_status = f"Cache: {sites} sites (loading data...)"
+                            cache_status = f"Cache: {fresh}/{total} fresh"
                         else:
                             cache_status = "Cache: Loading..."
+                    else:
+                        cache_status = "Cache: Loading..."
                     
-                    # Refresh activity - be more descriptive about current state
-                    if hasattr(self.data_provider, 'refresh_activity'):
-                        ra = self.data_provider.refresh_activity
-                        status = ra.get('status', 'initializing')
-                        
-                        if status == 'initializing':
-                            refresh_activity = "Refresh: Initializing..."
-                        elif status == 'loading':
-                            refresh_activity = "Refresh: Loading initial data..."
-                        elif ra.get('active', False):
-                            sites_list = ra.get('current_sites', [])
-                            if sites_list:
-                                refresh_activity = f"Refreshing: {len(sites_list)} sites..."
-                            else:
-                                refresh_activity = "Refresh: Active"
-                        else:
-                            refresh_activity = "Refresh: Idle"
-                    
-                    # Check background worker status
+                    # Refresh activity - check background worker first (most reliable)
                     if hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
                         status = self.data_provider.background_worker.get_status()
                         cycles = status.get('refresh_cycles', 0)
                         refreshed = status.get('total_sites_refreshed', 0)
                         if status.get('running', False):
-                            refresh_activity = f"Refresh: Cycle {cycles} ({refreshed} sites updated)"
+                            refresh_activity = f"Refresh: Cycle {cycles} ({refreshed} sites)"
                         else:
-                            refresh_activity = f"Refresh: Paused (completed {cycles} cycles)"
-                    elif not data_loaded and not has_records:
-                        # Initial load in progress
-                        refresh_activity = "Refresh: Loading from Mist API..."
+                            refresh_activity = f"Refresh: Idle (cycle {cycles})"
+                    elif has_records:
+                        # Data is loaded, no background worker yet
+                        refresh_activity = "Refresh: Ready"
+                    elif hasattr(self.data_provider, 'refresh_activity'):
+                        ra = self.data_provider.refresh_activity
+                        status = ra.get('status', 'initializing')
+                        if status == 'loading':
+                            refresh_activity = "Refresh: Loading..."
+                        elif ra.get('active', False):
+                            refresh_activity = "Refresh: Active"
+                        else:
+                            refresh_activity = "Refresh: Idle"
+                    else:
+                        refresh_activity = "Refresh: Waiting..."
                         
                 except Exception as error:
                     logger.debug(f"Status bar error: {error}")
-                    cache_status = "Cache: Error reading status"
+                    cache_status = "Cache: Error"
             
             return [backend_indicator, rate_text, rate_style, cache_status, refresh_activity]
         
@@ -1324,32 +1393,35 @@ class WANPerformanceDashboard:
         # Log what we're building
         logger.info(f"[CHART] Building utilization chart with data: {distribution}")
         
-        # Add 1 to values for log scale (log(0) is undefined)
+        # Get values and ensure no negatives
         values = list(distribution.values())
-        display_values = [max(v, 0) for v in values]  # Ensure no negatives
+        
+        # Always use log scale for this chart - it typically has very skewed data
+        # Add 0.5 to all values for log scale display (log(0) is undefined)
+        # This shows zero bars as very short but still visible
+        display_values = [max(v, 0.5) for v in values]
         
         fig = go.Figure(data=[
             go.Bar(
                 x=list(distribution.keys()),
                 y=display_values,
                 marker_color=colors[:len(distribution)],
-                text=[f"{v:,}" for v in values],
+                text=[f"{v:,}" if v > 0 else "0" for v in values],
                 textposition='outside',
                 hovertemplate="<b>%{x}</b><br>Circuits: %{text}<extra></extra>"
             )
         ])
         
-        # Use log scale if there's a large range in values
-        max_val = max(values) if values else 1
-        min_nonzero = min((v for v in values if v > 0), default=1)
-        use_log_scale = max_val > 0 and (max_val / max(min_nonzero, 1)) > 100
-        
         fig.update_layout(
             template="plotly_dark",
             margin=dict(l=40, r=20, t=40, b=60),
             xaxis_title="Utilization Range",
-            yaxis_title="Circuit Count" + (" (log scale)" if use_log_scale else ""),
-            yaxis_type="log" if use_log_scale else "linear",
+            yaxis_title="Circuit Count (log scale)",
+            yaxis_type="log",
+            yaxis=dict(
+                dtick=1,  # Show major gridlines at 1, 10, 100, 1000, etc.
+                tickformat=",d"  # Format as integers
+            ),
             showlegend=False,
             xaxis_tickangle=-45
         )
