@@ -447,6 +447,27 @@ MistWANPerformance/
 
 ```json
 {
+  "26.02.02.16.10": {
+    "performance": [
+      "Optimized get_site_vpn_peers: 40x faster (8-10s down to 150-250ms)",
+      "Site-specific key pattern scan instead of loading all VPN data",
+      "Site detail click now responds in sub-second time"
+    ],
+    "feature-additions": [
+      "Performance timing instrumentation for debugging slow operations",
+      "PerformanceTimer context manager and @timed decorator",
+      "format_perf_report() for performance summary reporting",
+      "[PERF] log warnings when operations exceed threshold"
+    ],
+    "api-changes": [
+      "New module: src/utils/performance.py with timing utilities",
+      "RedisCache: get_site_vpn_peers() now uses site-specific key pattern",
+      "Performance instrumentation in data_provider.py and app.py"
+    ],
+    "bug-fixes": [
+      "Fixed VPN peer lookup scanning all 32k+ peers for single site lookup"
+    ]
+  },
   "26.02.02.11.00": {
     "performance": [
       "Removed all timers and delays from data fetchers and precomputers",
