@@ -277,8 +277,8 @@ class TestRankedCircuitToDict(unittest.TestCase):
             rank=1,
             site_id="site-001",
             site_name="Store NYC-001",
-            circuit_id="wan0",
-            region="East",
+            port_id="wan0",
+            bandwidth_mbps=100,
             metric_value=92.5,
             metric_name="utilization_pct",
             threshold_status="critical",
@@ -290,8 +290,8 @@ class TestRankedCircuitToDict(unittest.TestCase):
         self.assertEqual(result["rank"], 1)
         self.assertEqual(result["site_id"], "site-001")
         self.assertEqual(result["site_name"], "Store NYC-001")
-        self.assertEqual(result["circuit_id"], "wan0")
-        self.assertEqual(result["region"], "East")
+        self.assertEqual(result["port_id"], "wan0")
+        self.assertEqual(result["bandwidth_mbps"], 100)
         self.assertEqual(result["metric_value"], 92.5)
         self.assertEqual(result["metric_name"], "utilization_pct")
         self.assertEqual(result["threshold_status"], "critical")
