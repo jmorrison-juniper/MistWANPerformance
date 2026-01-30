@@ -447,6 +447,23 @@ MistWANPerformance/
 
 ```json
 {
+  "26.02.02.11.00": {
+    "performance": [
+      "Removed all timers and delays from data fetchers and precomputers",
+      "Data fetchers now run continuously without sleep intervals",
+      "Precomputers process data without pause between cycles",
+      "SLE and VPN background workers stay busy continuously",
+      "Maximum throughput: workers immediately start next cycle on completion"
+    ],
+    "refactoring": [
+      "BackgroundRefreshWorker: Removed min_delay sleep between cycles",
+      "SLEBackgroundWorker: Removed 30s cycle delay and 2s inter-site delays",
+      "VPNPeerBackgroundWorker: Removed refresh_interval check and cycle delays",
+      "AsyncDashboardPrecomputer: Removed 5s initial delay and refresh_interval sleep",
+      "AsyncSiteSlePrecomputer/AsyncSiteVpnPrecomputer: Removed 30s initial delay and cycle_delay",
+      "All workers: Kept 0.1s sleep on errors only to prevent CPU spin on repeated failures"
+    ]
+  },
   "26.02.02.10.30": {
     "performance": [
       "Async precomputers using asyncio.TaskGroup for I/O parallelism (50 sites concurrent)",

@@ -85,21 +85,19 @@ class SiteSlePrecomputer:
         logger.info("[OK] Site SLE precomputer stopped")
     
     def _precompute_loop(self) -> None:
-        """Main precomputation loop."""
-        # Initial delay to let data load
-        time.sleep(30)
-        
+        """Main precomputation loop - runs continuously without delays."""
         while self._running:
             try:
                 self._process_batch()
-                time.sleep(self.cycle_delay)
+                # No delay - stay busy, immediately process next batch
                 
             except Exception as error:
                 logger.error(
                     f"[ERROR] Site SLE precompute failed: {error}",
                     exc_info=True
                 )
-                time.sleep(5)
+                # Brief yield to prevent CPU spin on repeated errors
+                time.sleep(0.1)
     
     def _process_batch(self) -> None:
         """Process a batch of sites."""
@@ -281,21 +279,19 @@ class SiteVpnPrecomputer:
         logger.info("[OK] Site VPN precomputer stopped")
     
     def _precompute_loop(self) -> None:
-        """Main precomputation loop."""
-        # Initial delay to let data load
-        time.sleep(45)
-        
+        """Main precomputation loop - runs continuously without delays."""
         while self._running:
             try:
                 self._process_batch()
-                time.sleep(self.cycle_delay)
+                # No delay - stay busy, immediately process next batch
                 
             except Exception as error:
                 logger.error(
                     f"[ERROR] Site VPN precompute failed: {error}",
                     exc_info=True
                 )
-                time.sleep(5)
+                # Brief yield to prevent CPU spin on repeated errors
+                time.sleep(0.1)
     
     def _process_batch(self) -> None:
         """Process a batch of sites."""

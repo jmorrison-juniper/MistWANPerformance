@@ -147,9 +147,7 @@ class AsyncBackgroundRefreshWorker:
                 await self._run_refresh_cycle_async()
                 cycle_duration = time.time() - cycle_start
                 
-                # Ensure minimum delay between cycles
-                if cycle_duration < self.min_delay:
-                    await asyncio.sleep(self.min_delay - cycle_duration)
+                # No delay - stay busy, immediately start next cycle
                     
             except asyncio.CancelledError:
                 logger.info("[INFO] Async refresh loop cancelled")
@@ -166,7 +164,8 @@ class AsyncBackgroundRefreshWorker:
                 
             except Exception as error:
                 logger.error(f"[ERROR] Async refresh error: {error}", exc_info=True)
-                await asyncio.sleep(5)
+                # Brief yield to prevent CPU spin on repeated errors
+                await asyncio.sleep(0.1)
     
     async def _run_refresh_cycle_async(self) -> None:
         """Execute one async refresh cycle with parallel site processing."""
@@ -492,10 +491,7 @@ class BackgroundRefreshWorker:
                 self._run_refresh_cycle()
                 cycle_duration = time.time() - cycle_start
                 
-                # Ensure minimum delay between API calls (rate limit protection)
-                if cycle_duration < self.min_delay:
-                    sleep_time = self.min_delay - cycle_duration
-                    self._interruptible_sleep(sleep_time)
+                # No delay - stay busy, immediately start next cycle
                     
             except RateLimitError as rate_error:
                 # Handle rate limit errors from the API
@@ -510,8 +506,8 @@ class BackgroundRefreshWorker:
                     
             except Exception as error:
                 logger.error(f"[ERROR] Background refresh error: {error}", exc_info=True)
-                # Brief pause on error before retry
-                self._interruptible_sleep(5)
+                # Brief pause on error before retry (0.1s to prevent CPU spin)
+                self._interruptible_sleep(0.1)
     
     def _interruptible_sleep(self, seconds: int) -> None:
         """Sleep that can be interrupted by stop()."""
@@ -737,8 +733,7 @@ class SLEBackgroundWorker:
                 self._collection_cycles += 1
                 self._run_collection_cycle(sle_collector)
                 
-                # Longer pause between cycles to avoid API pressure
-                time.sleep(30)
+                # No delay - stay busy, immediately start next cycle
                 
             except RateLimitError as rate_error:
                 self._rate_limited = True
@@ -751,7 +746,8 @@ class SLEBackgroundWorker:
                 
             except Exception as error:
                 logger.error(f"[ERROR] SLE collection error: {error}", exc_info=True)
-                time.sleep(10)
+                # Brief yield to prevent CPU spin on repeated errors
+                time.sleep(0.1)
     
     def _run_collection_cycle(self, sle_collector) -> None:
         """Execute one SLE collection cycle."""
@@ -789,7 +785,7 @@ class SLEBackgroundWorker:
                 if self.on_site_collected:
                     self.on_site_collected(result)
                 
-                time.sleep(self.min_delay)
+                # No delay - stay busy
         
         # Phase 2: Refresh stale sites (already collected but old)
         all_sites = self._get_all_sites_list()
@@ -830,7 +826,7 @@ class SLEBackgroundWorker:
                 if self.on_site_collected:
                     self.on_site_collected(result)
                 
-                time.sleep(self.min_delay)
+                # No delay - stay busy
         
         # Phase 3: Backfill healthy sites (only when no degraded/stale work remains)
         # This fills in the "missing" sites after priority work is done
@@ -861,7 +857,7 @@ class SLEBackgroundWorker:
                     if self.on_site_collected:
                         self.on_site_collected(result)
                     
-                    time.sleep(self.min_delay)
+                    # No delay - stay busy
         
         cycle_duration = time.time() - cycle_start
         
@@ -999,17 +995,11 @@ class VPNPeerBackgroundWorker:
                     self._rate_limited = False
                     logger.info("[OK] Rate limit cleared - resuming VPN collection")
                 
-                # Check if refresh is needed
-                time_since_last = time.time() - self._last_collection_time
-                if time_since_last < self.refresh_interval:
-                    time.sleep(10)  # Wait a bit before checking again
-                    continue
-                
+                # No refresh interval check - stay busy, always collect
                 self._collection_cycles += 1
                 self._run_collection_cycle()
                 
-                # Pause between cycles
-                time.sleep(self.min_delay)
+                # No delay - immediately start next cycle
                 
             except RateLimitError as rate_error:
                 self._rate_limited = True
@@ -1022,7 +1012,8 @@ class VPNPeerBackgroundWorker:
                 
             except Exception as error:
                 logger.error(f"[ERROR] VPN collection error: {error}", exc_info=True)
-                time.sleep(30)
+                # Brief yield to prevent CPU spin on repeated errors
+                time.sleep(0.1)
     
     def _run_collection_cycle(self) -> None:
         """Execute one VPN peer collection cycle."""

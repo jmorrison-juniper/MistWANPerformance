@@ -81,21 +81,19 @@ class DashboardPrecomputer:
         logger.info("[OK] Dashboard precomputer stopped")
     
     def _precompute_loop(self) -> None:
-        """Main pre-computation loop."""
-        # Initial delay to let data load
-        time.sleep(5)
-        
+        """Main pre-computation loop - runs continuously without delays."""
         while self._running:
             try:
                 self._run_precompute_cycle()
-                time.sleep(self.refresh_interval)
+                # No delay - stay busy, immediately start next cycle
                 
             except Exception as error:
                 logger.error(
                     f"[ERROR] Precompute cycle failed: {error}",
                     exc_info=True
                 )
-                time.sleep(10)
+                # Brief yield to prevent CPU spin on repeated errors
+                time.sleep(0.1)
     
     def _run_precompute_cycle(self) -> None:
         """Execute one pre-computation cycle."""
@@ -513,8 +511,9 @@ class DashboardPrecomputer:
         full_key = f"{DASHBOARD_PREFIX}{key}"
         
         try:
-            if hasattr(self.cache, 'redis') and self.cache.redis:
-                self.cache.redis.set(
+            # Check for Redis client (attribute is 'client', not 'redis')
+            if hasattr(self.cache, 'client') and self.cache.client:
+                self.cache.client.set(
                     full_key,
                     json.dumps(data),
                     ex=120  # 2 minute TTL
@@ -523,7 +522,7 @@ class DashboardPrecomputer:
                 # Fallback for NullCache
                 self.cache._precomputed[key] = data
         except Exception as error:
-            logger.debug(f"[DEBUG] Failed to store precomputed {key}: {error}")
+            logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
     
     def get_precomputed(self, key: str) -> Optional[Dict[str, Any]]:
         """
@@ -538,14 +537,15 @@ class DashboardPrecomputer:
         full_key = f"{DASHBOARD_PREFIX}{key}"
         
         try:
-            if hasattr(self.cache, 'redis') and self.cache.redis:
-                data = self.cache.redis.get(full_key)
+            # Check for Redis client (attribute is 'client', not 'redis')
+            if hasattr(self.cache, 'client') and self.cache.client:
+                data = self.cache.client.get(full_key)
                 if data:
                     return json.loads(data)
             elif hasattr(self.cache, '_precomputed'):
                 return self.cache._precomputed.get(key)
         except Exception as error:
-            logger.debug(f"[DEBUG] Failed to get precomputed {key}: {error}")
+            logger.warning(f"[WARN] Failed to get precomputed {key}: {error}")
         
         return None
     

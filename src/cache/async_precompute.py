@@ -272,19 +272,17 @@ class AsyncDashboardPrecomputer:
         logger.info("[OK] Async dashboard precomputer stopped")
     
     async def _precompute_loop(self) -> None:
-        """Main async precomputation loop."""
-        # Initial delay
-        await asyncio.sleep(5)
-        
+        """Main async precomputation loop - runs continuously without delays."""
         while self._running:
             try:
                 await self._run_precompute_cycle()
-                await asyncio.sleep(self.refresh_interval)
+                # No delay - stay busy, immediately start next cycle
             except asyncio.CancelledError:
                 break
             except Exception as error:
                 logger.error(f"[ERROR] Async precompute failed: {error}", exc_info=True)
-                await asyncio.sleep(10)
+                # Brief yield to prevent CPU spin on repeated errors
+                await asyncio.sleep(0.1)
     
     async def _run_precompute_cycle(self) -> None:
         """Execute one async pre-computation cycle."""
@@ -637,19 +635,17 @@ class AsyncSitePrecomputer:
         logger.info("[OK] Async site precomputer stopped")
     
     async def _precompute_loop(self) -> None:
-        """Main async precomputation loop."""
-        # Initial delay to let data load
-        await asyncio.sleep(30)
-        
+        """Main async precomputation loop - runs continuously without delays."""
         while self._running:
             try:
                 await self._run_full_cycle()
-                await asyncio.sleep(self.cycle_delay)
+                # No delay - stay busy, immediately start next cycle
             except asyncio.CancelledError:
                 break
             except Exception as error:
                 logger.error(f"[ERROR] Async site precompute failed: {error}", exc_info=True)
-                await asyncio.sleep(10)
+                # Brief yield to prevent CPU spin on repeated errors
+                await asyncio.sleep(0.1)
     
     async def _run_full_cycle(self) -> None:
         """Process all sites in parallel batches."""
