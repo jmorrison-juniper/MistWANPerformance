@@ -1012,36 +1012,58 @@ def main():
             _cache = cache_instance  # May still be valid for saving new data
             logger.info("[INFO] No cached data - dashboard will load fresh data")
         
-        # STEP 1b: Quick fetch gateway inventory (single API call, independent of full load)
+        # STEP 1b: Load or fetch gateway inventory (with Redis caching)
+        quick_client = None
         try:
             from src.api.mist_client import MistAPIClient
-            if config.mist is not None:
-                logger.info("[...] Fetching gateway inventory (quick API call)")
-                quick_client = MistAPIClient(config.mist, config.operational)
-                gateway_inventory = quick_client.get_gateway_inventory()
-                _data_provider.gateways_total = gateway_inventory.get("total", 0)
-                _data_provider.gateways_connected = gateway_inventory.get("connected", 0)
-                _data_provider.gateways_disconnected = gateway_inventory.get("disconnected", 0)
-                
-                # Build set of site IDs with disconnected gateways
-                disconnected_sites = set()
-                for gw in gateway_inventory.get("gateways", []):
-                    if not gw.get("connected", False):
-                        site_id = gw.get("site_id")
-                        if site_id:
-                            disconnected_sites.add(site_id)
-                _data_provider.disconnected_site_ids = disconnected_sites
-                
-                logger.info(
-                    f"[OK] Gateway health: {_data_provider.gateways_connected} online, "
-                    f"{_data_provider.gateways_disconnected} offline"
-                )
+            
+            # Check if cached gateway data is fresh (< 5 minutes old)
+            if _cache and _cache.is_gateway_cache_fresh(max_age_seconds=300):
+                cached_inventory = _cache.get_gateway_inventory()
+                if cached_inventory:
+                    _data_provider.gateways_total = cached_inventory.get("total", 0)
+                    _data_provider.gateways_connected = cached_inventory.get("connected", 0)
+                    _data_provider.gateways_disconnected = cached_inventory.get("disconnected", 0)
+                    _data_provider.disconnected_site_ids = _cache.get_disconnected_site_ids()
+                    logger.info(
+                        f"[OK] Gateway health from cache: {_data_provider.gateways_connected} online, "
+                        f"{_data_provider.gateways_disconnected} offline"
+                    )
+            else:
+                # Fetch fresh gateway inventory from API
+                if config.mist is not None:
+                    logger.info("[...] Fetching gateway inventory (quick API call)")
+                    quick_client = MistAPIClient(config.mist, config.operational)
+                    gateway_inventory = quick_client.get_gateway_inventory()
+                    _data_provider.gateways_total = gateway_inventory.get("total", 0)
+                    _data_provider.gateways_connected = gateway_inventory.get("connected", 0)
+                    _data_provider.gateways_disconnected = gateway_inventory.get("disconnected", 0)
+                    
+                    # Build set of site IDs with disconnected gateways
+                    disconnected_sites = set()
+                    for gw in gateway_inventory.get("gateways", []):
+                        if not gw.get("connected", False):
+                            site_id = gw.get("site_id")
+                            if site_id:
+                                disconnected_sites.add(site_id)
+                    _data_provider.disconnected_site_ids = disconnected_sites
+                    
+                    # Save to Redis cache
+                    if _cache:
+                        _cache.save_gateway_inventory(gateway_inventory)
+                    
+                    logger.info(
+                        f"[OK] Gateway health: {_data_provider.gateways_connected} online, "
+                        f"{_data_provider.gateways_disconnected} offline"
+                    )
         except Exception as gateway_error:
             logger.warning(f"[WARN] Could not fetch gateway inventory: {gateway_error}")
         
         # STEP 1c: Quick fetch SLE metrics and alarms (single API call each)
         try:
-            if config.mist is not None and quick_client is not None:
+            if config.mist is not None:
+                if quick_client is None:
+                    quick_client = MistAPIClient(config.mist, config.operational)
                 logger.info("[...] Fetching SLE metrics and alarms (quick API calls)")
                 
                 # Get WAN SLE data for all sites (sle="wan" returns gateway-health, wan-link-health, etc.)

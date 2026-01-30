@@ -69,6 +69,7 @@ class RedisCache:
     PREFIX_HISTORY = "mistwan:history"
     PREFIX_SLE = "mistwan:sle"
     PREFIX_ALARMS = "mistwan:alarms"
+    PREFIX_GATEWAY = "mistwan:gateway"
     
     # Default TTL: 5 minutes (for current/live data that changes frequently)
     DEFAULT_TTL = 300
@@ -1598,6 +1599,127 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error filtering alarms by site {site_id}: {error}")
             return []
+
+    # ==================== Gateway Inventory Data ====================
+    
+    def save_gateway_inventory(
+        self,
+        inventory_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save gateway inventory snapshot.
+        
+        Stores the complete gateway inventory including connected/disconnected status.
+        
+        Args:
+            inventory_data: Response from get_gateway_inventory()
+                           Contains: total, connected, disconnected, gateways[]
+            ttl: Time-to-live in seconds (default: 5 minutes)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            timestamp = int(time.time())
+            ttl_seconds = ttl or 300  # 5 minutes default (status changes frequently)
+            
+            # Save current inventory snapshot
+            current_key = f"{self.PREFIX_GATEWAY}:inventory"
+            self.client.setex(
+                current_key,
+                ttl_seconds,
+                self._serialize(inventory_data)
+            )
+            
+            # Build and save disconnected site IDs set for quick lookup
+            disconnected_sites = []
+            for gw in inventory_data.get("gateways", []):
+                if not gw.get("connected", False):
+                    site_id = gw.get("site_id")
+                    if site_id:
+                        disconnected_sites.append(site_id)
+            
+            disconnected_key = f"{self.PREFIX_GATEWAY}:disconnected_sites"
+            self.client.setex(
+                disconnected_key,
+                ttl_seconds,
+                self._serialize(disconnected_sites)
+            )
+            
+            # Update last gateway fetch timestamp
+            self.client.set(f"{self.PREFIX_METADATA}:last_gateway_fetch", str(timestamp))
+            
+            logger.debug(
+                f"Saved gateway inventory: {inventory_data.get('total', 0)} total, "
+                f"{len(disconnected_sites)} disconnected sites"
+            )
+            return True
+        except Exception as error:
+            logger.error(f"Error saving gateway inventory: {error}")
+            return False
+    
+    def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent gateway inventory snapshot.
+        
+        Returns:
+            Gateway inventory data or None if not cached
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_GATEWAY}:inventory")
+            return self._deserialize(data)
+        except Exception as error:
+            logger.error(f"Error retrieving gateway inventory: {error}")
+            return None
+    
+    def get_disconnected_site_ids(self) -> set:
+        """
+        Get set of site IDs with disconnected gateways.
+        
+        Returns:
+            Set of site IDs (empty set if not cached or error)
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_GATEWAY}:disconnected_sites")
+            sites = self._deserialize(data)
+            return set(sites) if sites else set()
+        except Exception as error:
+            logger.error(f"Error retrieving disconnected site IDs: {error}")
+            return set()
+    
+    def get_last_gateway_timestamp(self) -> Optional[int]:
+        """
+        Get the timestamp of the last gateway inventory fetch.
+        
+        Returns:
+            Unix timestamp or None if never fetched
+        """
+        try:
+            data = self.client.get(f"{self.PREFIX_METADATA}:last_gateway_fetch")
+            return int(float(data)) if data else None
+        except Exception as error:
+            logger.error(f"Error getting last gateway timestamp: {error}")
+            return None
+    
+    def is_gateway_cache_fresh(self, max_age_seconds: int = 300) -> bool:
+        """
+        Check if gateway inventory cache is fresh enough.
+        
+        Args:
+            max_age_seconds: Maximum acceptable age (default: 5 minutes)
+        
+        Returns:
+            True if cache is fresh, False if stale or missing
+        """
+        try:
+            last_fetch = self.get_last_gateway_timestamp()
+            if not last_fetch:
+                return False
+            age = int(time.time()) - last_fetch
+            return age < max_age_seconds
+        except Exception:
+            return False
 
     # ==================== Cache Management ====================
     
