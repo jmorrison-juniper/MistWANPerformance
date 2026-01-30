@@ -442,10 +442,10 @@ class WANPerformanceDashboard:
                         interval=self.REFRESH_INTERVAL_MS,
                         n_intervals=0
                     ),
-                    # Status bar interval (less frequent to reduce overhead)
+                    # Status bar interval - shows live collection activity
                     dcc.Interval(
                         id="status-interval",
-                        interval=15000,  # 15 seconds
+                        interval=10000,  # 10 seconds for live activity updates
                         n_intervals=0
                     )
                 ], width=5)
@@ -2066,42 +2066,65 @@ class WANPerformanceDashboard:
                     else:
                         cache_status = "Cache: Loading..."
                     
-                    # Refresh activity - check SLE background worker status
+                    # Refresh activity - check all background worker statuses
+                    activity_parts = []
+                    
+                    # SLE background worker - shows current site being collected
                     if hasattr(self.data_provider, 'sle_background_worker') and self.data_provider.sle_background_worker:
-                        status = self.data_provider.sle_background_worker.get_status()
-                        cycles = status.get('collection_cycles', 0)
-                        collected = status.get('total_sites_collected', 0)
-                        degraded = status.get('degraded_sites_collected', 0)
-                        rate_limited = status.get('rate_limited', False)
+                        sle_status = self.data_provider.sle_background_worker.get_status()
+                        sle_cycles = sle_status.get('collection_cycles', 0)
+                        sle_collected = sle_status.get('total_sites_collected', 0)
+                        sle_degraded = sle_status.get('degraded_sites_collected', 0)
+                        sle_rate_limited = sle_status.get('rate_limited', False)
+                        current_site = sle_status.get('current_site', '')
                         
-                        if rate_limited:
-                            refresh_activity = f"Refresh: RATE LIMITED (cycle {cycles})"
-                        elif status.get('running', False):
-                            refresh_activity = f"Refresh: Cycle {cycles} ({collected} sites, {degraded} degraded)"
+                        if sle_rate_limited:
+                            activity_parts.append(f"SLE: RATE LIMITED")
+                        elif sle_status.get('running', False) and current_site:
+                            # Show current site being collected (truncate if long)
+                            site_display = current_site[:12] + "..." if len(current_site) > 15 else current_site
+                            activity_parts.append(f"SLE: {site_display}")
+                        elif sle_status.get('running', False):
+                            activity_parts.append(f"SLE: cycle {sle_cycles}")
                         else:
-                            refresh_activity = f"Refresh: Idle (cycle {cycles})"
-                    elif hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
-                        status = self.data_provider.background_worker.get_status()
-                        cycles = status.get('refresh_cycles', 0)
-                        refreshed = status.get('total_sites_refreshed', 0)
-                        if status.get('running', False):
-                            refresh_activity = f"Refresh: Cycle {cycles} ({refreshed} sites)"
+                            activity_parts.append(f"SLE: idle ({sle_collected})")
+                    
+                    # Port stats background worker
+                    if hasattr(self.data_provider, 'background_worker') and self.data_provider.background_worker:
+                        port_status = self.data_provider.background_worker.get_status()
+                        port_cycles = port_status.get('refresh_cycles', 0)
+                        port_refreshed = port_status.get('total_sites_refreshed', 0)
+                        if port_status.get('running', False):
+                            activity_parts.append(f"Ports: cycle {port_cycles}")
                         else:
-                            refresh_activity = f"Refresh: Idle (cycle {cycles})"
+                            activity_parts.append(f"Ports: idle ({port_refreshed})")
+                    
+                    # VPN peer background worker
+                    if hasattr(self.data_provider, 'vpn_background_worker') and self.data_provider.vpn_background_worker:
+                        vpn_status = self.data_provider.vpn_background_worker.get_status()
+                        vpn_cycles = vpn_status.get('collection_cycles', 0)
+                        vpn_peers = vpn_status.get('total_peers_collected', 0)
+                        if vpn_status.get('running', False):
+                            activity_parts.append(f"VPN: collecting")
+                        else:
+                            activity_parts.append(f"VPN: idle ({vpn_peers})")
+                    
+                    # Build final refresh activity string
+                    if activity_parts:
+                        refresh_activity = " | ".join(activity_parts)
                     elif has_records:
-                        # Data is loaded, no background worker yet
-                        refresh_activity = "Refresh: Ready"
+                        refresh_activity = "Collectors: Ready"
                     elif hasattr(self.data_provider, 'refresh_activity'):
                         ra = self.data_provider.refresh_activity
-                        status = ra.get('status', 'initializing')
-                        if status == 'loading':
-                            refresh_activity = "Refresh: Loading..."
+                        ra_status = ra.get('status', 'initializing')
+                        if ra_status == 'loading':
+                            refresh_activity = "Collectors: Loading..."
                         elif ra.get('active', False):
-                            refresh_activity = "Refresh: Active"
+                            refresh_activity = "Collectors: Active"
                         else:
-                            refresh_activity = "Refresh: Idle"
+                            refresh_activity = "Collectors: Idle"
                     else:
-                        refresh_activity = "Refresh: Waiting..."
+                        refresh_activity = "Collectors: Waiting..."
                         
                 except Exception as error:
                     logger.debug(f"Status bar error: {error}")
