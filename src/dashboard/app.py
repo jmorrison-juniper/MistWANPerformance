@@ -606,6 +606,7 @@ class WANPerformanceDashboard:
                                         {"name": "WAN Link %", "id": "wan_link"},
                                         {"name": "App Health %", "id": "app_health"}
                                     ],
+                                    cell_selectable=True,
                                     style_cell={
                                         "backgroundColor": self.COLORS["bg_secondary"],
                                         "color": self.COLORS["text_primary"],
@@ -969,8 +970,9 @@ class WANPerformanceDashboard:
             with PerformanceTimer("build_sle_histogram_chart", log_threshold_ms=50):
                 histogram_chart = self._build_sle_histogram_chart(summary_data, sle_details.get("histogram", {}))
             
-            # Build impacted tables
-            impacted_gateways = sle_details.get("impacted_gateways", {})
+            # Build impacted tables - filter out disconnected gateways
+            impacted_gateways_raw = sle_details.get("impacted_gateways", {})
+            impacted_gateways = self._filter_connected_gateways(impacted_gateways_raw)
             impacted_interfaces = sle_details.get("impacted_interfaces", {})
             
             # Extract classifier breakdown from summary
@@ -1430,6 +1432,71 @@ class WANPerformanceDashboard:
         
         return html.Div(items)
     
+    def _get_disconnected_gateway_macs(self) -> set:
+        """
+        Get set of gateway MACs that are currently disconnected.
+        
+        Uses the cached gateway inventory to determine connection status.
+        
+        Returns:
+            Set of MAC addresses for disconnected gateways
+        """
+        try:
+            from src.cache.redis_cache import RedisCache
+            cache = RedisCache()
+            inventory = cache.get_gateway_inventory()
+            if not inventory:
+                return set()
+            
+            disconnected_macs = set()
+            for gateway in inventory.get("gateways", []):
+                if not gateway.get("connected", True):
+                    mac = gateway.get("mac", "")
+                    if mac:
+                        disconnected_macs.add(mac)
+            
+            return disconnected_macs
+        except Exception as error:
+            logger.debug(f"Error getting disconnected gateway MACs: {error}")
+            return set()
+    
+    def _filter_connected_gateways(self, gateways_data: dict) -> dict:
+        """
+        Filter impacted gateways to only include connected ones.
+        
+        Disconnected gateways cannot report metrics, so showing them as
+        'impacted' is misleading. This filters them out for cleaner display.
+        
+        Args:
+            gateways_data: Dict with 'gateways' list from SLE API
+        
+        Returns:
+            Filtered dict with only connected gateways
+        """
+        disconnected_macs = self._get_disconnected_gateway_macs()
+        logger.info(f"[FILTER] Disconnected MACs count: {len(disconnected_macs)}")
+        
+        if not disconnected_macs:
+            logger.info("[FILTER] No disconnected MACs found, returning original data")
+            return gateways_data
+        
+        original_gateways = gateways_data.get("gateways", [])
+        logger.info(f"[FILTER] Original gateways count: {len(original_gateways)}")
+        for gw in original_gateways:
+            mac = gw.get("gateway_mac", "")
+            is_disconnected = mac in disconnected_macs
+            logger.info(f"[FILTER] Gateway {mac}: disconnected={is_disconnected}")
+        
+        filtered_gateways = [
+            gw for gw in original_gateways
+            if gw.get("gateway_mac", "") not in disconnected_macs
+        ]
+        
+        filtered_count = len(original_gateways) - len(filtered_gateways)
+        logger.info(f"[FILTER] Filtered {filtered_count} disconnected gateways, {len(filtered_gateways)} remaining")
+        
+        return {**gateways_data, "gateways": filtered_gateways}
+    
     def _build_impacted_gateways_table(self, gateways_data: dict) -> dash_table.DataTable:
         """
         Build table showing impacted gateways.
@@ -1437,6 +1504,9 @@ class WANPerformanceDashboard:
         Mist API structure has gateways[] array with:
         - gateway_mac, name, duration, degraded, total
         - gateway_model, gateway_version
+        
+        Note: Disconnected gateways should already be filtered out
+        before calling this method via _filter_connected_gateways().
         
         Returns:
             Dash DataTable component
@@ -1648,10 +1718,10 @@ class WANPerformanceDashboard:
                     "color": "black"
                 }
             ]),
-            page_size=10,
+            page_size=50,
             sort_action="native",
             filter_action="native",
-            style_table={"overflowX": "auto"}
+            style_table={"overflowX": "auto", "maxHeight": "600px", "overflowY": "auto"}
         )
     
     def _build_vpn_peer_section(self, site_id: str) -> dbc.Row:

@@ -175,30 +175,51 @@ def compute_region_summary_cpu(
 
 
 def compute_top_congested_cpu(
-    utilization_data: List[Tuple[str, str, str, float, int, int]],
+    utilization_data: List[Tuple[str, str, str, float, int, int, int]],
     top_n: int = 10
 ) -> List[Dict[str, Any]]:
     """
     Compute top N congested circuits.
     
     Args:
-        utilization_data: List of (circuit_id, site_id, site_name, util_pct, rx_bytes, tx_bytes)
+        utilization_data: List of (circuit_id, site_id, site_name, util_pct, rx_bytes, tx_bytes, bandwidth_mbps)
         top_n: Number of top circuits to return
+    
+    Returns:
+        List of dicts with keys matching RankedCircuit.to_dict():
+        rank, site_id, site_name, port_id, bandwidth_mbps, metric_value, threshold_status
     
     Runs in process pool.
     """
+    # Utilization thresholds (matching RankingViews.UTIL_THRESHOLDS)
+    UTIL_CRITICAL = 90.0
+    UTIL_HIGH = 80.0
+    UTIL_WARNING = 70.0
+    
+    def get_threshold_status(util_pct: float) -> str:
+        """Determine threshold status for utilization."""
+        if util_pct >= UTIL_CRITICAL:
+            return "critical"
+        elif util_pct >= UTIL_HIGH:
+            return "high"
+        elif util_pct >= UTIL_WARNING:
+            return "warning"
+        return "normal"
+    
     # Sort by utilization descending
     sorted_data = sorted(utilization_data, key=lambda x: x[3], reverse=True)
     
     result = []
-    for circuit_id, site_id, site_name, util_pct, rx_bytes, tx_bytes in sorted_data[:top_n]:
+    for rank, item in enumerate(sorted_data[:top_n], 1):
+        circuit_id, site_id, site_name, util_pct, rx_bytes, tx_bytes, bandwidth_mbps = item
         result.append({
-            "circuit_id": circuit_id,
+            "rank": rank,
             "site_id": site_id,
             "site_name": site_name,
-            "utilization_pct": round(util_pct, 2),
-            "rx_bytes": rx_bytes,
-            "tx_bytes": tx_bytes
+            "port_id": circuit_id,
+            "bandwidth_mbps": bandwidth_mbps,
+            "metric_value": round(util_pct, 2),
+            "threshold_status": get_threshold_status(util_pct)
         })
     
     return result
@@ -289,6 +310,10 @@ class AsyncDashboardPrecomputer:
         cycle_start = time.time()
         
         try:
+            # CRITICAL: Refresh utilization data from Redis cache before computing
+            # This ensures dashboard uses fresh API data, not stale startup data
+            await asyncio.to_thread(self.data_provider.refresh_utilization_from_cache)
+            
             # Run CPU-heavy computations in parallel in process pool
             loop = asyncio.get_running_loop()
             pool = get_process_pool()
@@ -307,13 +332,14 @@ class AsyncDashboardPrecomputer:
                 for r in records
             ]
             
-            # Top congested data
+            # Top congested data - include bandwidth_mbps
             site_lookup = self.data_provider.site_lookup
             top_data = [
                 (
                     r.circuit_id, r.site_id,
                     site_lookup.get(r.site_id, r.site_id[:8]),
-                    r.utilization_pct, r.rx_bytes, r.tx_bytes
+                    r.utilization_pct, r.rx_bytes, r.tx_bytes,
+                    r.bandwidth_mbps
                 )
                 for r in records
             ]
@@ -345,6 +371,14 @@ class AsyncDashboardPrecomputer:
                 self.data_provider.get_sle_degraded_sites
             )
             
+            # Compute trends and throughput (I/O bound - Redis reads)
+            trends_data = await asyncio.to_thread(
+                self.data_provider._calculate_trends
+            )
+            throughput_data = await asyncio.to_thread(
+                self.data_provider._calculate_throughput
+            )
+            
             # Compute alerts (light computation, run in thread)
             alerts = await asyncio.to_thread(self._compute_active_alerts)
             
@@ -367,8 +401,8 @@ class AsyncDashboardPrecomputer:
                 "alerts": alerts,
                 "utilization_dist": util_dist,
                 "region_summary": region_summary,
-                "trends": [],  # TODO: compute trends
-                "throughput": [],  # TODO: compute throughput
+                "trends": trends_data,
+                "throughput": throughput_data,
                 "sle_summary": sle_summary,
                 "alarms_summary": alarms_summary,
                 "sle_degraded_sites": sle_degraded
@@ -419,6 +453,9 @@ class AsyncDashboardPrecomputer:
                     {**status_bar, "precomputed_at": timestamp}
                 ))
             
+            # Store snapshot for trends history (builds up historical data)
+            await asyncio.to_thread(self.data_provider.store_snapshot_for_trends)
+            
             # Update stats
             self._precompute_cycles += 1
             self._last_precompute_time = time.time()
@@ -439,7 +476,7 @@ class AsyncDashboardPrecomputer:
         return self.data_provider.current_state_views.get_active_alerts(circuit_states)
     
     def _compute_circuit_summary(self) -> Dict[str, Any]:
-        """Compute circuit summary."""
+        """Compute circuit summary including bandwidth."""
         records = self.data_provider.utilization_records
         
         if not records:
@@ -452,11 +489,19 @@ class AsyncDashboardPrecomputer:
                 "max_utilization": 0.0,
                 "circuits_above_70": 0,
                 "circuits_above_80": 0,
-                "circuits_above_90": 0
+                "circuits_above_90": 0,
+                "total_bandwidth_gbps": 0.0
             }
         
         circuit_ids = set(r.circuit_id for r in records)
         utils = [r.utilization_pct for r in records]
+        
+        # Calculate total bandwidth from unique circuits
+        circuit_bandwidth: Dict[str, int] = {}
+        for record in records:
+            circuit_bandwidth[record.circuit_id] = getattr(record, 'bandwidth_mbps', 0)
+        total_bandwidth_mbps = sum(circuit_bandwidth.values())
+        total_bandwidth_gbps = total_bandwidth_mbps / 1000.0
         
         return {
             "total_circuits": len(circuit_ids),
@@ -467,7 +512,8 @@ class AsyncDashboardPrecomputer:
             "max_utilization": round(max(utils), 2) if utils else 0,
             "circuits_above_70": sum(1 for u in utils if u >= 70),
             "circuits_above_80": sum(1 for u in utils if u >= 80),
-            "circuits_above_90": sum(1 for u in utils if u >= 90)
+            "circuits_above_90": sum(1 for u in utils if u >= 90),
+            "total_bandwidth_gbps": round(total_bandwidth_gbps, 1)
         }
     
     def _compute_gateway_health(self) -> Dict[str, Any]:
@@ -537,7 +583,7 @@ class AsyncDashboardPrecomputer:
                 self.cache.client.set(
                     full_key,
                     json.dumps(data),
-                    ex=120  # 2 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
         except Exception as error:
             logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
@@ -762,7 +808,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
                 self.cache.client.set(
                     key,
                     json.dumps(data),
-                    ex=600  # 10 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
         except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id[:8]}: {error}")
@@ -849,7 +895,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
                 self.cache.client.set(
                     key,
                     json.dumps(data),
-                    ex=600  # 10 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
         except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id[:8]}: {error}")

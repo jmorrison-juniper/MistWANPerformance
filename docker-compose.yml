@@ -35,6 +35,8 @@ services:
     restart: unless-stopped
     ports:
       - "8050:8050"
+    # No memory limits - use available system resources
+    # mem_limit: removed to allow full resource usage
     environment:
       # Redis connection (uses service name for DNS)
       - REDIS_HOST=redis
@@ -63,10 +65,7 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
-    deploy:
-      resources:
-        limits:
-          memory: 1G
+    # No resource limits - use available system resources
 
   # Redis cache with persistence
   redis:

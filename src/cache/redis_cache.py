@@ -73,11 +73,15 @@ class RedisCache:
     PREFIX_ALARMS = "mistwan:alarms"
     PREFIX_GATEWAY = "mistwan:gateway"
     
-    # Default TTL: 5 minutes (for current/live data that changes frequently)
-    DEFAULT_TTL = 300
+    # Minimum TTL: 31 days for ALL cached data
+    # Per user requirement: data should not be dumped until at least a month old
+    MIN_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
     
-    # Long TTL: 1 hour for rarely-changing reference data (org, sites)
-    LONG_TTL = 3600
+    # Default TTL: 31 days (minimum retention for all data)
+    DEFAULT_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
+    
+    # Long TTL: 31 days for reference data (sites, org config)
+    LONG_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
     
     # Historical TTL: 31 days for time-series and historical data
     # Supports 13-month rolling analysis per ProjectGoals.md
@@ -882,7 +886,7 @@ class RedisCache:
     
     # Key for storing periodic utilization snapshots for trends chart
     PREFIX_TRENDS = "mistwan:trends"
-    TRENDS_TTL = 86400 * 7  # 7 days retention for trends
+    TRENDS_TTL = 31 * 24 * 3600  # 31 days minimum retention
     
     def store_utilization_snapshot(
         self,
@@ -1085,7 +1089,7 @@ class RedisCache:
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             self.client.setex(
                 key,
-                3600,  # 1 hour TTL for fetch progress
+                self.DEFAULT_TTL,  # 31 days minimum
                 self._serialize(progress_data)
             )
             
@@ -1138,7 +1142,7 @@ class RedisCache:
             existing_sites.update(sites_in_batch)
             progress["sites_saved"] = list(existing_sites)
             
-            self.client.setex(key, 3600, self._serialize(progress))
+            self.client.setex(key, self.DEFAULT_TTL, self._serialize(progress))
             return True
         except Exception as error:
             logger.error(f"Error updating fetch progress: {error}")
@@ -1166,8 +1170,8 @@ class RedisCache:
             progress["status"] = status
             progress["completed_at"] = time.time()
             
-            # Keep completed sessions for a day for debugging
-            self.client.setex(key, 86400, self._serialize(progress))
+            # Keep completed sessions for 31 days
+            self.client.setex(key, self.DEFAULT_TTL, self._serialize(progress))
             
             # Clear current session marker
             self.client.delete(f"{self.PREFIX_FETCH_PROGRESS}:current")
@@ -1354,7 +1358,7 @@ class RedisCache:
         Args:
             sle_data: SLE response from get_org_sites_sle()
                      Contains: start, end, total, results[]
-            ttl: Time-to-live in seconds (default: 7 days)
+            ttl: Time-to-live in seconds (default: 31 days)
         
         Returns:
             True if successful
@@ -1366,7 +1370,7 @@ class RedisCache:
             current_key = f"{self.PREFIX_SLE}:current"
             self.client.setex(
                 current_key,
-                ttl or (7 * 24 * 3600),  # 7 days default
+                ttl or self.DEFAULT_TTL,  # 31 days default
                 self._serialize(sle_data)
             )
             
@@ -1483,7 +1487,7 @@ class RedisCache:
         """
         try:
             timestamp = int(time.time())
-            ttl_seconds = ttl or (7 * 24 * 3600)  # 7 days default
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             
             # Save current alarms snapshot
             current_key = f"{self.PREFIX_ALARMS}:current"
@@ -1624,7 +1628,7 @@ class RedisCache:
         """
         try:
             timestamp = int(time.time())
-            ttl_seconds = ttl or 300  # 5 minutes default (status changes frequently)
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum retention
             
             # Save current inventory snapshot
             current_key = f"{self.PREFIX_GATEWAY}:inventory"
@@ -1982,7 +1986,7 @@ class RedisCache:
         """
         try:
             timestamp = int(time.time())
-            ttl_seconds = ttl or (7 * 24 * 3600)  # 7 days
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(summary_data))
@@ -2042,7 +2046,7 @@ class RedisCache:
             True if successful
         """
         try:
-            ttl_seconds = ttl or (7 * 24 * 3600)
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(histogram_data))
             return True
@@ -2084,7 +2088,7 @@ class RedisCache:
             True if successful
         """
         try:
-            ttl_seconds = ttl or (7 * 24 * 3600)
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(gateways_data))
             return True
@@ -2126,7 +2130,7 @@ class RedisCache:
             True if successful
         """
         try:
-            ttl_seconds = ttl or (7 * 24 * 3600)
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(interfaces_data))
             return True
@@ -2168,7 +2172,7 @@ class RedisCache:
             True if successful
         """
         try:
-            ttl_seconds = ttl or (7 * 24 * 3600)
+            ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(threshold_data))
             return True

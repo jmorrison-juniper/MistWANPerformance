@@ -55,8 +55,15 @@ log "============================================================"
 while true; do
     log "[START] Starting dashboard process (attempt $((RESTART_COUNT + 1)))"
     
-    # Start the dashboard in background
-    python run_dashboard.py &
+    # Start the dashboard with Gunicorn (production WSGI server)
+    # Falls back to Flask dev server if Gunicorn not available
+    if command -v gunicorn &> /dev/null; then
+        log "[START] Using Gunicorn (production mode)"
+        gunicorn -c gunicorn_config.py "run_dashboard:create_wsgi_app()" &
+    else
+        log "[START] Using Flask dev server (Gunicorn not found)"
+        python run_dashboard.py &
+    fi
     DASHBOARD_PID=$!
     
     log "[START] Dashboard PID: $DASHBOARD_PID"

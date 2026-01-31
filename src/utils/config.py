@@ -62,8 +62,8 @@ class RedisConfig:
     """Configuration for Redis caching."""
     url: str = "redis://localhost:6379"
     enabled: bool = True
-    cache_ttl: int = 300  # Default 5 minutes
-    stale_threshold: int = 300  # Re-fetch if older than this
+    cache_ttl: int = 2678400  # Default 31 days (minimum retention)
+    stale_threshold: int = 3600  # Re-fetch if older than 1 hour (freshness check)
 
 
 @dataclass
@@ -158,8 +158,8 @@ class Config:
         self.redis = RedisConfig(
             url=redis_url,
             enabled=os.getenv("REDIS_ENABLED", "true").lower() == "true",
-            cache_ttl=int(os.getenv("REDIS_CACHE_TTL", "300")),
-            stale_threshold=int(os.getenv("REDIS_STALE_THRESHOLD", "300"))
+            cache_ttl=int(os.getenv("REDIS_CACHE_TTL", "2678400")),  # 31 days default
+            stale_threshold=int(os.getenv("REDIS_STALE_THRESHOLD", "3600"))  # 1 hour freshness
         )
         
         # Ensure data directories exist

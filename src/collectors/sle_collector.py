@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 # Default metric for WAN performance monitoring
 DEFAULT_METRIC = "wan-link-health"
 
-# Cache TTL: 7 days in seconds (matches SLE data retention)
-CACHE_TTL_SECONDS = 7 * 24 * 3600
+# Cache TTL: 31 days minimum (per user requirement - no data dumped before 1 month)
+CACHE_TTL_SECONDS = 31 * 24 * 3600  # 2,678,400 seconds
 
 # Max age before refresh: 1 hour (10-minute resolution means hourly refresh is reasonable)
 MAX_CACHE_AGE_SECONDS = 3600

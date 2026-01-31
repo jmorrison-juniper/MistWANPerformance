@@ -186,7 +186,7 @@ class SiteSlePrecomputer:
                 self.cache.client.set(
                     key,
                     json.dumps(data),
-                    ex=600  # 10 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
         except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id}: {error}")
@@ -387,7 +387,7 @@ class SiteVpnPrecomputer:
                 self.cache.client.set(
                     key,
                     json.dumps(data),
-                    ex=600  # 10 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
         except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id}: {error}")

@@ -60,6 +60,7 @@ WORKDIR /app
 # Copy application code
 COPY --chown=appuser:appgroup src/ ./src/
 COPY --chown=appuser:appgroup run_dashboard.py .
+COPY --chown=appuser:appgroup gunicorn_config.py .
 COPY --chown=appuser:appgroup pyproject.toml .
 COPY --chown=appuser:appgroup entrypoint.sh .
 

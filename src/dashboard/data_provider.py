@@ -5,6 +5,7 @@ Provides data to the dashboard from collectors and aggregators.
 """
 
 import logging
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from collections import defaultdict
@@ -98,6 +99,12 @@ class DashboardDataProvider:
         self.gateways_connected: int = 0
         self.gateways_disconnected: int = 0
         self.gateways_total: int = 0
+        
+        # Trend snapshot tracking - only store when data changes
+        self._last_snapshot_rx: int = 0
+        self._last_snapshot_tx: int = 0
+        self._last_snapshot_time: float = 0.0
+        self._min_snapshot_interval: float = 60.0  # Minimum 60 seconds between snapshots
         self.disconnected_site_ids: set = set()  # Sites with offline gateways
         self.region_aggregates: List[AggregatedMetrics] = []
         
@@ -118,6 +125,111 @@ class DashboardDataProvider:
         self.utilization_records = records
         logger.debug(f"Updated {len(records)} utilization records")
     
+    def refresh_utilization_from_cache(self) -> bool:
+        """
+        Refresh utilization records by reloading from Redis cache.
+        
+        This method reloads port statistics from Redis and converts them to
+        utilization records, ensuring the dashboard always shows fresh data
+        instead of stale startup-time data.
+        
+        Returns:
+            True if refresh was successful, False otherwise
+        """
+        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+            return False
+        
+        try:
+            # Get all site IDs
+            site_ids = list(self.site_lookup.keys())
+            if not site_ids:
+                return False
+            
+            # Fetch port stats from Redis cache
+            port_stats = self.redis_cache.get_all_site_port_stats(site_ids)
+            
+            if not port_stats:
+                logger.warning("[REFRESH] No port stats found in cache")
+                return False
+            
+            # Process port stats into utilization records
+            current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+            
+            circuits = []
+            utilization_records = []
+            wan_down = 0
+            wan_disabled = 0
+            
+            for port in port_stats:
+                device_type = port.get("device_type", "")
+                port_usage = port.get("port_usage", "")
+                port_id = port.get("port_id", "")
+                
+                # Check if WAN port
+                is_wan_port = (
+                    (device_type == "gateway" and port_usage == "wan") or
+                    port_usage == "wan" or
+                    port_id.startswith("lte")
+                )
+                
+                if not is_wan_port:
+                    continue
+                
+                # Skip disabled or down ports
+                is_disabled = port.get("disabled", False)
+                is_up = port.get("up", True)
+                if is_disabled:
+                    wan_disabled += 1
+                    continue
+                if not is_up:
+                    wan_down += 1
+                    continue
+                
+                site_id = port.get("site_id", "")
+                if site_id not in self.site_lookup:
+                    continue
+                
+                device_mac = port.get("mac", "")
+                rx_bps = port.get("rx_bps", 0) or 0
+                tx_bps = port.get("tx_bps", 0) or 0
+                rx_bytes = port.get("rx_bytes", 0) or 0
+                tx_bytes = port.get("tx_bytes", 0) or 0
+                speed = port.get("speed", 1000) or 1000
+                
+                circuit_id = f"{device_mac}:{port_id}"
+                
+                # Calculate utilization
+                max_bps = max(rx_bps, tx_bps)
+                speed_bps = speed * 1_000_000
+                utilization_pct = (max_bps / speed_bps) * 100 if speed_bps > 0 else 0
+                utilization_pct = min(utilization_pct, 100.0)
+                
+                util_record = CircuitUtilizationRecord(
+                    site_id=site_id,
+                    circuit_id=circuit_id,
+                    hour_key=current_hour,
+                    utilization_pct=round(utilization_pct, 2),
+                    rx_bytes=rx_bytes,
+                    tx_bytes=tx_bytes,
+                    bandwidth_mbps=speed
+                )
+                utilization_records.append(util_record)
+            
+            # Update instance variables
+            self.utilization_records = utilization_records
+            self.wan_down_count = wan_down
+            self.wan_disabled_count = wan_disabled
+            
+            logger.info(
+                f"[REFRESH] Loaded {len(utilization_records)} utilization records from cache "
+                f"(down: {wan_down}, disabled: {wan_disabled})"
+            )
+            return True
+            
+        except Exception as error:
+            logger.error(f"[REFRESH] Failed to refresh from cache: {error}", exc_info=True)
+            return False
+
     def update_status(self, records: List[CircuitStatusRecord]):
         """Update status records cache."""
         self.status_records = records
@@ -194,6 +306,47 @@ class DashboardDataProvider:
         
         total = alarms_data.get("total", len(alarms_data.get("results", [])))
         logger.debug(f"Updated {total} alarms ({len(self.alarms_by_type)} types)")
+    
+    def update_gateway_inventory(self, inventory_data: Dict[str, Any]):
+        """
+        Update gateway inventory counts from API response.
+        
+        Args:
+            inventory_data: Dictionary with connected, disconnected, total counts
+                            and gateways[] array
+        """
+        self.gateways_connected = inventory_data.get("connected", 0)
+        self.gateways_disconnected = inventory_data.get("disconnected", 0)
+        self.gateways_total = inventory_data.get("total", 0)
+        
+        # Compute disconnected site IDs from gateway list
+        # A site is considered "disconnected" if ALL its gateways are disconnected
+        site_gateway_status = {}  # site_id -> {"connected": count, "disconnected": count}
+        
+        for gw in inventory_data.get("gateways", []):
+            site_id = gw.get("site_id")
+            if not site_id:
+                continue
+            
+            if site_id not in site_gateway_status:
+                site_gateway_status[site_id] = {"connected": 0, "disconnected": 0}
+            
+            if gw.get("connected", False):
+                site_gateway_status[site_id]["connected"] += 1
+            else:
+                site_gateway_status[site_id]["disconnected"] += 1
+        
+        # Site is disconnected only if ALL gateways are disconnected
+        self.disconnected_site_ids = {
+            site_id for site_id, status in site_gateway_status.items()
+            if status["connected"] == 0 and status["disconnected"] > 0
+        }
+        
+        logger.info(
+            f"[OK] Gateway inventory: {self.gateways_connected} connected, "
+            f"{self.gateways_disconnected} disconnected, "
+            f"{len(self.disconnected_site_ids)} sites fully offline"
+        )
     
     def get_sle_summary(self) -> Dict[str, Any]:
         """
@@ -697,7 +850,9 @@ class DashboardDataProvider:
         """
         Store current utilization snapshot for trends history.
         
-        Should be called after each data refresh to build up historical data.
+        Only stores when data has actually changed AND minimum interval has passed.
+        This prevents storing duplicate snapshots when precompute runs faster
+        than the API refresh rate.
         
         Returns:
             True if snapshot was stored successfully
@@ -714,6 +869,23 @@ class DashboardDataProvider:
             total_rx = sum(r.rx_bytes for r in self.utilization_records)
             total_tx = sum(r.tx_bytes for r in self.utilization_records)
             
+            # Check if data has actually changed since last snapshot
+            # (comparing cumulative byte counters - different values = new API data)
+            data_changed = (
+                total_rx != self._last_snapshot_rx or 
+                total_tx != self._last_snapshot_tx
+            )
+            
+            # Only store if data has actually changed from the API
+            if not data_changed:
+                return False  # Same data as last snapshot, skip
+            
+            # Also enforce minimum interval to avoid bursts during startup
+            now = time.time()
+            time_since_last = now - self._last_snapshot_time
+            if time_since_last < self._min_snapshot_interval and self._last_snapshot_time > 0:
+                return False  # Too soon since last snapshot
+            
             avg_util = sum(utils) / len(utils) if utils else 0
             max_util = max(utils) if utils else 0
             circuit_count = len(set((r.site_id, r.circuit_id) for r in self.utilization_records))
@@ -728,7 +900,14 @@ class DashboardDataProvider:
             )
             
             if success:
-                logger.debug(f"[TRENDS] Stored snapshot: avg={avg_util:.1f}%, max={max_util:.1f}%, circuits={circuit_count}")
+                # Update tracking
+                self._last_snapshot_rx = total_rx
+                self._last_snapshot_tx = total_tx
+                self._last_snapshot_time = now
+                logger.info(
+                    f"[TRENDS] Stored snapshot: avg={avg_util:.1f}%, "
+                    f"max={max_util:.1f}%, circuits={circuit_count}"
+                )
             
             return success
         except Exception as error:
@@ -939,6 +1118,14 @@ class DashboardDataProvider:
         
         # Total bandwidth
         total_bandwidth_mbps = sum(circuit_bandwidth.values())
+        total_bandwidth_gbps = total_bandwidth_mbps / 1000.0
+        
+        # Debug logging for bandwidth calculation
+        if total_bandwidth_mbps == 0 and len(circuit_bandwidth) > 0:
+            sample_bws = list(circuit_bandwidth.values())[:5]
+            logger.warning(f"[DEBUG] Zero bandwidth despite {len(circuit_bandwidth)} circuits. Sample values: {sample_bws}")
+        elif len(circuit_bandwidth) > 0:
+            logger.debug(f"[DEBUG] Total BW: {total_bandwidth_gbps:.1f} Gbps from {len(circuit_bandwidth)} circuits")
         
         return {
             "total_circuits": len(circuit_ids),

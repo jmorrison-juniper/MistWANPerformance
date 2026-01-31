@@ -265,7 +265,27 @@ class DashboardPrecomputer:
         return statuses
     
     def _compute_top_congested(self, top_n: int = 10) -> List[Dict[str, Any]]:
-        """Compute top N congested circuits."""
+        """
+        Compute top N congested circuits.
+        
+        Returns data matching RankedCircuit.to_dict() format for table display:
+        rank, site_id, site_name, port_id, bandwidth_mbps, metric_value, threshold_status
+        """
+        # Utilization thresholds
+        UTIL_CRITICAL = 90.0
+        UTIL_HIGH = 80.0
+        UTIL_WARNING = 70.0
+        
+        def get_threshold_status(util_pct: float) -> str:
+            """Determine threshold status for utilization."""
+            if util_pct >= UTIL_CRITICAL:
+                return "critical"
+            elif util_pct >= UTIL_HIGH:
+                return "high"
+            elif util_pct >= UTIL_WARNING:
+                return "warning"
+            return "normal"
+        
         records = self.data_provider.utilization_records
         
         # Sort by utilization descending
@@ -275,20 +295,21 @@ class DashboardPrecomputer:
             reverse=True
         )[:top_n]
         
-        return [
-            {
-                "site_id": r.site_id,
+        result = []
+        for rank, record in enumerate(sorted_records, 1):
+            result.append({
+                "rank": rank,
+                "site_id": record.site_id,
                 "site_name": self.data_provider.site_lookup.get(
-                    r.site_id, r.site_id[:8]
+                    record.site_id, record.site_id[:8]
                 ),
-                "circuit_id": r.circuit_id,
-                "circuit_name": getattr(r, 'circuit_name', r.circuit_id[:8]),
-                "utilization_pct": round(r.utilization_pct, 1),
-                "bandwidth_mbps": getattr(r, 'bandwidth_mbps', 0),
-                "role": getattr(r, 'role', 'unknown')
-            }
-            for r in sorted_records
-        ]
+                "port_id": record.circuit_id,
+                "bandwidth_mbps": getattr(record, 'bandwidth_mbps', 0),
+                "metric_value": round(record.utilization_pct, 2),
+                "threshold_status": get_threshold_status(record.utilization_pct)
+            })
+        
+        return result
     
     def _compute_active_alerts(self) -> List[Dict[str, Any]]:
         """Compute active alerts."""
@@ -516,7 +537,7 @@ class DashboardPrecomputer:
                 self.cache.client.set(
                     full_key,
                     json.dumps(data),
-                    ex=120  # 2 minute TTL
+                    ex=2678400  # 31 days minimum TTL
                 )
             elif hasattr(self.cache, '_precomputed'):
                 # Fallback for NullCache

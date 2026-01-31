@@ -36,6 +36,9 @@ dash>=2.14.0
 plotly>=5.18.0
 dash-bootstrap-components>=1.5.0
 
+# Production WSGI server
+gunicorn>=21.0.0
+
 # Caching (optional - for Redis support)
 redis>=5.0.0
 

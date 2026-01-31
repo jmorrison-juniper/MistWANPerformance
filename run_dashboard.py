@@ -57,6 +57,7 @@ _cache = None
 _data_provider = None
 _data_load_thread = None
 _shutdown_event = threading.Event()
+_dashboard_app = None  # Store dashboard for WSGI access
 
 # Async event loop for precomputers (runs in dedicated thread)
 _async_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -64,6 +65,177 @@ _async_thread: Optional[threading.Thread] = None
 
 # CPU count for parallel processing (leave 1 core for system)
 CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
+
+
+def create_wsgi_app():
+    """
+    Create the WSGI application for production servers (Gunicorn/uWSGI).
+    
+    This function initializes the dashboard and returns the Flask server
+    for use with WSGI servers like Gunicorn.
+    
+    Usage:
+        gunicorn -c gunicorn_config.py "run_dashboard:create_wsgi_app()"
+    
+    Returns:
+        Flask server instance
+    """
+    global _dashboard_app, _data_provider, _cache
+    
+    # Setup logging
+    setup_logging(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    
+    logger.info("=" * 60)
+    logger.info("MistWANPerformance - NOC Dashboard (WSGI)")
+    logger.info("=" * 60)
+    
+    # Load configuration
+    from src.utils.config import Config
+    config = Config()
+    
+    # Load cached data
+    cached_provider, cache_instance = quick_load_from_cache(config)
+    
+    if cached_provider:
+        _data_provider = cached_provider
+        _cache = cache_instance
+        logger.info("[OK] Dashboard initialized with cached data")
+    else:
+        _data_provider = DashboardDataProvider(sites=[], circuits=[])
+        _cache = cache_instance
+        logger.info("[INFO] Dashboard initialized - loading data in background")
+    
+    # Create dashboard
+    _dashboard_app = WANPerformanceDashboard(
+        app_name="WAN Performance - NOC Dashboard",
+        data_provider=_data_provider
+    )
+    
+    # Start background workers if API credentials available
+    if config.mist is not None and _cache:
+        try:
+            from src.api.mist_client import MistAPIClient
+            api_client = MistAPIClient(config.mist, config.operational)
+            
+            # CRITICAL: Load sites if not in cache - required for dashboard to work
+            if not _data_provider.sites or len(_data_provider.site_lookup) == 0:
+                logger.info("[...] Loading sites from Mist API (required for dashboard)")
+                try:
+                    # Load site groups first for region names
+                    sitegroup_map = api_client.get_site_groups()
+                    _cache.set_site_groups(sitegroup_map)
+                    
+                    # Load sites
+                    raw_sites = api_client.get_sites()
+                    _cache.set_sites(raw_sites)
+                    
+                    # Convert to dimension models
+                    sites = []
+                    for raw_site in raw_sites:
+                        sitegroup_ids = raw_site.get("sitegroup_ids", [])
+                        if sitegroup_ids and sitegroup_ids[0] in sitegroup_map:
+                            region_name = sitegroup_map[sitegroup_ids[0]]
+                        else:
+                            region_name = "Unassigned"
+                        
+                        site = DimSite(
+                            site_id=raw_site.get("id", ""),
+                            site_name=raw_site.get("name", "Unknown"),
+                            region=region_name,
+                            timezone=raw_site.get("timezone", "UTC"),
+                            address=raw_site.get("address", "")
+                        )
+                        sites.append(site)
+                    
+                    # Update data provider with sites
+                    _data_provider.sites = sites
+                    _data_provider.site_lookup = {s.site_id: s.site_name for s in sites}
+                    _data_provider.region_lookup = {s.site_id: (s.region or "Unknown") for s in sites}
+                    
+                    # Also fetch and cache SLE data for background worker
+                    sle_data = api_client.get_org_sites_sle()
+                    if sle_data:
+                        _cache.save_sle_snapshot(sle_data)
+                        _data_provider.update_sle_data(sle_data)
+                    
+                    logger.info(f"[OK] Loaded {len(sites)} sites and SLE data from API")
+                except Exception as site_error:
+                    logger.error(f"[ERROR] Could not load sites: {site_error}", exc_info=True)
+            
+            # Fetch gateway inventory if not in cache (quick API call)
+            if _data_provider.gateways_total == 0:
+                logger.info("[...] Fetching gateway inventory (quick API call)")
+                try:
+                    gateway_inventory = api_client.get_gateway_inventory()
+                    _data_provider.update_gateway_inventory(gateway_inventory)
+                    _cache.save_gateway_inventory(gateway_inventory)
+                    logger.info(
+                        f"[OK] Gateway health: {_data_provider.gateways_connected} online, "
+                        f"{_data_provider.gateways_disconnected} offline"
+                    )
+                except Exception as gw_error:
+                    logger.warning(f"[WARN] Could not fetch gateway inventory: {gw_error}")
+            
+            # Start background data loading
+            _start_background_workers(config, api_client, _cache, _data_provider)
+            logger.info("[OK] Background workers started")
+        except Exception as e:
+            logger.error(f"[ERROR] Failed to start background workers: {e}")
+    
+    return _dashboard_app.app.server
+
+
+def _start_background_workers(config, api_client, cache, data_provider):
+    """Start background workers for data refresh."""
+    global _background_worker, _sle_background_worker, _vpn_peer_background_worker
+    
+    from src.cache.background_refresh import (
+        BackgroundRefreshWorker,
+        SLEBackgroundWorker,
+        VPNPeerBackgroundWorker,
+    )
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get site IDs from cache
+    site_ids = []
+    try:
+        port_stats = cache.get_all_site_port_stats()
+        if port_stats:
+            site_ids = list(set(p.get("site_id") for p in port_stats if p.get("site_id")))
+    except Exception:
+        pass
+    
+    # Start port stats refresh worker
+    _background_worker = BackgroundRefreshWorker(
+        cache=cache,
+        api_client=api_client,
+        site_ids=site_ids,
+        min_delay_between_fetches=5,
+        max_age_seconds=3600
+    )
+    _background_worker.start()
+    
+    # Start SLE background worker
+    _sle_background_worker = SLEBackgroundWorker(
+        cache=cache,
+        api_client=api_client,
+        data_provider=data_provider,
+        min_delay_between_fetches=2,
+        max_age_seconds=3600
+    )
+    _sle_background_worker.start()
+    
+    # Start VPN peer background worker
+    _vpn_peer_background_worker = VPNPeerBackgroundWorker(
+        cache=cache,
+        api_client=api_client
+    )
+    _vpn_peer_background_worker.start()
+    
+    # Start async precomputers
+    start_async_precomputers(cache, data_provider)
 
 
 def _run_async_event_loop(loop: asyncio.AbstractEventLoop) -> None:
@@ -320,6 +492,27 @@ def load_from_cache(cache, config: Config) -> tuple:
     
     # Store snapshot for trends history
     provider.store_snapshot_for_trends()
+    
+    # Load cached SLE data (if available)
+    sle_data = cache.get_sle_snapshot()
+    if sle_data:
+        provider.update_sle_data(sle_data)
+        logger.info(f"[OK] Loaded cached SLE data for {sle_data.get('total', 0)} sites")
+    
+    # Load cached gateway inventory for disconnected site detection
+    gateway_inventory = cache.get_gateway_inventory()
+    if gateway_inventory:
+        provider.update_gateway_inventory(gateway_inventory)
+        logger.info(
+            f"[OK] Loaded cached gateway inventory: "
+            f"{provider.gateways_connected} online, {provider.gateways_disconnected} offline"
+        )
+    
+    # Load cached alarms (if available)
+    alarms_data = cache.get_alarms()
+    if alarms_data:
+        provider.update_alarms(alarms_data)
+        logger.info(f"[OK] Loaded cached alarms: {alarms_data.get('total', 0)} alarms")
     
     logger.info(f"[OK] Cached data loaded: {len(sites)} sites, {len(utilization_records)} utilization records")
     
@@ -603,7 +796,10 @@ def process_port_stats_to_utilization(
     logger.info(f"[OK] Found {wan_port_count} WAN ports up")
     if total_wan_down > 0 or total_wan_disabled > 0:
         logger.info(f"[INFO] WAN ports down: {total_wan_down}, disabled: {total_wan_disabled}")
-    logger.info(f"[OK] Created {len(utilization_records)} utilization records")
+    
+    # Calculate and log total bandwidth
+    total_bw_mbps = sum(r.bandwidth_mbps for r in utilization_records)
+    logger.info(f"[OK] Created {len(utilization_records)} utilization records, total BW: {total_bw_mbps/1000:.1f} Gbps")
     
     return circuits, utilization_records, total_wan_down, total_wan_disabled
 
@@ -737,6 +933,27 @@ def quick_load_from_cache(config: Config) -> tuple:
         
         # Store snapshot for trends history
         provider.store_snapshot_for_trends()
+        
+        # Load cached SLE data (if available)
+        sle_data = cache.get_sle_snapshot()
+        if sle_data:
+            provider.update_sle_data(sle_data)
+            logger.info(f"[OK] Loaded cached SLE data for {sle_data.get('total', 0)} sites")
+        
+        # Load cached gateway inventory for disconnected site detection
+        gateway_inventory = cache.get_gateway_inventory()
+        if gateway_inventory:
+            provider.update_gateway_inventory(gateway_inventory)
+            logger.info(
+                f"[OK] Loaded cached gateway inventory: "
+                f"{provider.gateways_connected} online, {provider.gateways_disconnected} offline"
+            )
+        
+        # Load cached alarms (if available)
+        alarms_data = cache.get_alarms()
+        if alarms_data:
+            provider.update_alarms(alarms_data)
+            logger.info(f"[OK] Loaded cached alarms: {alarms_data.get('total', 0)} alarms")
         
         cache_age = cache.get_cache_age()
         age_str = f"{cache_age:.0f}s" if cache_age else "unknown"
