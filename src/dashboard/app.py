@@ -456,7 +456,7 @@ class WANPerformanceDashboard:
             dbc.Row([
                 dbc.Col(self._build_status_card("total-sites", "Total Sites", "0"), width=2),
                 dbc.Col(self._build_status_card("healthy-sites", "Healthy", "0", "healthy"), width=2),
-                dbc.Col(self._build_status_card("degraded-sites", "Degraded", "0", "degraded"), width=2),
+                dbc.Col(self._build_status_card("degraded-sites", "High Util", "0", "degraded"), width=2),
                 dbc.Col(self._build_status_card("critical-sites", "Critical", "0", "critical"), width=2),
                 dbc.Col(self._build_status_card("active-failovers", "Failovers", "0", "warning"), width=2),
                 dbc.Col(self._build_status_card("active-alerts", "Alerts", "0", "high"), width=2),

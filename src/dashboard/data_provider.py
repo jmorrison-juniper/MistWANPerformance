@@ -579,16 +579,15 @@ class DashboardDataProvider:
         trends = self._calculate_trends()
         throughput = self._calculate_throughput()
         
-        active_failovers = self.current_state_views.get_failover_status(
-            self.failover_records
-        )
+        # Active failovers - sites where primary is down and secondary is up
+        active_failovers = self.get_active_failover_count()
         
         return {
             "total_sites": len(set(r.site_id for r in self.utilization_records)),
             "healthy_sites": site_statuses.get("healthy", 0),
             "degraded_sites": site_statuses.get("degraded", 0),
             "critical_sites": site_statuses.get("critical", 0),
-            "active_failovers": len(active_failovers),
+            "active_failovers": active_failovers,
             "alert_count": len(alerts),
             "top_congested": [c.to_dict() for c in top_congested],
             "alerts": alerts,
@@ -1141,6 +1140,47 @@ class DashboardDataProvider:
             "secondary_circuits": secondary_count,
             "total_bandwidth_gbps": total_bandwidth_mbps / 1000.0
         }
+
+    def get_active_failover_count(self) -> int:
+        """
+        Count sites currently in failover state.
+        
+        A site is in failover when:
+        - It has a primary circuit that is DOWN
+        - It has a secondary/backup circuit that is UP
+        
+        Returns:
+            Number of sites currently using backup circuits
+        """
+        # Group circuits by site
+        site_circuits: Dict[str, List] = defaultdict(list)
+        for circuit in self.circuits:
+            site_circuits[circuit.site_id].append(circuit)
+        
+        # Get current status for each circuit (most recent)
+        circuit_status: Dict[str, bool] = {}
+        for record in self.status_records:
+            circuit_status[record.circuit_id] = (record.status_code == 1)
+        
+        failover_count = 0
+        
+        for site_id, circuits in site_circuits.items():
+            # Find primary and secondary circuits
+            primary = next((c for c in circuits if c.role == "primary"), None)
+            secondary = next((c for c in circuits if c.role in ("secondary", "backup")), None)
+            
+            # Skip sites without both circuit types
+            if not primary or not secondary:
+                continue
+            
+            # Check if primary is down and secondary is up
+            primary_up = circuit_status.get(primary.circuit_id, True)
+            secondary_up = circuit_status.get(secondary.circuit_id, False)
+            
+            if not primary_up and secondary_up:
+                failover_count += 1
+        
+        return failover_count
 
     def get_primary_secondary_comparison(self, site_id: str) -> Dict[str, Any]:
         """

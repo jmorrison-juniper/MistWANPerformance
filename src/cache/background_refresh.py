@@ -758,34 +758,44 @@ class SLEBackgroundWorker:
         degraded_site_ids = set()
         
         if degraded_sites:
-            logger.info(
-                f"[...] SLE cycle {self._collection_cycles}: "
-                f"Collecting {len(degraded_sites)} degraded sites first"
-            )
-            
+            # Count how many actually need collection (not fresh)
+            sites_needing_collection = []
             for site in degraded_sites:
-                if not self._running:
-                    break
-                
                 site_id = site.get("site_id", "")
-                site_name = site.get("site_name", "Unknown")
+                if not self.cache.is_site_sle_cache_fresh(site_id, self.max_age_seconds):
+                    sites_needing_collection.append(site)
                 degraded_site_ids.add(site_id)
+            
+            if sites_needing_collection:
+                logger.info(
+                    f"[...] SLE cycle {self._collection_cycles}: "
+                    f"Collecting {len(sites_needing_collection)} degraded sites "
+                    f"({len(degraded_sites) - len(sites_needing_collection)} already fresh)"
+                )
                 
-                # Check if cache is fresh
-                if self.cache.is_site_sle_cache_fresh(site_id, self.max_age_seconds):
-                    continue
-                
-                self._current_site = site_name
-                result = sle_collector.collect_for_site(site_id, site_name)
-                
-                if result.success:
-                    self._degraded_sites_collected += 1
-                    self._total_sites_collected += 1
-                
-                if self.on_site_collected:
-                    self.on_site_collected(result)
-                
-                # No delay - stay busy
+                for site in sites_needing_collection:
+                    if not self._running:
+                        break
+                    
+                    site_id = site.get("site_id", "")
+                    site_name = site.get("site_name", "Unknown")
+                    
+                    self._current_site = site_name
+                    result = sle_collector.collect_for_site(site_id, site_name)
+                    
+                    if result.success:
+                        self._degraded_sites_collected += 1
+                        self._total_sites_collected += 1
+                    
+                    if self.on_site_collected:
+                        self.on_site_collected(result)
+                    
+                    # No delay - stay busy
+            else:
+                logger.debug(
+                    f"[OK] SLE cycle {self._collection_cycles}: "
+                    f"All {len(degraded_sites)} degraded sites already fresh"
+                )
         
         # Get all sites for Phase 2 and 3
         all_sites = self._get_all_sites_list()

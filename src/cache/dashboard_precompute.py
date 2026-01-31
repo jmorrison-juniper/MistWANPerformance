@@ -196,12 +196,8 @@ class DashboardPrecomputer:
         trends = self._compute_trends()
         throughput = self._compute_throughput()
         
-        # Active failovers
-        failover_records = getattr(self.data_provider, 'failover_records', [])
-        active_failovers = len([
-            r for r in failover_records
-            if getattr(r, 'on_failover', False)
-        ])
+        # Active failovers - sites where primary is down and secondary is up
+        active_failovers = self.data_provider.get_active_failover_count()
         
         # SLE data
         sle_summary = self.data_provider.get_sle_summary()
