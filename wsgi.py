@@ -106,9 +106,18 @@ def create_app():
         try:
             api_client = MistAPIClient()
             
-            # Start background refresh worker (port stats / utilization)
-            site_ids = list(redis_cache.get_all_site_ids()) if hasattr(redis_cache, 'get_all_site_ids') else []
+            # Get site IDs from SLE data (already loaded into provider)
+            site_ids = []
+            if hasattr(provider, 'sle_data') and provider.sle_data:
+                site_ids = [r.get("site_id") for r in provider.sle_data.get("results", []) if r.get("site_id")]
+            if not site_ids:
+                # Fallback to cache
+                site_ids = list(redis_cache.get_all_site_ids()) if hasattr(redis_cache, 'get_all_site_ids') else []
             
+            logger.info(f"[INFO] Starting background workers with {len(site_ids)} sites")
+            
+            # Start background refresh worker (port stats / utilization)
+            # This worker fetches ALL org port stats, doesn't need site_ids
             refresh_worker = BackgroundRefreshWorker(
                 cache=redis_cache,
                 api_client=api_client,
@@ -121,12 +130,12 @@ def create_app():
             logger.info("[OK] Port stats background worker started")
             
             # Start SLE background worker (site-level SLE details)
+            # This worker uses data_provider to get site list and degraded sites
             sle_worker = SLEBackgroundWorker(
                 cache=redis_cache,
                 api_client=api_client,
-                site_ids=site_ids,
-                max_age_seconds=3600,
-                batch_size=50
+                data_provider=provider,
+                max_age_seconds=3600
             )
             sle_worker.start()
             _background_workers.append(sle_worker)
@@ -137,9 +146,8 @@ def create_app():
             vpn_worker = VPNPeerBackgroundWorker(
                 cache=redis_cache,
                 api_client=api_client,
-                site_ids=site_ids,
-                max_age_seconds=3600,
-                batch_size=50
+                min_delay_between_fetches=5,
+                refresh_interval_seconds=300
             )
             vpn_worker.start()
             _background_workers.append(vpn_worker)
@@ -147,7 +155,7 @@ def create_app():
             logger.info("[OK] VPN peer background worker started")
             
         except Exception as e:
-            logger.error(f"[ERROR] Failed to start background workers: {e}")
+            logger.error(f"[ERROR] Failed to start background workers: {e}", exc_info=True)
     
     # Return the Flask server for Gunicorn
     return _dashboard.app.server
