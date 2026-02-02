@@ -127,6 +127,7 @@ def create_app():
             )
             refresh_worker.start()
             _background_workers.append(refresh_worker)
+            provider.background_worker = refresh_worker
             logger.info("[OK] Port stats background worker started")
             
             # Start SLE background worker (site-level SLE details)
@@ -151,7 +152,7 @@ def create_app():
             )
             vpn_worker.start()
             _background_workers.append(vpn_worker)
-            provider.vpn_peer_background_worker = vpn_worker
+            provider.vpn_background_worker = vpn_worker
             logger.info("[OK] VPN peer background worker started")
             
         except Exception as e:
