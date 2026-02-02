@@ -178,10 +178,11 @@ def create_wsgi_app():
                     logger.warning(f"[WARN] Could not fetch gateway inventory: {gw_error}")
             
             # Start background data loading
+            logger.info("[...] Starting background workers")
             _start_background_workers(config, api_client, _cache, _data_provider)
             logger.info("[OK] Background workers started")
         except Exception as e:
-            logger.error(f"[ERROR] Failed to start background workers: {e}")
+            logger.error(f"[ERROR] Failed to start background workers: {e}", exc_info=True)
     
     return _dashboard_app.app.server
 
@@ -216,6 +217,8 @@ def _start_background_workers(config, api_client, cache, data_provider):
         max_age_seconds=3600
     )
     _background_worker.start()
+    data_provider.background_worker = _background_worker
+    logger.info("[OK] Port stats background worker started")
     
     # Start SLE background worker
     _sle_background_worker = SLEBackgroundWorker(
@@ -226,6 +229,8 @@ def _start_background_workers(config, api_client, cache, data_provider):
         max_age_seconds=3600
     )
     _sle_background_worker.start()
+    data_provider.sle_background_worker = _sle_background_worker
+    logger.info("[OK] SLE background worker started")
     
     # Start VPN peer background worker
     _vpn_peer_background_worker = VPNPeerBackgroundWorker(
@@ -233,6 +238,9 @@ def _start_background_workers(config, api_client, cache, data_provider):
         api_client=api_client
     )
     _vpn_peer_background_worker.start()
+    # Use 'vpn_background_worker' to match status bar check in app.py
+    data_provider.vpn_background_worker = _vpn_peer_background_worker
+    logger.info("[OK] VPN peer background worker started")
     
     # Start async precomputers
     start_async_precomputers(cache, data_provider)
@@ -1351,7 +1359,8 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
                 refresh_interval_seconds=300  # Refresh every 5 minutes
             )
             _vpn_peer_background_worker.start()
-            data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
+            # Use 'vpn_background_worker' to match status bar check in app.py
+            data_provider.vpn_background_worker = _vpn_peer_background_worker
             logger.info("[OK] VPN peer background worker started (peer path collection)")
             
             # Start async precomputers (TaskGroup I/O + ProcessPoolExecutor CPU)
@@ -1572,7 +1581,8 @@ def main():
                     refresh_interval_seconds=300  # Refresh every 5 minutes
                 )
                 _vpn_peer_background_worker.start()
-                _data_provider.vpn_peer_background_worker = _vpn_peer_background_worker
+                # Use 'vpn_background_worker' to match status bar check in app.py
+                _data_provider.vpn_background_worker = _vpn_peer_background_worker
                 logger.info("[OK] VPN peer background worker started (peer path collection)")
                 
                 # Start async precomputers (TaskGroup I/O + ProcessPoolExecutor CPU)
