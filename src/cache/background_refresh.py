@@ -700,17 +700,42 @@ class SLEBackgroundWorker:
         )
     
     def _collection_loop(self) -> None:
-        """Main collection loop - runs continuously."""
+        """Main collection loop - runs continuously with auto-restart on errors."""
         logger.info("[...] SLE background collection starting")
         
         # Import here to avoid circular imports
         from src.collectors.sle_collector import SLECollector
         
-        sle_collector = SLECollector(
-            api_client=self.api_client,
-            cache=self.cache
-        )
+        restart_count = 0
+        max_restarts = 100  # Allow many restarts before giving up
         
+        while self._running and restart_count < max_restarts:
+            try:
+                sle_collector = SLECollector(
+                    api_client=self.api_client,
+                    cache=self.cache
+                )
+                
+                self._run_inner_loop(sle_collector)
+                
+            except Exception as fatal_error:
+                restart_count += 1
+                logger.error(
+                    f"[ERROR] SLE worker crashed (restart {restart_count}/{max_restarts}): "
+                    f"{fatal_error}",
+                    exc_info=True
+                )
+                # Wait before restart to avoid rapid cycling
+                time.sleep(5)
+                logger.info("[...] SLE worker restarting after crash...")
+        
+        if restart_count >= max_restarts:
+            logger.error(f"[FATAL] SLE worker exceeded {max_restarts} restarts - giving up")
+        
+        logger.info("[OK] SLE background collection loop ended")
+    
+    def _run_inner_loop(self, sle_collector) -> None:
+        """Inner collection loop that can be restarted on errors."""
         while self._running:
             try:
                 # Check rate limit before API calls
@@ -983,9 +1008,34 @@ class VPNPeerBackgroundWorker:
         )
     
     def _collection_loop(self) -> None:
-        """Main collection loop - runs continuously."""
+        """Main collection loop - runs continuously with auto-restart on errors."""
         logger.info("[...] VPN peer background collection starting")
         
+        restart_count = 0
+        max_restarts = 100  # Allow many restarts before giving up
+        
+        while self._running and restart_count < max_restarts:
+            try:
+                self._run_inner_vpn_loop()
+                
+            except Exception as fatal_error:
+                restart_count += 1
+                logger.error(
+                    f"[ERROR] VPN worker crashed (restart {restart_count}/{max_restarts}): "
+                    f"{fatal_error}",
+                    exc_info=True
+                )
+                # Wait before restart to avoid rapid cycling
+                time.sleep(5)
+                logger.info("[...] VPN worker restarting after crash...")
+        
+        if restart_count >= max_restarts:
+            logger.error(f"[FATAL] VPN worker exceeded {max_restarts} restarts - giving up")
+        
+        logger.info("[OK] VPN peer background collection loop ended")
+    
+    def _run_inner_vpn_loop(self) -> None:
+        """Inner collection loop that can be restarted on errors."""
         while self._running:
             try:
                 # Check rate limit before API calls
