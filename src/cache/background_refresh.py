@@ -352,7 +352,7 @@ async def refresh_stale_sites_parallel(
                 logger.error(f"[ERROR] Failed to refresh site {site_id}: {error}")
                 return False
     
-    # Use TaskGroup for structured concurrency (Python 3.11+)
+    # Use TaskGroup for structured concurrency.
     try:
         async with asyncio.TaskGroup() as task_group:
             tasks = [

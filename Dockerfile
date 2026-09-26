@@ -6,7 +6,7 @@
 # Build: podman build -t mistwan-performance .
 # Run:   podman-compose up -d
 
-FROM python:3.11-slim AS builder
+FROM python:3.13-slim AS builder
 
 # Configure apt to use local apt-cacher-ng proxy (Unraid at 192.168.1.78)
 # This caches Debian packages locally for faster rebuilds
@@ -39,7 +39,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 
 # Production stage
-FROM python:3.11-slim AS production
+FROM python:3.13-slim AS production
 
 # Labels for container metadata
 LABEL org.opencontainers.image.title="MistWANPerformance"
@@ -66,7 +66,7 @@ COPY --chown=appuser:appgroup pyproject.toml .
 COPY --chown=appuser:appgroup entrypoint.sh .
 
 # Make entrypoint executable
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Create data directories with correct permissions
 RUN mkdir -p /app/data/logs /app/data/cache /app/data/exports && \
