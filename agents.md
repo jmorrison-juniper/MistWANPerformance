@@ -1,4 +1,4 @@
-﻿# Agents Guide for MistWANPerformance
+# Agents Guide for MistWANPerformance
 
 Purpose: Enable autonomous or semi-autonomous AI coding agents (and future maintainers) to safely extend, refactor, and diagnose the MistWANPerformance codebase without breaking production conventions or data integrity guarantees.
 
@@ -80,7 +80,7 @@ Keep newest events at the top of the changelog and oldest last. An idea or item 
 - Install the tools with pipx, or in a separate virtual environment. The devtools package installs a top-level `src` package. That package can hide the `src` package of this repository.
 
 ```powershell
-pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.2.0"
+pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.3.0"
 wan-port-report --input ports.json
 ```
 
