@@ -7,6 +7,6 @@
     "reportAttributeAccessIssue": "error",
     "reportArgumentType": "error",
     "reportAssignmentType": "error",
-    "pythonVersion": "3.11",
+    "pythonVersion": "3.13",
     "typeCheckingMode": "basic"
 }

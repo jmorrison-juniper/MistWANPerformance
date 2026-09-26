@@ -248,7 +248,7 @@ Two modes (both required):
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.13+
 - Snowflake account with appropriate permissions
 - Mist API token with org-level read access
 
