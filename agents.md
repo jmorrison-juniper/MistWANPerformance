@@ -77,10 +77,10 @@ Keep newest events at the top of the changelog and oldest last. An idea or item 
 
 - The shared developer tools are in [misthelper-devtools](https://github.com/jmorrison-juniper/misthelper-devtools). Do not add a copy of a shared tool to this repository.
 - The old `check_ports.py` script is now the `wan-port-report` command in misthelper-devtools. It reads a saved Mist port list and prints the state of the gateway WAN ports.
-- Install the tools with pipx, or in a separate virtual environment. The devtools package installs a top-level `src` package. That package can hide the `src` package of this repository.
+- Install the tools with pipx, or in a separate virtual environment. Since release v0.4.0, the devtools package installs one top-level package, `misthelper_devtools`, so it no longer hides the `src` package of this repository.
 
 ```powershell
-pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.3.0"
+pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.4.0"
 wan-port-report --input ports.json
 ```
 
