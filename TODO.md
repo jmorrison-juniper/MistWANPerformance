@@ -476,6 +476,259 @@ GET /api/v1/sites/{site_id}/sle/site/{site_id}/metric/application-health/summary
 
 ---
 
+## Medium Priority
+
+### VPN Peer Time-Series Metrics Integration
+
+**Status:** Not Started  
+**Added:** 2026-02-03
+
+**Goal:** Collect historical VPN peer path quality metrics (loss, latency, jitter, MOS) over time with configurable interval resolution. Currently we collect point-in-time VPN peer stats - this adds time-series capability for trend analysis.
+
+---
+
+#### API Endpoint Reference
+
+| Endpoint | Method | Scope | Purpose |
+| -------- | ------ | ----- | ------- |
+| `/sites/{site_id}/insights/device/{mac}/vpn_peer-metrics` | `getSiteInsightMetricsForDevice` | Site | VPN peer time-series metrics (loss, latency, jitter, MOS) |
+
+**Example Request:**
+```text
+GET /api/v1/sites/{site_id}/insights/device/{mac}/vpn_peer-metrics?start={epoch}&end={epoch}&interval=3600&peer_mac={peer_mac}&port_id={port_id}&peer_port_id={peer_port_id}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| site_id | UUID | Yes | Site UUID |
+| mac | string | Yes | Gateway MAC address (no colons) |
+| start | int | Yes | Start timestamp (epoch) |
+| end | int | Yes | End timestamp (epoch) |
+| interval | int | No | Aggregation interval in seconds (default 3600) |
+| peer_mac | string | No | Remote peer MAC address |
+| port_id | string | No | Local interface (URL encoded, e.g., `ge-0%2F0%2F2`) |
+| peer_port_id | string | No | Remote peer interface (URL encoded, e.g., `xe-0%2F2%2F0.671`) |
+
+**Expected Response Fields:**
+
+- `loss` - Packet loss percentage over time
+- `latency` - Round-trip latency in ms
+- `jitter` - Jitter in ms
+- `mos` - Mean Opinion Score
+
+---
+
+#### Implementation Tasks
+
+##### Task A: MistAPIClient Method
+
+- [ ] Add `get_vpn_peer_metrics()` to `MistInsightsOperations` class
+  - Call `mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice()`
+  - Parameters: site_id, device_mac, start, end, interval, peer_mac, port_id, peer_port_id
+  - Return time-series data with timestamps
+- [ ] Add facade method to `MistAPIClient`
+
+##### Task B: Redis Storage Schema
+
+- [ ] Design key pattern: `mistwan:vpn_peer_metrics:{site_id}:{local_mac}:{peer_mac}`
+- [ ] Store time-series with sorted set (timestamp as score)
+- [ ] TTL: 7 days for VPN peer metrics
+
+##### Task C: Dashboard Integration
+
+- [ ] Add VPN peer metrics time-series chart to site detail view
+- [ ] Show loss, latency, jitter trends over selected time range
+- [ ] Allow peer selection in chart (if multiple peers)
+
+---
+
+### Gateway Port Time-Series Stats Integration
+
+**Status:** Not Started  
+**Added:** 2026-02-03
+
+**Goal:** Collect gateway interface rx_bps/tx_bps time-series data for bandwidth utilization trending. Currently we collect point-in-time utilization - this adds historical time-series for utilization graphs.
+
+---
+
+#### API Endpoint Reference
+
+| Endpoint | Method | Scope | Purpose |
+| -------- | ------ | ----- | ------- |
+| `/sites/{site_id}/insights/gateway/{device_id}/stats` | `getSiteGatewayMetrics` | Site | Gateway port time-series (rx_bps, tx_bps per interface) |
+
+**Example Request:**
+```text
+GET /api/v1/sites/{site_id}/insights/gateway/{device_id}/stats?interval=3600&start={epoch}&end={epoch}&port_id={port_id}&metrics=rx_bps,tx_bps
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| site_id | UUID | Yes | Site UUID |
+| device_id | UUID | Yes | Gateway device UUID (format: 00000000-0000-0000-1000-{mac}) |
+| start | int | Yes | Start timestamp (epoch) |
+| end | int | Yes | End timestamp (epoch) |
+| interval | int | No | Aggregation interval in seconds (default 3600) |
+| port_id | string | No | Interface name (e.g., `ge-0/0/4`) |
+| metrics | string | No | Comma-separated metrics (default: `rx_bps,tx_bps`) |
+
+**Expected Response Fields:**
+
+- `rx_bps` - Receive bits per second time-series
+- `tx_bps` - Transmit bits per second time-series
+- Timestamps aligned to interval boundaries
+
+---
+
+#### Implementation Tasks
+
+##### Task A: MistAPIClient Method
+
+- [ ] Add `get_gateway_port_stats_timeseries()` to `MistInsightsOperations` class
+  - Call `mistapi.api.v1.sites.insights.getSiteGatewayMetrics()`
+  - Parameters: site_id, device_id, start, end, interval, port_id, metrics
+  - Convert device MAC to device UUID format (00000000-0000-0000-1000-{mac})
+- [ ] Add facade method to `MistAPIClient`
+
+##### Task B: Redis Storage Schema
+
+- [ ] Design key pattern: `mistwan:gateway_stats:{site_id}:{device_id}:{port_id}`
+- [ ] Store time-series with sorted set (timestamp as score)
+- [ ] TTL: 7 days for gateway time-series
+
+##### Task C: Dashboard Integration
+
+- [ ] Add utilization time-series chart to site detail / port detail view
+- [ ] Show rx_bps and tx_bps as line chart
+- [ ] Calculate utilization percentage from bandwidth
+
+---
+
+### Device Insight Metrics Integration
+
+**Status:** Not Started  
+**Added:** 2026-02-03
+
+**Goal:** Collect device-level metrics time-series (tx_bytes, rx_bytes, etc.) for specific devices. Provides granular time-series data for device performance analysis.
+
+---
+
+#### API Endpoint Reference
+
+| Endpoint | Method | Scope | Purpose |
+| -------- | ------ | ----- | ------- |
+| `/sites/{site_id}/insights/device/{mac}/{metric}` | `getSiteInsightMetricsForDevice` | Site | Device metric time-series (tx_bytes, rx_bytes, etc.) |
+
+**Example Request:**
+```text
+GET /api/v1/sites/{site_id}/insights/device/{mac}/tx_bytes?start={epoch}&end={epoch}&interval=600
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| site_id | UUID | Yes | Site UUID |
+| mac | string | Yes | Device MAC address (no colons) |
+| metric | string | Yes | Metric name (tx_bytes, rx_bytes, etc.) |
+| start | int | Yes | Start timestamp (epoch) |
+| end | int | Yes | End timestamp (epoch) |
+| interval | int | No | Aggregation interval in seconds (default 600) |
+
+**Available Metrics (to verify):**
+
+- `tx_bytes` - Transmit bytes
+- `rx_bytes` - Receive bytes
+- `cpu` - CPU utilization
+- `memory` - Memory utilization
+- `disk` - Disk utilization
+
+---
+
+#### Implementation Tasks
+
+##### Task A: MistAPIClient Method
+
+- [ ] Add `get_device_insight_metrics()` to `MistInsightsOperations` class
+  - Call `mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice()`
+  - Parameters: site_id, device_mac, metric, start, end, interval
+  - Generic method for any device metric type
+- [ ] Add facade method to `MistAPIClient`
+
+##### Task B: Redis Storage Schema
+
+- [ ] Design key pattern: `mistwan:device_metrics:{site_id}:{mac}:{metric}`
+- [ ] Store time-series with sorted set (timestamp as score)
+- [ ] TTL: 7 days for device metrics
+
+##### Task C: Dashboard Integration
+
+- [ ] Add device metrics charts to site detail view
+- [ ] Show tx_bytes/rx_bytes trends
+- [ ] Option to select different metrics
+
+---
+
+### Enhanced Worst Sites by SLE Integration
+
+**Status:** Not Started  
+**Added:** 2026-02-03
+
+**Goal:** Enhance worst-sites-by-sle data collection with time-series support and multiple SLE metrics. Currently implemented for gateway-health, extend to wan-link-health and application-health.
+
+---
+
+#### API Endpoint Reference
+
+| Endpoint | Method | Scope | Purpose |
+| -------- | ------ | ----- | ------- |
+| `/orgs/{org_id}/insights/worst-sites-by-sle` | `getOrgSle(metric="worst-sites-by-sle")` | Org | Get worst performing sites by SLE metric |
+
+**Example Requests:**
+```text
+# Worst sites by WAN Link Health
+GET /api/v1/orgs/{org_id}/insights/worst-sites-by-sle?sle=wan-link-health&start={epoch}&end={epoch}
+
+# Worst sites by Gateway Health
+GET /api/v1/orgs/{org_id}/insights/worst-sites-by-sle?sle=gateway-health&start={epoch}&end={epoch}
+
+# Worst sites by Application Health
+GET /api/v1/orgs/{org_id}/insights/worst-sites-by-sle?sle=application-health&start={epoch}&end={epoch}
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+| --------- | ---- | -------- | ----------- |
+| org_id | UUID | Yes | Organization UUID |
+| sle | string | Yes | SLE metric (wan-link-health, gateway-health, application-health) |
+| start | int | Yes | Start timestamp (epoch) |
+| end | int | Yes | End timestamp (epoch) |
+
+**Response includes:** Site ID, site name, SLE score for the specified metric
+
+---
+
+#### Implementation Tasks
+
+##### Task A: Extend Existing Method
+
+- [ ] Enhance `get_org_worst_sites_by_sle()` to accept `sle` parameter
+  - Support: `wan-link-health`, `gateway-health`, `application-health`
+- [ ] Add convenience methods for each SLE type
+
+##### Task B: Dashboard Integration
+
+- [ ] Add worst-sites view with metric selector dropdown
+- [ ] Show worst sites for selected SLE metric
+- [ ] Add drill-down to site detail from worst sites list
+
+---
+
 ## Low Priority
 
 No items yet.

@@ -2397,6 +2397,419 @@ class RedisCache:
             logger.error(f"Error getting SLE cache status: {error}")
             return {"fresh": 0, "stale": 0, "missing": len(site_ids), "total": len(site_ids)}
 
+    # ==================== Time-Series Insights Storage ====================
+    
+    PREFIX_GATEWAY_TIMESERIES = "mistwan:gateway_ts"
+    PREFIX_VPN_TIMESERIES = "mistwan:vpn_ts"
+    PREFIX_DEVICE_TIMESERIES = "mistwan:device_ts"
+    
+    def save_gateway_port_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: str,
+        timeseries_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save gateway port time-series data (rx_bps, tx_bps).
+        
+        Uses sorted set for efficient time-range queries.
+        Prioritizes missing data over stale data.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address (no colons)
+            port_id: Interface name (e.g., "ge-0/0/4")
+            timeseries_data: Dict with 'results' array of time-series points
+            ttl: Time-to-live in seconds (default: 31 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            clean_mac = device_mac.lower().replace(":", "")
+            clean_port = port_id.replace("/", "_")
+            key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
+            ttl_seconds = ttl or self.HISTORY_TTL
+            
+            results = timeseries_data.get("results", [])
+            if not results:
+                logger.debug(f"No time-series data to save for {clean_mac}:{port_id}")
+                return True
+            
+            # Use sorted set with timestamp as score for efficient range queries
+            pipe = self.client.pipeline()
+            for point in results:
+                timestamp = point.get("timestamp", time.time())
+                pipe.zadd(key, {self._serialize(point): timestamp})
+            
+            # Set TTL on the key
+            pipe.expire(key, ttl_seconds)
+            pipe.execute()
+            
+            logger.debug(f"Saved {len(results)} time-series points for {clean_mac}:{port_id}")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving gateway port time-series: {error}")
+            return False
+    
+    def get_gateway_port_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        limit: int = 1000
+    ) -> List[Dict[str, Any]]:
+        """
+        Get gateway port time-series data for a time range.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address
+            port_id: Interface name
+            start_time: Start epoch (default: 7 days ago)
+            end_time: End epoch (default: now)
+            limit: Max points to return
+        
+        Returns:
+            List of time-series points sorted by timestamp
+        """
+        try:
+            clean_mac = device_mac.lower().replace(":", "")
+            clean_port = port_id.replace("/", "_")
+            key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
+            
+            end_time = end_time or time.time()
+            start_time = start_time or (end_time - 7 * 24 * 3600)  # Default 7 days
+            
+            raw_data = self.client.zrangebyscore(
+                key, start_time, end_time, start=0, num=limit
+            )
+            
+            return [self._deserialize(item) for item in raw_data if item]
+        except Exception as error:
+            logger.error(f"Error getting gateway port time-series: {error}")
+            return []
+    
+    def get_gateway_timeseries_coverage(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get time coverage info for cached gateway time-series.
+        
+        Used to identify missing data ranges for priority fetching.
+        
+        Returns:
+            Dict with oldest_timestamp, newest_timestamp, point_count
+        """
+        try:
+            clean_mac = device_mac.lower().replace(":", "")
+            clean_port = port_id.replace("/", "_")
+            key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
+            
+            # Get count
+            count = self.client.zcard(key)
+            if count == 0:
+                return {"has_data": False, "point_count": 0}
+            
+            # Get oldest and newest
+            oldest = self.client.zrange(key, 0, 0, withscores=True)
+            newest = self.client.zrange(key, -1, -1, withscores=True)
+            
+            return {
+                "has_data": True,
+                "point_count": count,
+                "oldest_timestamp": oldest[0][1] if oldest else None,
+                "newest_timestamp": newest[0][1] if newest else None
+            }
+        except Exception as error:
+            logger.error(f"Error getting gateway time-series coverage: {error}")
+            return {"has_data": False, "error": str(error)}
+    
+    def save_vpn_peer_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: str,
+        timeseries_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save VPN peer metrics time-series (loss, latency, jitter, mos).
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Local gateway MAC
+            peer_mac: Remote peer MAC
+            timeseries_data: Dict with 'results' array
+            ttl: Time-to-live in seconds (default: 31 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            clean_local = device_mac.lower().replace(":", "")
+            clean_peer = peer_mac.lower().replace(":", "")
+            key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
+            ttl_seconds = ttl or self.HISTORY_TTL
+            
+            results = timeseries_data.get("results", [])
+            if not results:
+                return True
+            
+            pipe = self.client.pipeline()
+            for point in results:
+                timestamp = point.get("timestamp", time.time())
+                pipe.zadd(key, {self._serialize(point): timestamp})
+            pipe.expire(key, ttl_seconds)
+            pipe.execute()
+            
+            logger.debug(f"Saved {len(results)} VPN peer time-series points")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving VPN peer time-series: {error}")
+            return False
+    
+    def get_vpn_peer_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        limit: int = 1000
+    ) -> List[Dict[str, Any]]:
+        """
+        Get VPN peer metrics time-series for a time range.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Local gateway MAC
+            peer_mac: Remote peer MAC
+            start_time: Start epoch (default: 7 days ago)
+            end_time: End epoch (default: now)
+            limit: Max points to return
+        
+        Returns:
+            List of time-series points sorted by timestamp
+        """
+        try:
+            clean_local = device_mac.lower().replace(":", "")
+            clean_peer = peer_mac.lower().replace(":", "")
+            key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
+            
+            end_time = end_time or time.time()
+            start_time = start_time or (end_time - 7 * 24 * 3600)
+            
+            raw_data = self.client.zrangebyscore(
+                key, start_time, end_time, start=0, num=limit
+            )
+            
+            return [self._deserialize(item) for item in raw_data if item]
+        except Exception as error:
+            logger.error(f"Error getting VPN peer time-series: {error}")
+            return []
+    
+    def get_vpn_timeseries_coverage(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: str
+    ) -> Dict[str, Any]:
+        """
+        Get time coverage info for cached VPN peer time-series.
+        
+        Returns:
+            Dict with has_data, oldest_timestamp, newest_timestamp, point_count
+        """
+        try:
+            clean_local = device_mac.lower().replace(":", "")
+            clean_peer = peer_mac.lower().replace(":", "")
+            key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
+            
+            count = self.client.zcard(key)
+            if count == 0:
+                return {"has_data": False, "point_count": 0}
+            
+            oldest = self.client.zrange(key, 0, 0, withscores=True)
+            newest = self.client.zrange(key, -1, -1, withscores=True)
+            
+            return {
+                "has_data": True,
+                "point_count": count,
+                "oldest_timestamp": oldest[0][1] if oldest else None,
+                "newest_timestamp": newest[0][1] if newest else None
+            }
+        except Exception as error:
+            logger.error(f"Error getting VPN time-series coverage: {error}")
+            return {"has_data": False, "error": str(error)}
+    
+    def save_device_metrics_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        metric: str,
+        timeseries_data: Dict[str, Any],
+        ttl: Optional[int] = None
+    ) -> bool:
+        """
+        Save device metrics time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Device MAC address
+            metric: Metric name (tx_bytes, rx_bytes, cpu, memory, disk)
+            timeseries_data: Dict with 'results' array
+            ttl: Time-to-live in seconds (default: 31 days)
+        
+        Returns:
+            True if successful
+        """
+        try:
+            clean_mac = device_mac.lower().replace(":", "")
+            key = f"{self.PREFIX_DEVICE_TIMESERIES}:{site_id}:{clean_mac}:{metric}"
+            ttl_seconds = ttl or self.HISTORY_TTL
+            
+            results = timeseries_data.get("results", [])
+            if not results:
+                return True
+            
+            pipe = self.client.pipeline()
+            for point in results:
+                timestamp = point.get("timestamp", time.time())
+                pipe.zadd(key, {self._serialize(point): timestamp})
+            pipe.expire(key, ttl_seconds)
+            pipe.execute()
+            
+            logger.debug(f"Saved {len(results)} device {metric} time-series points")
+            return True
+        except Exception as error:
+            logger.error(f"Error saving device metrics time-series: {error}")
+            return False
+    
+    def get_device_metrics_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        metric: str,
+        start_time: Optional[float] = None,
+        end_time: Optional[float] = None,
+        limit: int = 1000
+    ) -> List[Dict[str, Any]]:
+        """
+        Get device metrics time-series for a time range.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Device MAC
+            metric: Metric name
+            start_time: Start epoch (default: 7 days ago)
+            end_time: End epoch (default: now)
+            limit: Max points to return
+        
+        Returns:
+            List of time-series points sorted by timestamp
+        """
+        try:
+            clean_mac = device_mac.lower().replace(":", "")
+            key = f"{self.PREFIX_DEVICE_TIMESERIES}:{site_id}:{clean_mac}:{metric}"
+            
+            end_time = end_time or time.time()
+            start_time = start_time or (end_time - 7 * 24 * 3600)
+            
+            raw_data = self.client.zrangebyscore(
+                key, start_time, end_time, start=0, num=limit
+            )
+            
+            return [self._deserialize(item) for item in raw_data if item]
+        except Exception as error:
+            logger.error(f"Error getting device metrics time-series: {error}")
+            return []
+    
+    def get_missing_timeseries_sites(
+        self,
+        site_ids: List[str],
+        prefix: str = "gateway_ts"
+    ) -> List[str]:
+        """
+        Identify sites with NO time-series data (prioritize missing over stale).
+        
+        Args:
+            site_ids: List of site IDs to check
+            prefix: Time-series type prefix (gateway_ts, vpn_ts, device_ts)
+        
+        Returns:
+            List of site IDs with no cached time-series data
+        """
+        try:
+            missing = []
+            prefix_key = f"mistwan:{prefix}"
+            
+            for site_id in site_ids:
+                pattern = f"{prefix_key}:{site_id}:*"
+                keys = self.client.keys(pattern)
+                if not keys:
+                    missing.append(site_id)
+            
+            logger.debug(f"Found {len(missing)} sites with no {prefix} data")
+            return missing
+        except Exception as error:
+            logger.error(f"Error checking missing time-series sites: {error}")
+            return []
+    
+    def get_stale_timeseries_sites(
+        self,
+        site_ids: List[str],
+        prefix: str = "gateway_ts",
+        max_age_seconds: int = 3600
+    ) -> List[str]:
+        """
+        Identify sites with STALE time-series data (checked after missing).
+        
+        Args:
+            site_ids: List of site IDs to check
+            prefix: Time-series type prefix
+            max_age_seconds: Max age before considered stale (default: 1 hour)
+        
+        Returns:
+            List of site IDs with stale time-series data
+        """
+        try:
+            stale = []
+            prefix_key = f"mistwan:{prefix}"
+            current_time = time.time()
+            
+            for site_id in site_ids:
+                pattern = f"{prefix_key}:{site_id}:*"
+                keys = self.client.keys(pattern)
+                
+                if not keys:
+                    continue  # Missing, not stale - handled separately
+                
+                # Check newest data point across all keys for this site
+                newest_timestamp = 0
+                for key in keys[:10]:  # Sample up to 10 keys
+                    newest = self.client.zrange(key, -1, -1, withscores=True)
+                    if newest and newest[0][1] > newest_timestamp:
+                        newest_timestamp = newest[0][1]
+                
+                if newest_timestamp > 0:
+                    age = current_time - newest_timestamp
+                    if age > max_age_seconds:
+                        stale.append(site_id)
+            
+            logger.debug(f"Found {len(stale)} sites with stale {prefix} data (>{max_age_seconds}s)")
+            return stale
+        except Exception as error:
+            logger.error(f"Error checking stale time-series sites: {error}")
+            return []
+
     # ==================== Cache Management ====================
     
     def clear_all(self) -> bool:
@@ -2908,6 +3321,37 @@ class NullCache:
         max_age_seconds: int = 3600
     ) -> Dict[str, int]:
         return {"fresh": 0, "stale": 0, "missing": len(site_ids)}
+    
+    # Time-series stubs (always return empty/missing)
+    def save_gateway_port_timeseries(self, *args, **kwargs) -> bool:
+        return False
+    
+    def get_gateway_port_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+        return []
+    
+    def get_gateway_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
+        return {"has_data": False, "point_count": 0}
+    
+    def save_vpn_peer_timeseries(self, *args, **kwargs) -> bool:
+        return False
+    
+    def get_vpn_peer_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+        return []
+    
+    def get_vpn_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
+        return {"has_data": False, "point_count": 0}
+    
+    def save_device_metrics_timeseries(self, *args, **kwargs) -> bool:
+        return False
+    
+    def get_device_metrics_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+        return []
+    
+    def get_missing_timeseries_sites(self, site_ids: List[str], prefix: str = "gateway_ts") -> List[str]:
+        return list(site_ids)
+    
+    def get_stale_timeseries_sites(self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600) -> List[str]:
+        return []
     
     def clear_all(self) -> bool:
         return True

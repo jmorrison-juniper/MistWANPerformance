@@ -3,13 +3,21 @@ MistWANPerformance - Dashboard Application
 
 Dash/Plotly dashboard for NOC WAN circuit visibility.
 Provides real-time monitoring, trends, alerts, drilldowns, and CSV exports.
+
+Multi-page architecture with dedicated pages for:
+- Overview: Main dashboard with site/circuit summaries (/)
+- Gateway: Gateway-specific metrics (/gateway/<id>)
+- Port: WAN port statistics (/port/<site_id>/<port_id>)
+- VPN Peer: VPN peer path quality (/vpn/<site_id>/<peer_id>)
 """
 
 import csv
 import io
 import logging
+import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, cast
+from urllib.parse import parse_qs, urlparse
 
 import dash
 from dash import dcc, html, dash_table, callback, Input, Output, State
@@ -22,6 +30,11 @@ from plotly.subplots import make_subplots
 from src.views.current_state import CurrentStateViews, CircuitCurrentState, AlertSeverity
 from src.views.rankings import RankingViews, RankedCircuit
 from src.utils.performance import PerformanceTimer, timed, format_perf_report
+from src.dashboard.pages.shared import COLORS, REFRESH_INTERVAL_MS, NavigationBar
+from src.dashboard.pages.overview import OverviewPage
+from src.dashboard.pages.gateway import GatewayPage
+from src.dashboard.pages.port import PortPage
+from src.dashboard.pages.vpn_peer import VPNPeerPage
 
 
 logger = logging.getLogger(__name__)
@@ -82,6 +95,12 @@ class WANPerformanceDashboard:
         self.app_name = app_name
         self.data_provider = data_provider
         
+        # Initialize page classes
+        self.overview_page = OverviewPage(data_provider)
+        self.gateway_page = GatewayPage(data_provider)
+        self.port_page = PortPage(data_provider)
+        self.vpn_peer_page = VPNPeerPage(data_provider)
+        
         # Initialize Dash app with Bootstrap theme
         self.app = dash.Dash(
             __name__,
@@ -93,7 +112,7 @@ class WANPerformanceDashboard:
         # Apply custom T-Mobile Magenta CSS
         self.app.index_string = self._get_custom_index_string()
         
-        # Build layout
+        # Build layout with URL routing
         self.app.layout = self._build_layout()
         
         # Register callbacks
@@ -350,6 +369,16 @@ class WANPerformanceDashboard:
             ::-webkit-scrollbar-thumb:hover {
                 background: var(--tmobile-magenta);
             }
+            
+            /* Clickable link styling for navigation */
+            .gateway-link, .port-link, .vpn-peer-link {
+                cursor: pointer;
+                text-decoration: none;
+            }
+            
+            .gateway-link:hover, .port-link:hover, .vpn-peer-link:hover {
+                text-decoration: underline;
+            }
         </style>
     </head>
     <body>
@@ -363,9 +392,30 @@ class WANPerformanceDashboard:
 </html>
 '''
     
-    def _build_layout(self) -> dbc.Container:
+    def _build_layout(self) -> html.Div:
         """
-        Build the dashboard layout with drilldown navigation.
+        Build the dashboard layout with URL-based multi-page routing.
+        
+        URL Patterns:
+        - / : Overview page (main dashboard)
+        - /gateway/<gateway_id> : Gateway detail page
+        - /port/<site_id>/<port_id> : Port detail page
+        - /vpn/<site_id>/<peer_id> : VPN peer detail page
+        
+        Returns:
+            HTML Div with URL location and page container
+        """
+        return html.Div([
+            # URL location component for routing
+            dcc.Location(id="url", refresh=False),
+            
+            # Page content container (populated by URL callback)
+            html.Div(id="page-content")
+        ])
+    
+    def _build_overview_layout(self) -> dbc.Container:
+        """
+        Build the overview page layout (original main dashboard).
         
         Returns:
             Dash Bootstrap Container with all components
@@ -525,11 +575,12 @@ class WANPerformanceDashboard:
                                     columns=[
                                         {"name": "Rank", "id": "rank"},
                                         {"name": "Site", "id": "site_name"},
-                                        {"name": "Port ID", "id": "port_id"},
+                                        {"name": "Port", "id": "port_link", "presentation": "markdown"},
                                         {"name": "Speed (Mbps)", "id": "bandwidth_mbps"},
                                         {"name": "Utilization %", "id": "metric_value"},
                                         {"name": "Status", "id": "threshold_status"}
                                     ],
+                                    markdown_options={"link_target": "_self"},
                                     style_cell={
                                         "backgroundColor": self.COLORS["bg_secondary"],
                                         "color": self.COLORS["text_primary"],
@@ -723,6 +774,93 @@ class WANPerformanceDashboard:
                                 dcc.Graph(
                                     id="throughput-chart",
                                     style={"height": "250px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
+                            ])
+                        ])
+                    ], width=6)
+                ]),
+                
+                # Time-Series Detail Row - Gateway Bandwidth and VPN Quality
+                dbc.Row([
+                    # Site selector for time-series charts
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader("Site Time-Series Selection"),
+                            dbc.CardBody([
+                                dbc.Row([
+                                    dbc.Col([
+                                        html.Label("Select Site:", className="text-muted mb-1"),
+                                        dcc.Dropdown(
+                                            id="timeseries-site-selector",
+                                            placeholder="Select a site for detailed time-series...",
+                                            style={"backgroundColor": self.COLORS["bg_secondary"]}
+                                        )
+                                    ], width=6),
+                                    dbc.Col([
+                                        html.Label("Time Range:", className="text-muted mb-1"),
+                                        dcc.Dropdown(
+                                            id="timeseries-range-selector",
+                                            options=[
+                                                {"label": "Last 6 Hours", "value": 6},
+                                                {"label": "Last 12 Hours", "value": 12},
+                                                {"label": "Last 24 Hours", "value": 24},
+                                                {"label": "Last 7 Days", "value": 168}
+                                            ],
+                                            value=24,
+                                            clearable=False,
+                                            style={"backgroundColor": self.COLORS["bg_secondary"]}
+                                        )
+                                    ], width=3),
+                                    dbc.Col([
+                                        html.Label("Auto-Refresh:", className="text-muted mb-1"),
+                                        dbc.Switch(
+                                            id="timeseries-auto-refresh",
+                                            value=False,
+                                            label="",
+                                            className="mt-2"
+                                        )
+                                    ], width=3)
+                                ])
+                            ])
+                        ])
+                    ], width=12)
+                ], className="mb-3 mt-4"),
+                
+                # Gateway Bandwidth Time-Series Chart
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("Gateway Port Bandwidth Time-Series"),
+                                html.Small(
+                                    " - rx_bps/tx_bps for selected site",
+                                    className="text-muted ms-2"
+                                )
+                            ]),
+                            dbc.CardBody([
+                                dcc.Graph(
+                                    id="gateway-bandwidth-chart",
+                                    style={"height": "300px"},
+                                    config={"responsive": True, "displayModeBar": True}
+                                )
+                            ])
+                        ])
+                    ], width=6),
+                    # VPN Peer Quality Time-Series Chart
+                    dbc.Col([
+                        dbc.Card([
+                            dbc.CardHeader([
+                                html.Span("VPN Peer Quality Time-Series"),
+                                html.Small(
+                                    " - loss/latency/jitter for selected site",
+                                    className="text-muted ms-2"
+                                )
+                            ]),
+                            dbc.CardBody([
+                                dcc.Graph(
+                                    id="vpn-quality-chart",
+                                    style={"height": "300px"},
                                     config={"responsive": True, "displayModeBar": True}
                                 )
                             ])
@@ -1879,8 +2017,58 @@ class WANPerformanceDashboard:
         ]
     
     def _register_callbacks(self):
-        """Register all dashboard callbacks including drilldowns and exports."""
+        """Register all dashboard callbacks including routing and exports."""
         
+        # URL Routing callback - determines which page to display
+        @self.app.callback(
+            Output("page-content", "children"),
+            [Input("url", "pathname")],
+            [State("url", "search")]
+        )
+        def display_page(pathname, search):
+            """
+            Route to appropriate page based on URL.
+            
+            URL Patterns:
+            - / or /overview : Main dashboard
+            - /gateway/<gateway_id> : Gateway detail page
+            - /port/<site_id>/<port_id> : Port detail page
+            - /vpn/<site_id>/<peer_id> : VPN peer detail page
+            """
+            if pathname is None:
+                pathname = "/"
+            
+            # Parse query string parameters
+            query_params = {}
+            if search:
+                query_params = parse_qs(search.lstrip("?"))
+            
+            # Route: Gateway detail page
+            gateway_match = re.match(r"^/gateway/([a-f0-9\-]+)$", pathname, re.IGNORECASE)
+            if gateway_match:
+                gateway_id = gateway_match.group(1)
+                site_id = query_params.get("site_id", [None])[0]
+                return self._build_gateway_page(gateway_id, site_id)
+            
+            # Route: Port detail page
+            port_match = re.match(r"^/port/([a-f0-9\-]+)/(.+)$", pathname, re.IGNORECASE)
+            if port_match:
+                site_id = port_match.group(1)
+                port_id = port_match.group(2)
+                gateway_id = query_params.get("gateway_id", [None])[0]
+                return self._build_port_page(site_id, port_id, gateway_id)
+            
+            # Route: VPN peer detail page
+            vpn_match = re.match(r"^/vpn/([a-f0-9\-]+)/(.+)$", pathname, re.IGNORECASE)
+            if vpn_match:
+                site_id = vpn_match.group(1)
+                peer_id = vpn_match.group(2)
+                return self._build_vpn_peer_page(site_id, peer_id)
+            
+            # Default: Overview page
+            return self._build_overview_layout()
+        
+        # Overview page callbacks (main dashboard refresh)
         @self.app.callback(
             [
                 Output("last-updated", "children"),
@@ -1962,8 +2150,9 @@ class WANPerformanceDashboard:
             max_utilization = circuit_summary.get("max_utilization", 0.0)
             total_bandwidth = circuit_summary.get("total_bandwidth_gbps", 0.0)
             
-            # Top congested table
-            congested_data = data.get("top_congested", [])
+            # Top congested table - add clickable port links
+            raw_congested = data.get("top_congested", [])
+            congested_data = self._add_port_links_to_congested(raw_congested)
             
             # SLE degraded sites table
             sle_degraded_data = data.get("sle_degraded_sites", [])
@@ -2146,6 +2335,11 @@ class WANPerformanceDashboard:
                     # Refresh activity - check all background worker statuses
                     activity_parts = []
                     
+                    # Debug: Log what attributes exist on data_provider
+                    worker_attrs = [attr for attr in ['sle_background_worker', 'background_worker', 'vpn_background_worker'] if hasattr(self.data_provider, attr)]
+                    if not worker_attrs:
+                        logger.debug(f"[STATUS] No worker attributes found on data_provider")
+                    
                     # SLE background worker - shows current site being collected
                     if hasattr(self.data_provider, 'sle_background_worker') and self.data_provider.sle_background_worker:
                         sle_status = self.data_provider.sle_background_worker.get_status()
@@ -2208,6 +2402,130 @@ class WANPerformanceDashboard:
                     cache_status = "Cache: Error"
             
             return [backend_indicator, rate_text, rate_style, cache_status, refresh_activity]
+        
+        # Time-series site selector callback - populate dropdown with available sites
+        @self.app.callback(
+            Output("timeseries-site-selector", "options"),
+            [Input("refresh-interval", "n_intervals")]
+        )
+        def update_timeseries_site_options(n_intervals):
+            """Populate the site selector dropdown with available sites."""
+            if not self.data_provider:
+                return []
+            
+            try:
+                sites = getattr(self.data_provider, 'sites', [])
+                if not sites:
+                    return []
+                
+                options = [
+                    {
+                        "label": site.get("name", site.get("id", "Unknown")),
+                        "value": site.get("id", "")
+                    }
+                    for site in sorted(sites, key=lambda s: s.get("name", ""))
+                    if site.get("id")
+                ]
+                return options
+            except Exception as error:
+                logger.debug(f"Error populating site selector: {error}")
+                return []
+        
+        # Gateway bandwidth time-series chart callback
+        @self.app.callback(
+            Output("gateway-bandwidth-chart", "figure"),
+            [
+                Input("timeseries-site-selector", "value"),
+                Input("timeseries-range-selector", "value"),
+                Input("timeseries-auto-refresh", "value"),
+                Input("refresh-interval", "n_intervals")
+            ]
+        )
+        def update_gateway_bandwidth_chart(site_id, hours, auto_refresh, n_intervals):
+            """Update the gateway bandwidth time-series chart for selected site."""
+            if not site_id or not self.data_provider:
+                return self._build_gateway_bandwidth_chart([], "No Site Selected")
+            
+            # Only refresh on interval if auto-refresh is enabled
+            ctx = dash.callback_context
+            if ctx.triggered:
+                trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+                if trigger == "refresh-interval" and not auto_refresh:
+                    raise PreventUpdate
+            
+            try:
+                # Get site name for display
+                site_name = site_id
+                sites = getattr(self.data_provider, 'sites', [])
+                for site in sites:
+                    if site.get("id") == site_id:
+                        site_name = site.get("name", site_id)
+                        break
+                
+                # Calculate time range
+                end_time = int(datetime.now(timezone.utc).timestamp())
+                start_time = end_time - (hours * 3600)
+                
+                # Get time-series data from data provider
+                timeseries_data = self.data_provider.get_gateway_port_timeseries(
+                    site_id=site_id,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                
+                return self._build_gateway_bandwidth_chart(timeseries_data, site_name)
+                
+            except Exception as error:
+                logger.warning(f"Error loading gateway bandwidth time-series: {error}")
+                return self._build_gateway_bandwidth_chart([], f"Error: {error}")
+        
+        # VPN quality time-series chart callback
+        @self.app.callback(
+            Output("vpn-quality-chart", "figure"),
+            [
+                Input("timeseries-site-selector", "value"),
+                Input("timeseries-range-selector", "value"),
+                Input("timeseries-auto-refresh", "value"),
+                Input("refresh-interval", "n_intervals")
+            ]
+        )
+        def update_vpn_quality_chart(site_id, hours, auto_refresh, n_intervals):
+            """Update the VPN peer quality time-series chart for selected site."""
+            if not site_id or not self.data_provider:
+                return self._build_vpn_quality_chart([], "No Site Selected")
+            
+            # Only refresh on interval if auto-refresh is enabled
+            ctx = dash.callback_context
+            if ctx.triggered:
+                trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+                if trigger == "refresh-interval" and not auto_refresh:
+                    raise PreventUpdate
+            
+            try:
+                # Get site name for display
+                site_name = site_id
+                sites = getattr(self.data_provider, 'sites', [])
+                for site in sites:
+                    if site.get("id") == site_id:
+                        site_name = site.get("name", site_id)
+                        break
+                
+                # Calculate time range
+                end_time = int(datetime.now(timezone.utc).timestamp())
+                start_time = end_time - (hours * 3600)
+                
+                # Get VPN time-series data from data provider
+                timeseries_data = self.data_provider.get_vpn_peer_timeseries(
+                    site_id=site_id,
+                    start_time=start_time,
+                    end_time=end_time
+                )
+                
+                return self._build_vpn_quality_chart(timeseries_data, site_name)
+                
+            except Exception as error:
+                logger.warning(f"Error loading VPN quality time-series: {error}")
+                return self._build_vpn_quality_chart([], f"Error: {error}")
         
         # Breadcrumb navigation callback
         @self.app.callback(
@@ -2429,6 +2747,34 @@ class WANPerformanceDashboard:
             "type": "text/csv"
         }
     
+    def _add_port_links_to_congested(self, congested_records: List[Dict]) -> List[Dict]:
+        """
+        Add clickable markdown links to congested circuit records.
+        
+        Args:
+            congested_records: List of congested circuit dictionaries
+            
+        Returns:
+            List with added port_link field containing markdown link
+        """
+        result = []
+        for record in congested_records:
+            enriched = dict(record)
+            site_id = record.get("site_id", "")
+            port_id = record.get("port_id", "")
+            
+            # Create markdown link to port detail page
+            # URL: /port/{site_id}/{port_id}
+            if site_id and port_id:
+                # URL-encode the port_id in case it has special characters
+                encoded_port = port_id.replace("/", "%2F")
+                enriched["port_link"] = f"[{port_id}](/port/{site_id}/{encoded_port})"
+            else:
+                enriched["port_link"] = port_id
+            
+            result.append(enriched)
+        return result
+    
     def _build_alerts_list(self, alerts: List[Dict]) -> html.Div:
         """Build the alerts list component."""
         if not alerts:
@@ -2647,6 +2993,207 @@ class WANPerformanceDashboard:
         )
         
         return fig
+    
+    def _build_gateway_bandwidth_chart(
+        self,
+        timeseries_data: List[Dict],
+        site_name: str = "Selected Site"
+    ) -> go.Figure:
+        """
+        Build gateway port bandwidth time-series chart.
+        
+        Args:
+            timeseries_data: List of time-series data points with rx_bps/tx_bps
+            site_name: Name of the selected site for display
+            
+        Returns:
+            Plotly figure with bandwidth time-series
+        """
+        fig = go.Figure()
+        
+        if timeseries_data:
+            timestamps = [
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                for t in timeseries_data
+            ]
+            rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
+            tx_mbps = [t.get("tx_bps", 0) / 1_000_000 for t in timeseries_data]
+            
+            fig.add_trace(go.Scatter(
+                x=timestamps,
+                y=rx_mbps,
+                mode="lines",
+                name="RX (Mbps)",
+                line=dict(color=self.COLORS["info"], width=2),
+                fill="tozeroy",
+                fillcolor="rgba(23, 162, 184, 0.15)",
+                hovertemplate="Time: %{x}<br>RX: %{y:.2f} Mbps<extra></extra>"
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=timestamps,
+                y=tx_mbps,
+                mode="lines",
+                name="TX (Mbps)",
+                line=dict(color=self.COLORS["primary"], width=2),
+                fill="tozeroy",
+                fillcolor="rgba(226, 0, 116, 0.15)",
+                hovertemplate="Time: %{x}<br>TX: %{y:.2f} Mbps<extra></extra>"
+            ))
+        else:
+            fig.add_annotation(
+                text="Select a site to view gateway bandwidth time-series",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=12, color=self.COLORS["text_secondary"])
+            )
+        
+        fig.update_layout(
+            template="plotly_dark",
+            margin=dict(l=50, r=20, t=30, b=40),
+            title=dict(
+                text=f"Gateway Bandwidth - {site_name}",
+                font=dict(size=14, color=self.COLORS["text_primary"])
+            ),
+            xaxis_title="Time",
+            yaxis_title="Bandwidth (Mbps)",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode="x unified"
+        )
+        
+        return fig
+    
+    def _build_vpn_quality_chart(
+        self,
+        timeseries_data: List[Dict],
+        site_name: str = "Selected Site"
+    ) -> go.Figure:
+        """
+        Build VPN peer quality time-series chart with loss/latency/jitter.
+        
+        Args:
+            timeseries_data: List of time-series data points with quality metrics
+            site_name: Name of the selected site for display
+            
+        Returns:
+            Plotly figure with VPN quality metrics (dual y-axis)
+        """
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        
+        if timeseries_data:
+            timestamps = [
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                for t in timeseries_data
+            ]
+            loss_pct = [t.get("loss", 0) for t in timeseries_data]
+            latency_ms = [t.get("latency", 0) for t in timeseries_data]
+            jitter_ms = [t.get("jitter", 0) for t in timeseries_data]
+            
+            # Loss on primary y-axis (percentage)
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=loss_pct,
+                    mode="lines",
+                    name="Loss (%)",
+                    line=dict(color=self.COLORS["critical"], width=2),
+                    hovertemplate="Time: %{x}<br>Loss: %{y:.2f}%<extra></extra>"
+                ),
+                secondary_y=False
+            )
+            
+            # Latency on secondary y-axis (ms)
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=latency_ms,
+                    mode="lines",
+                    name="Latency (ms)",
+                    line=dict(color=self.COLORS["warning"], width=2),
+                    hovertemplate="Time: %{x}<br>Latency: %{y:.1f} ms<extra></extra>"
+                ),
+                secondary_y=True
+            )
+            
+            # Jitter on secondary y-axis (ms)
+            fig.add_trace(
+                go.Scatter(
+                    x=timestamps,
+                    y=jitter_ms,
+                    mode="lines",
+                    name="Jitter (ms)",
+                    line=dict(color=self.COLORS["info"], width=2, dash="dot"),
+                    hovertemplate="Time: %{x}<br>Jitter: %{y:.1f} ms<extra></extra>"
+                ),
+                secondary_y=True
+            )
+        else:
+            fig.add_annotation(
+                text="Select a site to view VPN quality time-series",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False,
+                font=dict(size=12, color=self.COLORS["text_secondary"])
+            )
+        
+        fig.update_layout(
+            template="plotly_dark",
+            margin=dict(l=50, r=50, t=30, b=40),
+            title=dict(
+                text=f"VPN Quality - {site_name}",
+                font=dict(size=14, color=self.COLORS["text_primary"])
+            ),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            hovermode="x unified"
+        )
+        
+        fig.update_yaxes(title_text="Loss (%)", secondary_y=False)
+        fig.update_yaxes(title_text="Latency / Jitter (ms)", secondary_y=True)
+        
+        return fig
+    
+    # -------------------------------------------------------------------------
+    # Page Builder Methods (Multi-Page Routing)
+    # -------------------------------------------------------------------------
+    
+    def _build_gateway_page(self, gateway_id: str, site_id: str = None) -> html.Div:
+        """
+        Build the gateway detail page layout.
+        
+        Args:
+            gateway_id: Gateway ID to display
+            site_id: Optional site ID for context
+            
+        Returns:
+            Gateway page layout component
+        """
+        return self.gateway_page.build_layout(gateway_id, site_id, self.data_provider)
+    
+    def _build_port_page(self, site_id: str, port_id: str, gateway_id: str = None) -> html.Div:
+        """
+        Build the port detail page layout.
+        
+        Args:
+            site_id: Site ID
+            port_id: Port ID (interface name)
+            gateway_id: Optional gateway ID for context
+            
+        Returns:
+            Port page layout component
+        """
+        return self.port_page.build_layout(site_id, port_id, gateway_id, self.data_provider)
+    
+    def _build_vpn_peer_page(self, site_id: str, peer_id: str) -> html.Div:
+        """
+        Build the VPN peer detail page layout.
+        
+        Args:
+            site_id: Site ID
+            peer_id: Peer ID (peer path identifier)
+            
+        Returns:
+            VPN peer page layout component
+        """
+        return self.vpn_peer_page.build_layout(site_id, peer_id, self.data_provider)
     
     def run(self, host: str = "127.0.0.1", port: int = 8050, debug: bool = False):
         """

@@ -102,9 +102,21 @@ def create_app():
     
     # Initialize background workers if we have Redis and API credentials
     api_token = os.getenv("MIST_API_TOKEN")
-    if redis_cache and api_token:
+    org_id = os.getenv("MIST_ORG_ID")
+    if redis_cache and api_token and org_id:
         try:
-            api_client = MistAPIClient()
+            # Create config objects for API client
+            from src.utils.config import MistConfig, OperationalConfig
+            logger.info(f"[DEBUG] Creating MistConfig with token length={len(api_token)}, org_id={org_id}")
+            mist_config = MistConfig(
+                api_token=api_token,
+                org_id=org_id,
+                api_host=os.getenv("MIST_API_HOST", "api.mist.com")
+            )
+            ops_config = OperationalConfig()
+            logger.info("[DEBUG] MistConfig created, creating MistAPIClient...")
+            api_client = MistAPIClient(mist_config, ops_config)
+            logger.info("[DEBUG] MistAPIClient created successfully")
             
             # Get site IDs from SLE data (already loaded into provider)
             site_ids = []
@@ -154,6 +166,13 @@ def create_app():
             _background_workers.append(vpn_worker)
             provider.vpn_background_worker = vpn_worker
             logger.info("[OK] VPN peer background worker started")
+            
+            # Verify workers are assigned
+            logger.info(f"[OK] Background workers started")
+            logger.info(f"  - provider.background_worker: {hasattr(provider, 'background_worker')}")
+            logger.info(f"  - provider.sle_background_worker: {hasattr(provider, 'sle_background_worker')}")
+            logger.info(f"  - provider.vpn_background_worker: {hasattr(provider, 'vpn_background_worker')}")
+            logger.info(f"  - _dashboard.data_provider is provider: {_dashboard.data_provider is provider}")
             
         except Exception as e:
             logger.error(f"[ERROR] Failed to start background workers: {e}", exc_info=True)
