@@ -1,4 +1,4 @@
-﻿# Agents Guide for MistWANPerformance
+# Agents Guide for MistWANPerformance
 
 Purpose: Enable autonomous or semi-autonomous AI coding agents (and future maintainers) to safely extend, refactor, and diagnose the MistWANPerformance codebase without breaking production conventions or data integrity guarantees.
 
@@ -78,6 +78,7 @@ Keep newest events at the top of the changelog and oldest last. An idea or item 
 - The shared developer tools are in [misthelper-devtools](https://github.com/jmorrison-juniper/misthelper-devtools). Do not add a copy of a shared tool to this repository.
 - The old `check_ports.py` script is now the `wan-port-report` command in misthelper-devtools. It reads a saved Mist port list and prints the state of the gateway WAN ports.
 - Install the tools with pipx, or in a separate virtual environment. Since release v0.4.0, the devtools package installs one top-level package, `misthelper_devtools`, so it no longer hides the `src` package of this repository.
+- CI in `.github/workflows/ci.yml` calls the shared quality gate workflow of misthelper-devtools. It runs pytest, bandit, and pip-audit on each pull request and each push to main. Each gate job installs `requirements-dev.txt`, which installs `requirements.txt` and the two scan tools.
 
 ```powershell
 pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.4.0"

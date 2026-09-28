@@ -1,0 +1,36 @@
+name: CI
+
+# One event starts one run. A push runs on main only, and a pull request runs once.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new commit on a pull request cancels the older run. A run on main always finishes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # The shared workflow in misthelper-devtools runs each gate as its own job.
+  # Each job installs requirements-dev.txt. Each check name starts with the job
+  # ID, for example "gates / pytest (tests)".
+  #
+  # The ruff, black, mypy, and vulture gates stay off, because each one fails
+  # on the current code. black reformats 43 files, mypy reports 129 errors,
+  # and ruff and vulture report unused names. Turn a gate on in the pull
+  # request that fixes its findings.
+  gates:
+    permissions:
+      contents: read
+    uses: jmorrison-juniper/misthelper-devtools/.github/workflows/reusable-python-quality-gates.yml@efd236ba17b0a7f9258ddac31168773a7af53e96 # main
+    with:
+      python-version: '3.13'
+      cache-dependency-path: requirements*.txt
+      pytest: true
+      bandit: true
+      pip-audit: true
