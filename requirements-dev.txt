@@ -1,0 +1,7 @@
+# CI tools for the shared quality gate workflow. The container image installs
+# requirements.txt only.
+#
+# The tests import the code in src, so this file also installs requirements.txt.
+-r requirements.txt
+bandit>=1.9.4,<2
+pip-audit>=2.10.1,<3
