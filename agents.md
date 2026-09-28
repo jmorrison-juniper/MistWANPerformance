@@ -1,4 +1,4 @@
-# Agents Guide for MistWANPerformance
+﻿# Agents Guide for MistWANPerformance
 
 Purpose: Enable autonomous or semi-autonomous AI coding agents (and future maintainers) to safely extend, refactor, and diagnose the MistWANPerformance codebase without breaking production conventions or data integrity guarantees.
 
