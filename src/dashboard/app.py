@@ -574,13 +574,13 @@ class WANPerformanceDashboard:
                                     id="top-congested-table",
                                     columns=[
                                         {"name": "Rank", "id": "rank"},
-                                        {"name": "Site", "id": "site_name"},
+                                        {"name": "Site", "id": "site_link", "presentation": "markdown"},
                                         {"name": "Port", "id": "port_link", "presentation": "markdown"},
                                         {"name": "Speed (Mbps)", "id": "bandwidth_mbps"},
                                         {"name": "Utilization %", "id": "metric_value"},
                                         {"name": "Status", "id": "threshold_status"}
                                     ],
-                                    markdown_options={"link_target": "_self"},
+                                    markdown_options={"link_target": "_self", "html": True},
                                     style_cell={
                                         "backgroundColor": self.COLORS["bg_secondary"],
                                         "color": self.COLORS["text_primary"],
@@ -652,11 +652,12 @@ class WANPerformanceDashboard:
                                 dash_table.DataTable(
                                     id="sle-degraded-table",
                                     columns=[
-                                        {"name": "Site Name", "id": "site_name"},
+                                        {"name": "Site Name", "id": "site_link", "presentation": "markdown"},
                                         {"name": "Gateway %", "id": "gateway_health"},
                                         {"name": "WAN Link %", "id": "wan_link"},
                                         {"name": "App Health %", "id": "app_health"}
                                     ],
+                                    markdown_options={"link_target": "_self", "html": True},
                                     cell_selectable=True,
                                     style_cell={
                                         "backgroundColor": self.COLORS["bg_secondary"],
@@ -2154,8 +2155,9 @@ class WANPerformanceDashboard:
             raw_congested = data.get("top_congested", [])
             congested_data = self._add_port_links_to_congested(raw_congested)
             
-            # SLE degraded sites table
-            sle_degraded_data = data.get("sle_degraded_sites", [])
+            # SLE degraded sites table - add clickable site links
+            raw_sle_degraded = data.get("sle_degraded_sites", [])
+            sle_degraded_data = self._add_site_links_to_sle(raw_sle_degraded)
             
             # Alerts list
             alerts_list = self._build_alerts_list(data.get("alerts", []))
@@ -2755,13 +2757,20 @@ class WANPerformanceDashboard:
             congested_records: List of congested circuit dictionaries
             
         Returns:
-            List with added port_link field containing markdown link
+            List with added site_link and port_link fields containing markdown links
         """
         result = []
         for record in congested_records:
             enriched = dict(record)
             site_id = record.get("site_id", "")
+            site_name = record.get("site_name", "Unknown")
             port_id = record.get("port_id", "")
+            
+            # Create markdown link to site detail page (using gateway page with site context)
+            if site_id:
+                enriched["site_link"] = f"[{site_name}](/gateway/{site_id})"
+            else:
+                enriched["site_link"] = site_name
             
             # Create markdown link to port detail page
             # URL: /port/{site_id}/{port_id}
@@ -2771,6 +2780,31 @@ class WANPerformanceDashboard:
                 enriched["port_link"] = f"[{port_id}](/port/{site_id}/{encoded_port})"
             else:
                 enriched["port_link"] = port_id
+            
+            result.append(enriched)
+        return result
+    
+    def _add_site_links_to_sle(self, sle_records: List[Dict]) -> List[Dict]:
+        """
+        Add clickable markdown links to SLE degraded site records.
+        
+        Args:
+            sle_records: List of SLE degraded site dictionaries
+            
+        Returns:
+            List with added site_link field containing markdown link
+        """
+        result = []
+        for record in sle_records:
+            enriched = dict(record)
+            site_id = record.get("site_id", "")
+            site_name = record.get("site_name", "Unknown")
+            
+            # Create markdown link to site/gateway detail page
+            if site_id:
+                enriched["site_link"] = f"[{site_name}](/gateway/{site_id})"
+            else:
+                enriched["site_link"] = site_name
             
             result.append(enriched)
         return result
