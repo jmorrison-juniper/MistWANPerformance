@@ -1214,6 +1214,296 @@ class MistInsightsOperations:
         """
         return self.get_vpn_peer_stats(site_id=site_id)
 
+    # ==================== Time-Series Insights APIs ====================
+
+    def get_gateway_port_stats_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600,
+        metrics: str = "rx_bps,tx_bps"
+    ) -> Dict[str, Any]:
+        """
+        Get gateway port time-series statistics (rx_bps, tx_bps).
+        
+        Retrieves historical bandwidth data for utilization trending.
+        Uses the /sites/{site_id}/insights/gateway/{device_id}/stats endpoint.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address (no colons, e.g., "90ec777cf3f3")
+            port_id: Interface name (e.g., "ge-0/0/4"), optional
+            start_time: Start epoch timestamp (required)
+            end_time: End epoch timestamp (required)
+            interval: Aggregation interval in seconds (default: 3600 = 1 hour)
+            metrics: Comma-separated metrics (default: "rx_bps,tx_bps")
+        
+        Returns:
+            Dictionary with time-series data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "interval": seconds,
+                "results": [
+                    {
+                        "timestamp": epoch,
+                        "rx_bps": float,
+                        "tx_bps": float
+                    }
+                ]
+            }
+        """
+        # Convert MAC to device UUID format: 00000000-0000-0000-1000-{mac}
+        device_id = f"00000000-0000-0000-1000-{device_mac.lower().replace(':', '')}"
+        
+        logger.debug(
+            f"[...] Retrieving gateway port time-series for site {site_id}, "
+            f"device {device_mac}, port {port_id}"
+        )
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "device_id": device_id,
+            "interval": interval,
+            "metrics": metrics
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if port_id:
+            api_kwargs["port_id"] = port_id
+        
+        try:
+            response = self.connection.execute_with_retry(
+                f"Get gateway port time-series ({device_mac})",
+                mistapi.api.v1.sites.insights.getSiteGatewayMetrics,  # type: ignore[union-attr]
+                self.connection.session,
+                **api_kwargs
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            results = data.get("results", [])
+            logger.debug(f"[OK] Retrieved {len(results)} time-series points")
+            
+            return {
+                "start": data.get("start", start_time),
+                "end": data.get("end", end_time),
+                "interval": interval,
+                "device_mac": device_mac,
+                "port_id": port_id,
+                "results": results
+            }
+            
+        except Exception as error:
+            logger.error(f"Error fetching gateway port time-series: {error}")
+            return {
+                "start": start_time,
+                "end": end_time,
+                "interval": interval,
+                "device_mac": device_mac,
+                "port_id": port_id,
+                "results": [],
+                "error": str(error)
+            }
+
+    def get_vpn_peer_metrics_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: Optional[str] = None,
+        port_id: Optional[str] = None,
+        peer_port_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600
+    ) -> Dict[str, Any]:
+        """
+        Get VPN peer path time-series metrics (loss, latency, jitter, mos).
+        
+        Retrieves historical VPN quality data for trend analysis.
+        Uses the /sites/{site_id}/insights/device/{mac}/vpn_peer-metrics endpoint.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address (no colons)
+            peer_mac: Remote peer MAC address (optional)
+            port_id: Local interface (e.g., "ge-0/0/2"), optional
+            peer_port_id: Remote peer interface (e.g., "xe-0/2/0.671"), optional
+            start_time: Start epoch timestamp
+            end_time: End epoch timestamp
+            interval: Aggregation interval in seconds (default: 3600)
+        
+        Returns:
+            Dictionary with time-series data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "interval": seconds,
+                "results": [
+                    {
+                        "timestamp": epoch,
+                        "loss": float,
+                        "latency": float,
+                        "jitter": float,
+                        "mos": float
+                    }
+                ]
+            }
+        """
+        clean_mac = device_mac.lower().replace(":", "")
+        
+        logger.debug(
+            f"[...] Retrieving VPN peer metrics time-series for site {site_id}, "
+            f"device {clean_mac}, peer {peer_mac}"
+        )
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "device_mac": clean_mac,
+            "metric": "vpn_peer-metrics",
+            "interval": interval
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        if peer_mac:
+            api_kwargs["peer_mac"] = peer_mac.lower().replace(":", "")
+        if port_id:
+            api_kwargs["port_id"] = port_id
+        if peer_port_id:
+            api_kwargs["peer_port_id"] = peer_port_id
+        
+        try:
+            response = self.connection.execute_with_retry(
+                f"Get VPN peer metrics time-series ({clean_mac})",
+                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]
+                self.connection.session,
+                **api_kwargs
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            results = data.get("results", [])
+            logger.debug(f"[OK] Retrieved {len(results)} VPN metric points")
+            
+            return {
+                "start": data.get("start", start_time),
+                "end": data.get("end", end_time),
+                "interval": interval,
+                "device_mac": clean_mac,
+                "peer_mac": peer_mac,
+                "port_id": port_id,
+                "peer_port_id": peer_port_id,
+                "results": results
+            }
+            
+        except Exception as error:
+            logger.error(f"Error fetching VPN peer metrics time-series: {error}")
+            return {
+                "start": start_time,
+                "end": end_time,
+                "interval": interval,
+                "device_mac": clean_mac,
+                "peer_mac": peer_mac,
+                "results": [],
+                "error": str(error)
+            }
+
+    def get_device_insight_metrics(
+        self,
+        site_id: str,
+        device_mac: str,
+        metric: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 600
+    ) -> Dict[str, Any]:
+        """
+        Get device-level metric time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
+        
+        Generic method for retrieving any device insight metric.
+        Uses the /sites/{site_id}/insights/device/{mac}/{metric} endpoint.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Device MAC address (no colons)
+            metric: Metric name - "tx_bytes", "rx_bytes", "cpu", "memory", "disk"
+            start_time: Start epoch timestamp
+            end_time: End epoch timestamp
+            interval: Aggregation interval in seconds (default: 600 = 10 min)
+        
+        Returns:
+            Dictionary with time-series data:
+            {
+                "start": epoch,
+                "end": epoch,
+                "interval": seconds,
+                "metric": str,
+                "results": [
+                    {
+                        "timestamp": epoch,
+                        "value": float
+                    }
+                ]
+            }
+        """
+        clean_mac = device_mac.lower().replace(":", "")
+        
+        logger.debug(
+            f"[...] Retrieving device metric {metric} for site {site_id}, device {clean_mac}"
+        )
+        
+        api_kwargs: Dict[str, Any] = {
+            "site_id": site_id,
+            "device_mac": clean_mac,
+            "metric": metric,
+            "interval": interval
+        }
+        
+        if start_time:
+            api_kwargs["start"] = start_time
+        if end_time:
+            api_kwargs["end"] = end_time
+        
+        try:
+            response = self.connection.execute_with_retry(
+                f"Get device insight metric ({metric})",
+                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]
+                self.connection.session,
+                **api_kwargs
+            )
+            
+            data = response.data if hasattr(response, 'data') else {}
+            results = data.get("results", [])
+            logger.debug(f"[OK] Retrieved {len(results)} {metric} data points")
+            
+            return {
+                "start": data.get("start", start_time),
+                "end": data.get("end", end_time),
+                "interval": interval,
+                "device_mac": clean_mac,
+                "metric": metric,
+                "results": results
+            }
+            
+        except Exception as error:
+            logger.error(f"Error fetching device metric {metric}: {error}")
+            return {
+                "start": start_time,
+                "end": end_time,
+                "interval": interval,
+                "device_mac": clean_mac,
+                "metric": metric,
+                "results": [],
+                "error": str(error)
+            }
+
     def get_site_sle_trend(
         self,
         site_id: str,
@@ -1929,6 +2219,119 @@ class MistAPIClient:
             Dictionary with peers_by_port, total_peers, etc.
         """
         return self.insights_ops.get_site_vpn_peer_stats(site_id=site_id)
+
+    # -------------------------------------------------------------------------
+    # Time-Series Insights Operations
+    # -------------------------------------------------------------------------
+
+    def get_gateway_port_stats_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600,
+        metrics: str = "rx_bps,tx_bps"
+    ) -> Dict[str, Any]:
+        """
+        Get gateway port time-series statistics (rx_bps, tx_bps).
+        
+        Retrieves historical bandwidth data for utilization trending.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address (no colons)
+            port_id: Interface name (e.g., "ge-0/0/4"), optional
+            start_time: Start epoch timestamp
+            end_time: End epoch timestamp
+            interval: Aggregation interval in seconds (default: 3600)
+            metrics: Comma-separated metrics (default: "rx_bps,tx_bps")
+        
+        Returns:
+            Dictionary with time-series data including results array
+        """
+        return self.insights_ops.get_gateway_port_stats_timeseries(
+            site_id=site_id,
+            device_mac=device_mac,
+            port_id=port_id,
+            start_time=start_time,
+            end_time=end_time,
+            interval=interval,
+            metrics=metrics
+        )
+
+    def get_vpn_peer_metrics_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: Optional[str] = None,
+        port_id: Optional[str] = None,
+        peer_port_id: Optional[str] = None,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600
+    ) -> Dict[str, Any]:
+        """
+        Get VPN peer path time-series metrics (loss, latency, jitter, mos).
+        
+        Retrieves historical VPN quality data for trend analysis.
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address (no colons)
+            peer_mac: Remote peer MAC address (optional)
+            port_id: Local interface (optional)
+            peer_port_id: Remote peer interface (optional)
+            start_time: Start epoch timestamp
+            end_time: End epoch timestamp
+            interval: Aggregation interval in seconds (default: 3600)
+        
+        Returns:
+            Dictionary with time-series data including results array
+        """
+        return self.insights_ops.get_vpn_peer_metrics_timeseries(
+            site_id=site_id,
+            device_mac=device_mac,
+            peer_mac=peer_mac,
+            port_id=port_id,
+            peer_port_id=peer_port_id,
+            start_time=start_time,
+            end_time=end_time,
+            interval=interval
+        )
+
+    def get_device_insight_metrics(
+        self,
+        site_id: str,
+        device_mac: str,
+        metric: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 600
+    ) -> Dict[str, Any]:
+        """
+        Get device-level metric time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Device MAC address (no colons)
+            metric: Metric name - "tx_bytes", "rx_bytes", "cpu", "memory", "disk"
+            start_time: Start epoch timestamp
+            end_time: End epoch timestamp
+            interval: Aggregation interval in seconds (default: 600)
+        
+        Returns:
+            Dictionary with time-series data including results array
+        """
+        return self.insights_ops.get_device_insight_metrics(
+            site_id=site_id,
+            device_mac=device_mac,
+            metric=metric,
+            start_time=start_time,
+            end_time=end_time,
+            interval=interval
+        )
 
     def close(self) -> None:
         """Close the API session and clean up resources."""

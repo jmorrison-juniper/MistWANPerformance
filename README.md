@@ -447,6 +447,63 @@ MistWANPerformance/
 
 ```json
 {
+  "26.02.03.17.30": {
+    "feature-additions": [
+      "Multi-page dashboard architecture with URL-based routing",
+      "Gateway detail page: /gateway/<gateway_id> - WAN ports table, VPN peers table, bandwidth charts",
+      "Port detail page: /port/<site_id>/<port_id> - Utilization gauge, bandwidth time-series, packet stats",
+      "VPN peer detail page: /vpn/<site_id>/<peer_id> - Quality gauges (loss/latency/jitter/MOS), quality time-series",
+      "Clickable links in congested circuits table to port detail pages",
+      "Shared UI components module: NavigationBar, StatusCards, ChartBuilders, LinkBuilder"
+    ],
+    "refactoring": [
+      "New src/dashboard/pages/ package with modular page classes",
+      "Centralized color scheme and UI constants in shared.py",
+      "URL routing callback with regex pattern matching for page navigation",
+      "Page builder methods delegate to dedicated page class layouts"
+    ],
+    "api-changes": [
+      "Dashboard app.py: Added display_page() callback for URL routing",
+      "Page classes: OverviewPage, GatewayPage, PortPage, VPNPeerPage",
+      "DataTable columns support markdown presentation for clickable links"
+    ]
+  },
+  "26.02.03.15.45": {
+    "feature-additions": [
+      "Dashboard UI: Gateway Port Bandwidth time-series chart (rx_bps/tx_bps)",
+      "Dashboard UI: VPN Peer Quality time-series chart (loss/latency/jitter dual y-axis)",
+      "Site selector dropdown for time-series detail views",
+      "Time range selector (6h/12h/24h/7d) for time-series charts",
+      "Auto-refresh toggle for time-series charts"
+    ],
+    "api-changes": [
+      "Dashboard callbacks: update_gateway_bandwidth_chart(), update_vpn_quality_chart()",
+      "Chart builders: _build_gateway_bandwidth_chart(), _build_vpn_quality_chart()"
+    ]
+  },
+  "26.02.03.14.30": {
+    "api-changes": [
+      "Added get_gateway_port_stats_timeseries() for historical rx_bps/tx_bps bandwidth data",
+      "Added get_vpn_peer_metrics_timeseries() for historical loss/latency/jitter/mos VPN metrics",
+      "Added get_device_insight_metrics() for generic device time-series (tx_bytes, cpu, memory)",
+      "New endpoints support configurable interval (default 3600s) and time ranges"
+    ],
+    "feature-additions": [
+      "Time-series storage in Redis using sorted sets for efficient range queries",
+      "Missing data prioritization: sites with NO data refreshed before stale data",
+      "Coverage detection: get_gateway_timeseries_coverage(), get_vpn_timeseries_coverage()",
+      "Stale detection: get_stale_timeseries_sites() and get_missing_timeseries_sites()"
+    ],
+    "data-model-changes": [
+      "New Redis key patterns: mistwan:gateway_ts, mistwan:vpn_ts, mistwan:device_ts",
+      "Time-series data stored with timestamp as sorted set score for range queries",
+      "31-day TTL for all time-series data matching existing retention policy"
+    ],
+    "documentation": [
+      "Added TODO items for VPN peer metrics, gateway stats, device insights endpoints",
+      "Documented API endpoint parameters and expected response fields"
+    ]
+  },
   "26.02.02.16.10": {
     "performance": [
       "Optimized get_site_vpn_peers: 40x faster (8-10s down to 150-250ms)",

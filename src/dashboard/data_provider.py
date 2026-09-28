@@ -1386,3 +1386,237 @@ class DashboardDataProvider:
         except Exception as error:
             logger.error(f"Error getting VPN peer table data: {error}")
             return []
+
+    # =========================================================================
+    # Time-Series Data Methods (New Insights APIs)
+    # =========================================================================
+    
+    def get_gateway_port_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        port_id: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600
+    ) -> List[Dict[str, Any]]:
+        """
+        Get gateway port bandwidth time-series (rx_bps, tx_bps).
+        
+        Prioritizes missing data over stale data:
+        1. Check Redis cache for existing data
+        2. If missing or stale, fetch from API
+        3. Store fetched data in Redis
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Gateway MAC address
+            port_id: Interface name (e.g., "ge-0/0/4")
+            start_time: Start epoch (default: 24 hours ago)
+            end_time: End epoch (default: now)
+            interval: Aggregation interval in seconds (default: 3600)
+        
+        Returns:
+            List of time-series data points with rx_bps, tx_bps
+        """
+        import time as time_module
+        
+        end_time = end_time or int(time_module.time())
+        start_time = start_time or (end_time - 24 * 3600)  # Default 24 hours
+        
+        # Try Redis cache first
+        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            cached = self.redis_cache.get_gateway_port_timeseries(
+                site_id, device_mac, port_id, start_time, end_time
+            )
+            if cached:
+                logger.debug(f"[CACHE] Returning {len(cached)} gateway port time-series points")
+                return cached
+        
+        # Fetch from API if cache miss
+        if hasattr(self, 'api_client') and self.api_client is not None:
+            try:
+                result = self.api_client.get_gateway_port_stats_timeseries(
+                    site_id=site_id,
+                    device_mac=device_mac,
+                    port_id=port_id,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval
+                )
+                
+                # Store in cache
+                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                    self.redis_cache.save_gateway_port_timeseries(
+                        site_id, device_mac, port_id, result
+                    )
+                
+                return result.get("results", [])
+            except Exception as error:
+                logger.error(f"Error fetching gateway port time-series: {error}")
+        
+        return []
+    
+    def get_vpn_peer_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        peer_mac: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 3600
+    ) -> List[Dict[str, Any]]:
+        """
+        Get VPN peer metrics time-series (loss, latency, jitter, mos).
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Local gateway MAC
+            peer_mac: Remote peer MAC
+            start_time: Start epoch (default: 24 hours ago)
+            end_time: End epoch (default: now)
+            interval: Aggregation interval in seconds
+        
+        Returns:
+            List of time-series data points with loss, latency, jitter, mos
+        """
+        import time as time_module
+        
+        end_time = end_time or int(time_module.time())
+        start_time = start_time or (end_time - 24 * 3600)
+        
+        # Try Redis cache first
+        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            cached = self.redis_cache.get_vpn_peer_timeseries(
+                site_id, device_mac, peer_mac, start_time, end_time
+            )
+            if cached:
+                logger.debug(f"[CACHE] Returning {len(cached)} VPN peer time-series points")
+                return cached
+        
+        # Fetch from API if cache miss
+        if hasattr(self, 'api_client') and self.api_client is not None:
+            try:
+                result = self.api_client.get_vpn_peer_metrics_timeseries(
+                    site_id=site_id,
+                    device_mac=device_mac,
+                    peer_mac=peer_mac,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval
+                )
+                
+                # Store in cache
+                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                    self.redis_cache.save_vpn_peer_timeseries(
+                        site_id, device_mac, peer_mac, result
+                    )
+                
+                return result.get("results", [])
+            except Exception as error:
+                logger.error(f"Error fetching VPN peer time-series: {error}")
+        
+        return []
+    
+    def get_device_metrics_timeseries(
+        self,
+        site_id: str,
+        device_mac: str,
+        metric: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        interval: int = 600
+    ) -> List[Dict[str, Any]]:
+        """
+        Get device insight metrics time-series (tx_bytes, rx_bytes, cpu, etc.).
+        
+        Args:
+            site_id: Site UUID
+            device_mac: Device MAC address
+            metric: Metric name (tx_bytes, rx_bytes, cpu, memory, disk)
+            start_time: Start epoch (default: 24 hours ago)
+            end_time: End epoch (default: now)
+            interval: Aggregation interval in seconds (default: 600 = 10 min)
+        
+        Returns:
+            List of time-series data points
+        """
+        import time as time_module
+        
+        end_time = end_time or int(time_module.time())
+        start_time = start_time or (end_time - 24 * 3600)
+        
+        # Try Redis cache first
+        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            cached = self.redis_cache.get_device_metrics_timeseries(
+                site_id, device_mac, metric, start_time, end_time
+            )
+            if cached:
+                logger.debug(f"[CACHE] Returning {len(cached)} device {metric} time-series points")
+                return cached
+        
+        # Fetch from API if cache miss
+        if hasattr(self, 'api_client') and self.api_client is not None:
+            try:
+                result = self.api_client.get_device_insight_metrics(
+                    site_id=site_id,
+                    device_mac=device_mac,
+                    metric=metric,
+                    start_time=start_time,
+                    end_time=end_time,
+                    interval=interval
+                )
+                
+                # Store in cache
+                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                    self.redis_cache.save_device_metrics_timeseries(
+                        site_id, device_mac, metric, result
+                    )
+                
+                return result.get("results", [])
+            except Exception as error:
+                logger.error(f"Error fetching device metrics time-series: {error}")
+        
+        return []
+    
+    def get_sites_needing_timeseries_refresh(
+        self,
+        timeseries_type: str = "gateway_ts",
+        max_age_seconds: int = 3600
+    ) -> Dict[str, List[str]]:
+        """
+        Get sites that need time-series data refresh.
+        
+        Prioritizes MISSING data over STALE data per project requirements.
+        
+        Args:
+            timeseries_type: Type of time-series (gateway_ts, vpn_ts, device_ts)
+            max_age_seconds: Max age before considered stale
+        
+        Returns:
+            Dict with 'missing' and 'stale' site ID lists
+        """
+        result = {"missing": [], "stale": []}
+        
+        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+            return result
+        
+        # Get all site IDs
+        site_ids = list(self.site_lookup.keys())
+        
+        # First get missing (priority)
+        result["missing"] = self.redis_cache.get_missing_timeseries_sites(
+            site_ids, prefix=timeseries_type
+        )
+        
+        # Then get stale (lower priority)
+        result["stale"] = self.redis_cache.get_stale_timeseries_sites(
+            site_ids, prefix=timeseries_type, max_age_seconds=max_age_seconds
+        )
+        
+        logger.info(
+            f"[REFRESH] {timeseries_type}: {len(result['missing'])} missing, "
+            f"{len(result['stale'])} stale sites need refresh"
+        )
+        
+        return result
