@@ -81,7 +81,7 @@ Keep newest events at the top of the changelog and oldest last. An idea or item 
 - CI in `.github/workflows/ci.yml` calls the shared quality gate workflow of misthelper-devtools. It runs pytest, bandit, and pip-audit on each pull request and each push to main. Each gate job installs `requirements-dev.txt`, which installs `requirements.txt` and the two scan tools.
 
 ```powershell
-pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.5.1"
+pipx install "git+https://github.com/jmorrison-juniper/misthelper-devtools@v0.5.2"
 wan-port-report --input ports.json
 ```
 
