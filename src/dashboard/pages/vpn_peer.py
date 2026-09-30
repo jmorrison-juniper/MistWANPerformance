@@ -294,7 +294,7 @@ class VPNPeerPage:
             ]),
             dbc.CardBody([
                 dcc.Graph(
-                    id="vpn-quality-chart",
+                    id="vpn-peer-quality-chart",
                     style={"height": "350px"},
                     config={"responsive": True, "displayModeBar": True}
                 )

@@ -17,7 +17,7 @@ import logging
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, cast
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 import dash
 from dash import dcc, html, dash_table, callback, Input, Output, State
@@ -35,6 +35,11 @@ from src.dashboard.pages.overview import OverviewPage
 from src.dashboard.pages.gateway import GatewayPage
 from src.dashboard.pages.port import PortPage
 from src.dashboard.pages.vpn_peer import VPNPeerPage
+from src.dashboard.pages.detail_data import (
+    shape_gateway_detail,
+    shape_port_detail,
+    shape_vpn_peer_detail,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -2054,7 +2059,7 @@ class WANPerformanceDashboard:
             port_match = re.match(r"^/port/([a-f0-9\-]+)/(.+)$", pathname, re.IGNORECASE)
             if port_match:
                 site_id = port_match.group(1)
-                port_id = port_match.group(2)
+                port_id = unquote(port_match.group(2))
                 gateway_id = query_params.get("gateway_id", [None])[0]
                 return self._build_port_page(site_id, port_id, gateway_id)
             
@@ -2062,7 +2067,7 @@ class WANPerformanceDashboard:
             vpn_match = re.match(r"^/vpn/([a-f0-9\-]+)/(.+)$", pathname, re.IGNORECASE)
             if vpn_match:
                 site_id = vpn_match.group(1)
-                peer_id = vpn_match.group(2)
+                peer_id = unquote(vpn_match.group(2))
                 return self._build_vpn_peer_page(site_id, peer_id)
             
             # Default: Overview page
@@ -2526,6 +2531,207 @@ class WANPerformanceDashboard:
             except Exception as error:
                 logger.warning(f"Error loading VPN quality time-series: {error}")
                 return self._build_vpn_quality_chart([], f"Error: {error}")
+
+        # Gateway detail page callback
+        @self.app.callback(
+            [
+                Output("gateway-name-display", "children"),
+                Output("gateway-site-display", "children"),
+                Output("gateway-status-badge", "children"),
+                Output("gateway-status-badge", "className"),
+                Output("gateway-last-seen", "children"),
+                Output("gw-ports-up", "children"),
+                Output("gw-ports-down", "children"),
+                Output("gw-vpn-peers", "children"),
+                Output("gw-cpu-pct", "children"),
+                Output("gw-memory-pct", "children"),
+                Output("gw-uptime", "children"),
+                Output("gw-wan-ports-table", "data"),
+                Output("gw-vpn-peers-table", "data"),
+                Output("gw-bandwidth-chart", "figure"),
+                Output("gw-device-metrics-chart", "figure"),
+            ],
+            [Input("gateway-refresh-interval", "n_intervals")],
+            [State("gateway-context", "data")],
+        )
+        def update_gateway_detail(n_intervals, context):
+            """Load gateway detail data from the provider."""
+            detail = shape_gateway_detail(self.data_provider, context)
+            return [
+                detail["gateway_name"],
+                detail["site_name"],
+                detail["status"],
+                detail["status_class"],
+                detail["last_seen"],
+                detail["ports_up"],
+                detail["ports_down"],
+                detail["vpn_peers"],
+                detail["cpu_pct"],
+                detail["memory_pct"],
+                detail["uptime"],
+                detail["wan_ports"],
+                detail["vpn_peer_rows"],
+                detail["bandwidth_figure"],
+                detail["device_metrics_figure"],
+            ]
+
+        # Port detail page callback
+        @self.app.callback(
+            [
+                Output("port-name-display", "children"),
+                Output("port-site-display", "children"),
+                Output("port-gateway-link", "children"),
+                Output("port-status-badge", "children"),
+                Output("port-status-badge", "className"),
+                Output("port-last-updated", "children"),
+                Output("port-speed", "children"),
+                Output("port-rx-mbps", "children"),
+                Output("port-tx-mbps", "children"),
+                Output("port-util-pct", "children"),
+                Output("port-rx-errors", "children"),
+                Output("port-tx-errors", "children"),
+                Output("port-utilization-gauge", "figure"),
+                Output("port-rx-bytes", "children"),
+                Output("port-tx-bytes", "children"),
+                Output("port-rx-packets", "children"),
+                Output("port-tx-packets", "children"),
+                Output("port-mtu", "children"),
+                Output("port-type", "children"),
+                Output("port-role", "children"),
+                Output("port-provider", "children"),
+                Output("port-ip", "children"),
+                Output("port-mac", "children"),
+                Output("port-bandwidth-chart", "figure"),
+                Output("port-rx-unicast", "children"),
+                Output("port-tx-unicast", "children"),
+                Output("port-rx-multicast", "children"),
+                Output("port-tx-multicast", "children"),
+                Output("port-rx-broadcast", "children"),
+                Output("port-tx-broadcast", "children"),
+                Output("port-rx-err-count", "children"),
+                Output("port-tx-err-count", "children"),
+                Output("port-rx-drops", "children"),
+                Output("port-tx-drops", "children"),
+                Output("port-rx-crc", "children"),
+                Output("port-tx-crc", "children"),
+            ],
+            [
+                Input("port-refresh-interval", "n_intervals"),
+                Input("port-time-range-selector", "value"),
+            ],
+            [State("port-context", "data")],
+        )
+        def update_port_detail(n_intervals, hours, context):
+            """Load port detail data from the provider."""
+            detail = shape_port_detail(self.data_provider, context, hours or 24)
+            return [
+                detail["port_name"],
+                detail["site_name"],
+                detail["gateway_link"],
+                detail["status"],
+                detail["status_class"],
+                detail["last_updated"],
+                detail["speed"],
+                detail["rx_mbps"],
+                detail["tx_mbps"],
+                detail["util_pct"],
+                detail["rx_errors"],
+                detail["tx_errors"],
+                detail["utilization_gauge"],
+                detail["rx_bytes"],
+                detail["tx_bytes"],
+                detail["rx_packets"],
+                detail["tx_packets"],
+                detail["mtu"],
+                detail["type"],
+                detail["role"],
+                detail["provider"],
+                detail["ip"],
+                detail["mac"],
+                detail["bandwidth_figure"],
+                detail["rx_unicast"],
+                detail["tx_unicast"],
+                detail["rx_multicast"],
+                detail["tx_multicast"],
+                detail["rx_broadcast"],
+                detail["tx_broadcast"],
+                detail["rx_err_count"],
+                detail["tx_err_count"],
+                detail["rx_drops"],
+                detail["tx_drops"],
+                detail["rx_crc"],
+                detail["tx_crc"],
+            ]
+
+        # VPN peer detail page callback
+        @self.app.callback(
+            [
+                Output("vpn-peer-name-display", "children"),
+                Output("vpn-local-site-display", "children"),
+                Output("vpn-remote-site-display", "children"),
+                Output("vpn-peer-status-badge", "children"),
+                Output("vpn-peer-status-badge", "className"),
+                Output("vpn-peer-last-updated", "children"),
+                Output("vpn-path-status", "children"),
+                Output("vpn-loss-pct", "children"),
+                Output("vpn-latency-ms", "children"),
+                Output("vpn-jitter-ms", "children"),
+                Output("vpn-mos-score", "children"),
+                Output("vpn-path-mtu", "children"),
+                Output("vpn-loss-gauge", "figure"),
+                Output("vpn-latency-gauge", "figure"),
+                Output("vpn-jitter-gauge", "figure"),
+                Output("vpn-mos-gauge", "figure"),
+                Output("vpn-peer-quality-chart", "figure"),
+                Output("vpn-peer-mac", "children"),
+                Output("vpn-peer-ip", "children"),
+                Output("vpn-local-ip", "children"),
+                Output("vpn-path-type", "children"),
+                Output("vpn-tunnel-name", "children"),
+                Output("vpn-path-uptime", "children"),
+                Output("vpn-tx-bytes", "children"),
+                Output("vpn-rx-bytes", "children"),
+                Output("vpn-tx-packets", "children"),
+                Output("vpn-rx-packets", "children"),
+            ],
+            [
+                Input("vpn-peer-refresh-interval", "n_intervals"),
+                Input("vpn-time-range-selector", "value"),
+            ],
+            [State("vpn-peer-context", "data")],
+        )
+        def update_vpn_peer_detail(n_intervals, hours, context):
+            """Load VPN peer detail data from the provider."""
+            detail = shape_vpn_peer_detail(self.data_provider, context, hours or 24)
+            return [
+                detail["peer_name"],
+                detail["local_site"],
+                detail["remote_site"],
+                detail["status"],
+                detail["status_class"],
+                detail["last_updated"],
+                detail["path_status"],
+                detail["loss_pct"],
+                detail["latency_ms"],
+                detail["jitter_ms"],
+                detail["mos_score"],
+                detail["path_mtu"],
+                detail["loss_gauge"],
+                detail["latency_gauge"],
+                detail["jitter_gauge"],
+                detail["mos_gauge"],
+                detail["quality_figure"],
+                detail["peer_mac"],
+                detail["peer_ip"],
+                detail["local_ip"],
+                detail["path_type"],
+                detail["tunnel_name"],
+                detail["path_uptime"],
+                detail["tx_bytes"],
+                detail["rx_bytes"],
+                detail["tx_packets"],
+                detail["rx_packets"],
+            ]
         
         # Breadcrumb navigation callback
         @self.app.callback(
