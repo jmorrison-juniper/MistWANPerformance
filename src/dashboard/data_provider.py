@@ -70,6 +70,7 @@ class DashboardDataProvider:
         self.utilization_records: List[CircuitUtilizationRecord] = []
         self.status_records: List[CircuitStatusRecord] = []
         self.quality_records: List[CircuitQualityRecord] = []
+        self.gateway_inventory: List[Dict[str, Any]] = []
         
         # Status tracking for UI display
         self.cache_status: Dict[str, Any] = {
@@ -318,6 +319,7 @@ class DashboardDataProvider:
         self.gateways_connected = inventory_data.get("connected", 0)
         self.gateways_disconnected = inventory_data.get("disconnected", 0)
         self.gateways_total = inventory_data.get("total", 0)
+        self.gateway_inventory = list(inventory_data.get("gateways", []))
         
         # Compute disconnected site IDs from gateway list
         # A site is considered "disconnected" if ALL its gateways are disconnected
