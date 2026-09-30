@@ -1,5 +1,6 @@
 from dash.development.base_component import Component
 
+from src.dashboard.data_provider import DashboardDataProvider
 from src.dashboard.app import WANPerformanceDashboard
 from src.dashboard.pages.detail_data import (
     shape_gateway_detail,
@@ -136,6 +137,76 @@ class VPNRaisingProvider(FakeProvider):
         raise RuntimeError("boom")
 
 
+class StubRedisCache:
+    def __init__(self, ports=None, peers=None):
+        self.ports = ports or []
+        self.peers = peers or []
+
+    def get_site_port_stats(self, site_id):
+        return {"port_stats": [port for port in self.ports if port.get("site_id") == site_id]}
+
+    def get_all_site_port_stats(self, site_ids):
+        return [port for port in self.ports if port.get("site_id") in site_ids]
+
+    def get_site_vpn_peers(self, site_id):
+        return [peer for peer in self.peers if peer.get("site_id") == site_id]
+
+    def get_gateway_port_timeseries(self, *args, **kwargs):
+        return []
+
+    def get_vpn_peer_timeseries(self, *args, **kwargs):
+        return []
+
+    def get_device_metrics_timeseries(self, *args, **kwargs):
+        return []
+
+
+def _real_provider(peer_id=PEER_ID):
+    provider = DashboardDataProvider(sites=[], circuits=[])
+    provider.site_lookup = {SITE_ID: "Store 100"}
+    provider.update_gateway_inventory({
+        "total": 1,
+        "connected": 1,
+        "disconnected": 0,
+        "gateways": [
+            {
+                "id": GATEWAY_ID,
+                "mac": GATEWAY_MAC,
+                "name": "Store 100 Gateway",
+                "site_id": SITE_ID,
+                "connected": True,
+                "last_seen": 1_700_000_000,
+            }
+        ],
+    })
+    provider.redis_cache = StubRedisCache(
+        ports=[
+            {
+                "site_id": SITE_ID,
+                "mac": GATEWAY_MAC,
+                "port_id": PORT_ID,
+                "name": "WAN 1",
+                "up": True,
+                "speed": 1000,
+            }
+        ],
+        peers=[
+            {
+                "site_id": SITE_ID,
+                "mac": GATEWAY_MAC,
+                "peer_mac": peer_id,
+                "peer_router_name": "Remote Peer",
+                "up": True,
+                "latency": 10,
+                "loss": 0,
+                "jitter": 1,
+                "mos": 4.5,
+            }
+        ],
+    )
+    return provider
+
+
 def _figure_trace_count(figure):
     return len(figure.to_plotly_json().get("data", []))
 
@@ -160,9 +231,10 @@ def test_gateway_detail_missing_and_raising_data():
     missing = shape_gateway_detail(FakeProvider(), {"gateway_id": "unknown", "site_id": SITE_ID})
     failing = shape_gateway_detail(RaisingProvider(), {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
 
-    assert missing["status"] == "No data for this gateway yet"
+    assert missing["status"] == "Unknown"
     assert missing["wan_ports"] == []
-    assert failing["status"] == "Unable to load gateway data"
+    assert failing["status"] == "Unknown"
+    assert failing["last_seen"] == "Unable to load gateway data"
     assert failing["wan_ports"] == []
 
 
@@ -216,6 +288,60 @@ def test_vpn_peer_detail_missing_and_raising_data():
     assert missing["status"] == "No data for this VPN peer yet"
     assert missing["peer_mac"] == "-"
     assert failing["status"] == "Unable to load VPN peer data"
+
+
+def test_real_provider_gateway_inventory_finds_gateway_by_id_and_mac():
+    provider = _real_provider()
+
+    by_id = shape_gateway_detail(provider, {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
+    by_mac = shape_gateway_detail(provider, {"gateway_id": GATEWAY_MAC, "site_id": SITE_ID})
+
+    assert by_id["gateway_name"] == "Store 100 Gateway"
+    assert by_id["status"] == "Up"
+    assert by_mac["gateway_name"] == "Store 100 Gateway"
+    assert by_mac["status"] == "Up"
+
+
+def test_real_provider_unknown_gateway_is_unknown_not_down():
+    provider = _real_provider()
+
+    detail = shape_gateway_detail(provider, {"gateway_id": "unknown", "site_id": SITE_ID})
+
+    assert detail["status"] == "Unknown"
+    assert detail["status_class"] == "badge bg-secondary"
+    assert detail["status"] != "Down"
+
+
+def test_real_provider_gateway_peers_do_not_duplicate_when_table_rows_exist():
+    provider = _real_provider()
+    provider.get_vpn_peer_table_data = lambda site_id=None: [
+        {
+            "site_name": "Store 100",
+            "vpn_name": "corp vpn",
+            "peer_router_name": "Remote Peer",
+            "peer_port_id": "wan",
+            "port_id": PORT_ID,
+            "status": "Up",
+            "latency_ms": 10,
+            "loss_pct": 0,
+            "jitter_ms": 1,
+            "mos": 4.5,
+        }
+    ]
+
+    detail = shape_gateway_detail(provider, {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
+
+    assert detail["vpn_peers"] == "1"
+    assert len(detail["vpn_peer_rows"]) == 1
+
+
+def test_real_provider_gateway_peer_link_encodes_peer_id():
+    peer_id = "peer with space)"
+    provider = _real_provider(peer_id=peer_id)
+
+    detail = shape_gateway_detail(provider, {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
+
+    assert f"/vpn/{SITE_ID}/peer%20with%20space%29" in detail["vpn_peer_rows"][0]["peer_name"]
 
 
 def _walk_ids(component):

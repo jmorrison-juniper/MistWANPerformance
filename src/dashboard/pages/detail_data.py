@@ -8,7 +8,7 @@ without a live Mist API or Redis cache.
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from dash import dcc
 import plotly.graph_objects as go
@@ -224,9 +224,10 @@ def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any
             value = value.get(site_id, value.get("peers", []))
         if isinstance(value, list):
             peers.extend(value)
-    if site_id and hasattr(provider, "get_site_vpn_peers"):
+
+    if not peers and site_id and hasattr(provider, "get_site_vpn_peers"):
         peers.extend(provider.get_site_vpn_peers(site_id) or [])
-    if site_id and hasattr(provider, "get_vpn_peer_table_data"):
+    if not peers and site_id and hasattr(provider, "get_vpn_peer_table_data"):
         peers.extend(provider.get_vpn_peer_table_data(site_id) or [])
 
     if site_id:
@@ -355,7 +356,9 @@ def shape_gateway_detail(provider: Any, context: Optional[Dict[str, Any]]) -> Di
             return _gateway_empty(gateway_id, site_id, "No data for this gateway yet")
 
         status = _first(gateway, "status", default=None)
-        if status is None:
+        if not gateway:
+            status = "Unknown"
+        elif status is None:
             status = "connected" if _first(gateway, "connected", default=False) else "disconnected"
         badge = _badge(str(status))
         ports_up = sum(1 for port in ports if _first(port, "up", "connected", default=True))
@@ -391,7 +394,7 @@ def _gateway_empty(gateway_id: str, site_id: Optional[str], message: str) -> Dic
         "message": message,
         "gateway_name": gateway_id[:8] + "..." if gateway_id else EMPTY,
         "site_name": site_id or EMPTY,
-        "status": message,
+        "status": "Unknown",
         "status_class": "badge bg-secondary",
         "last_seen": message,
         "ports_up": "0",
@@ -410,8 +413,9 @@ def _gateway_empty(gateway_id: str, site_id: Optional[str], message: str) -> Dic
 def _format_gateway_peer_row(site_id: str, peer: Dict[str, Any]) -> Dict[str, Any]:
     peer_id = _peer_id(peer) or "unknown"
     peer_name = _first(peer, "peer_name", "peer_site_name", "peer_router_name", "vpn_name", default=peer_id)
+    encoded_peer_id = quote(peer_id, safe="")
     return {
-        "peer_name": f"[{peer_name}](/vpn/{site_id}/{peer_id})",
+        "peer_name": f"[{peer_name}](/vpn/{site_id}/{encoded_peer_id})",
         "path_status": _first(peer, "path_status", "status", default="Up" if peer.get("up") else "Down"),
         "loss_pct": _fmt_num(_first(peer, "loss", "loss_pct"), 2, "0.00"),
         "latency_ms": _fmt_num(_first(peer, "latency", "latency_ms"), 1, "0.0"),
