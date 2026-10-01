@@ -15,7 +15,9 @@ DictCursor = None
 
 try:
     import snowflake.connector as snowflake_connector  # type: ignore[assignment]  # possible bug, see #28
-    from snowflake.connector import DictCursor  # type: ignore[assignment]  # possible bug, see #28
+    from snowflake.connector import (
+        DictCursor,  # type: ignore[assignment]  # possible bug, see #28
+    )
 
     SNOWFLAKE_AVAILABLE = True
 except ImportError:
