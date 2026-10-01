@@ -1403,7 +1403,7 @@ def main():
     logger = logging.getLogger(__name__)
 
     # Define graceful shutdown handler
-    def graceful_shutdown(signum, frame):
+    def graceful_shutdown(signum, _frame):
         """Handle shutdown signals gracefully."""
         sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
         logger.info(f"[SHUTDOWN] Received signal {sig_name}, initiating graceful shutdown...")

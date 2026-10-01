@@ -50,7 +50,7 @@ class NavigationBar:
 
     @staticmethod
     def build(
-        current_page: str, breadcrumbs: list[dict[str, str]], show_home: bool = True
+        _current_page: str, breadcrumbs: list[dict[str, str]], show_home: bool = True
     ) -> dbc.Navbar:
         """
         Build navigation bar with breadcrumbs.

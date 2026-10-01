@@ -2685,7 +2685,7 @@ class WANPerformanceDashboard:
             ],
             [Input("refresh-interval", "n_intervals")],
         )
-        def update_dashboard(n_intervals):
+        def update_dashboard(_n_intervals):
             """Update all dashboard components."""
             now = datetime.now(UTC)
             timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -2824,7 +2824,7 @@ class WANPerformanceDashboard:
             ],
             [Input("status-interval", "n_intervals")],
         )
-        def update_status_bar(n_intervals):
+        def update_status_bar(_n_intervals):
             """Update backend status bar indicators."""
             from src.api.mist_client import get_rate_limit_status
 
@@ -3027,7 +3027,7 @@ class WANPerformanceDashboard:
             Output("timeseries-site-selector", "options"),
             [Input("refresh-interval", "n_intervals")],
         )
-        def update_timeseries_site_options(n_intervals):
+        def update_timeseries_site_options(_n_intervals):
             """Populate the site selector dropdown with available sites."""
             if not self.data_provider:
                 return []
@@ -3060,7 +3060,7 @@ class WANPerformanceDashboard:
                 Input("refresh-interval", "n_intervals"),
             ],
         )
-        def update_gateway_bandwidth_chart(site_id, hours, auto_refresh, n_intervals):
+        def update_gateway_bandwidth_chart(site_id, hours, auto_refresh, _n_intervals):
             """Update the gateway bandwidth time-series chart for selected site."""
             if not site_id or not self.data_provider:
                 return self._build_gateway_bandwidth_chart([], "No Site Selected")
@@ -3106,7 +3106,7 @@ class WANPerformanceDashboard:
                 Input("refresh-interval", "n_intervals"),
             ],
         )
-        def update_vpn_quality_chart(site_id, hours, auto_refresh, n_intervals):
+        def update_vpn_quality_chart(site_id, hours, auto_refresh, _n_intervals):
             """Update the VPN peer quality time-series chart for selected site."""
             if not site_id or not self.data_provider:
                 return self._build_vpn_quality_chart([], "No Site Selected")
@@ -3164,7 +3164,7 @@ class WANPerformanceDashboard:
             [Input("gateway-refresh-interval", "n_intervals")],
             [State("gateway-context", "data")],
         )
-        def update_gateway_detail(n_intervals, context):
+        def update_gateway_detail(_n_intervals, context):
             """Load gateway detail data from the provider."""
             detail = shape_gateway_detail(self.data_provider, context)
             return [
@@ -3231,7 +3231,7 @@ class WANPerformanceDashboard:
             ],
             [State("port-context", "data")],
         )
-        def update_port_detail(n_intervals, hours, context):
+        def update_port_detail(_n_intervals, hours, context):
             """Load port detail data from the provider."""
             detail = shape_port_detail(self.data_provider, context, hours or 24)
             return [
@@ -3310,7 +3310,7 @@ class WANPerformanceDashboard:
             ],
             [State("vpn-peer-context", "data")],
         )
-        def update_vpn_peer_detail(n_intervals, hours, context):
+        def update_vpn_peer_detail(_n_intervals, hours, context):
             """Load VPN peer detail data from the provider."""
             detail = shape_vpn_peer_detail(self.data_provider, context, hours or 24)
             return [
@@ -3388,7 +3388,7 @@ class WANPerformanceDashboard:
             [State("drilldown-state", "data")],
             prevent_initial_call=True,
         )
-        def handle_region_click(click_data, current_state):
+        def handle_region_click(click_data, _current_state):
             """Handle click on region chart to drill down."""
             if click_data is None:
                 raise PreventUpdate
@@ -3406,7 +3406,7 @@ class WANPerformanceDashboard:
             [State("top-congested-table", "data"), State("drilldown-state", "data")],
             prevent_initial_call=True,
         )
-        def handle_table_click(selected_rows, table_data, current_state):
+        def handle_table_click(selected_rows, table_data, _current_state):
             """Handle click on table row to drill down to site."""
             if not selected_rows or not table_data:
                 raise PreventUpdate

@@ -20,9 +20,9 @@ jobs:
   # Each job installs requirements-dev.txt. Each check name starts with the job
   # ID, for example "gates / pytest (tests)".
   #
-  # The mypy and vulture gates stay off, because each one fails on the current
-  # code. mypy reports 129 errors, and vulture reports unused names. Turn a
-  # gate on in the pull request that fixes its findings.
+  # The mypy gate stays off, because it fails on the current code. mypy
+  # reports 129 errors. Turn a gate on in the pull request that fixes its
+  # findings.
   gates:
     permissions:
       contents: read
@@ -32,6 +32,7 @@ jobs:
       cache-dependency-path: requirements*.txt
       ruff: true
       black: true
+      vulture: true
       pytest: true
       bandit: true
       pip-audit: true
