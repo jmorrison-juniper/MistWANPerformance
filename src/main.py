@@ -183,7 +183,7 @@ def main() -> int:
     try:
         config = Config()
         logger.info("[OK] Configuration loaded")
-    except Exception as error:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
         logger.error(f"[ERROR] Failed to load configuration: {error}")
         return 1
 
@@ -199,9 +199,9 @@ def main() -> int:
             start_time = None
             end_time = None
             if args.start:
-                start_time = datetime.fromisoformat(args.start.replace("Z", "+00:00"))
+                start_time = datetime.fromisoformat(args.start)
             if args.end:
-                end_time = datetime.fromisoformat(args.end.replace("Z", "+00:00"))
+                end_time = datetime.fromisoformat(args.end)
 
             success = run_collection(config, start_time, end_time, args.dry_run)
 
@@ -218,8 +218,8 @@ def main() -> int:
         logger.warning("[WARN] Operation interrupted by user")
         return 130
 
-    except Exception as error:
-        logger.error(f"[ERROR] Operation failed: {error}", exc_info=True)
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        logger.error(f"[ERROR] Operation failed: {error}")
         return 1
 
     logger.info("=" * 60)

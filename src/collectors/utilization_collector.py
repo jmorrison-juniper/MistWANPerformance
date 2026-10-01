@@ -161,7 +161,7 @@ class UtilizationCollector:
                 collected_at=now,
             )
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"[WARN] Failed to create utilization record for {port_name}: {error}")
             return None
 

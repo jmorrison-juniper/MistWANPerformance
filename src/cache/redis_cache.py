@@ -34,6 +34,13 @@ try:
 except ImportError:
     redis = None  # type: ignore[assignment]
 
+CACHE_OPERATION_ERRORS = (
+    redis.RedisError if REDIS_AVAILABLE and redis is not None else RuntimeError,
+    TypeError,
+    ValueError,
+    json.JSONDecodeError,
+)
+
 
 class RedisCache:
     """
@@ -156,7 +163,7 @@ class RedisCache:
         try:
             self.client.ping()
             return True
-        except Exception:
+        except CACHE_OPERATION_ERRORS:
             return False
 
     # ==================== Metadata Operations ====================
@@ -175,7 +182,7 @@ class RedisCache:
             timestamp = timestamp or time.time()
             self.client.set(f"{self.PREFIX_METADATA}:last_update", str(timestamp))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error setting last update: {error}")
             return False
 
@@ -189,7 +196,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_METADATA}:last_update")
             return float(data) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting last update: {error}")
             return None
 
@@ -236,7 +243,7 @@ class RedisCache:
         try:
             self.client.setex(self.PREFIX_ORG, ttl or self.LONG_TTL, self._serialize(org_data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing organization data: {error}")
             return False
 
@@ -245,7 +252,7 @@ class RedisCache:
         try:
             data = self.client.get(self.PREFIX_ORG)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving organization data: {error}")
             return None
 
@@ -257,7 +264,7 @@ class RedisCache:
             self.client.setex(self.PREFIX_SITES, ttl or self.LONG_TTL, self._serialize(sites))
             logger.debug(f"Cached {len(sites)} sites")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing sites data: {error}")
             return False
 
@@ -266,7 +273,7 @@ class RedisCache:
         try:
             data = self.client.get(self.PREFIX_SITES)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving sites data: {error}")
             return None
 
@@ -280,7 +287,7 @@ class RedisCache:
             )
             logger.debug(f"Cached {len(sitegroups)} site groups")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing site groups: {error}")
             return False
 
@@ -289,7 +296,7 @@ class RedisCache:
         try:
             data = self.client.get(self.PREFIX_SITEGROUPS)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site groups: {error}")
             return None
 
@@ -312,7 +319,7 @@ class RedisCache:
             )
             logger.info(f"[OK] Cached {len(port_stats)} port stats records")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing port stats: {error}")
             return False
 
@@ -329,7 +336,7 @@ class RedisCache:
             if result:
                 logger.info(f"[OK] Retrieved {len(result)} port stats from cache")
             return result
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving port stats: {error}")
             return None
 
@@ -357,7 +364,7 @@ class RedisCache:
             data = {"timestamp": time.time(), "port_stats": port_stats}
             self.client.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing site port stats for {site_id}: {error}")
             return False
 
@@ -372,7 +379,7 @@ class RedisCache:
             key = f"{self.PREFIX_PORT_STATS}:site:{site_id}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site port stats for {site_id}: {error}")
             return None
 
@@ -506,7 +513,7 @@ class RedisCache:
 
             return all_port_stats
 
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.warning(f"[WARN] Pipeline fetch failed, falling back to sequential: {error}")
             # Fallback to sequential fetch
             all_port_stats = []
@@ -573,7 +580,7 @@ class RedisCache:
             )
             return (stale_sites, fresh_count, missing_count, stale_count)
 
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.warning(
                 f"[WARN] Pipeline stale check failed, falling back to sequential: {error}"
             )
@@ -623,7 +630,7 @@ class RedisCache:
             site_ages.sort(key=lambda item: item[1], reverse=True)
             return site_ages
 
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.warning(f"[WARN] Pipeline age sort failed, falling back to sequential: {error}")
             return self.get_sites_sorted_by_cache_age(site_ids)
 
@@ -679,7 +686,7 @@ class RedisCache:
             )
             logger.debug(f"Cached {len(records)} utilization records")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing utilization records: {error}")
             return False
 
@@ -688,7 +695,7 @@ class RedisCache:
         try:
             data = self.client.get(self.PREFIX_UTILIZATION)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving utilization records: {error}")
             return None
 
@@ -723,7 +730,7 @@ class RedisCache:
             self.client.expire(key, ttl or self.HISTORY_TTL)
 
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error appending historical record: {error}")
             return False
 
@@ -760,7 +767,7 @@ class RedisCache:
 
             records = [self._deserialize(record) for record in raw_records]
             return records
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving historical records: {error}")
             return []
 
@@ -787,7 +794,7 @@ class RedisCache:
             if removed > 0:
                 logger.debug(f"Pruned {removed} old records from {key}")
             return removed
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error pruning history: {error}")
             return 0
 
@@ -839,7 +846,7 @@ class RedisCache:
                 ),
                 "retention_days": self.HISTORY_TTL // 86400,
             }
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting history stats: {error}")
             return {"error": str(error)}
 
@@ -895,7 +902,7 @@ class RedisCache:
             self.client.zremrangebyscore(key, "-inf", cutoff)
 
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing utilization snapshot: {error}")
             return False
 
@@ -930,7 +937,7 @@ class RedisCache:
                     snapshot = self._deserialize(data)
                     snapshot["_score"] = score
                     snapshots.append(snapshot)
-                except Exception:
+                except CACHE_OPERATION_ERRORS:
                     continue
 
             # Downsample if too many points (target ~100-200 points max)
@@ -958,7 +965,7 @@ class RedisCache:
                 )
 
             return trends
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving utilization trends: {error}")
             return []
 
@@ -1016,7 +1023,7 @@ class RedisCache:
                 )
 
             return throughput
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error calculating throughput history: {error}")
             return []
 
@@ -1057,7 +1064,7 @@ class RedisCache:
 
             logger.info(f"[INFO] Started fetch session: {session_id}")
             return session_id
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error starting fetch session: {error}")
             return f"fetch_{int(time.time())}"
 
@@ -1103,7 +1110,7 @@ class RedisCache:
 
             self.client.setex(key, self.DEFAULT_TTL, self._serialize(progress))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error updating fetch progress: {error}")
             return False
 
@@ -1141,7 +1148,7 @@ class RedisCache:
                 f"{len(progress.get('sites_saved', []))} sites"
             )
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error completing fetch session: {error}")
             return False
 
@@ -1164,7 +1171,7 @@ class RedisCache:
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             data = self.client.get(key)
             return self._deserialize(data) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting fetch progress: {error}")
             return None
 
@@ -1286,7 +1293,7 @@ class RedisCache:
 
             self.client.setex(key, self.HISTORY_TTL, self._serialize(data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error appending site port stats for {site_id}: {error}")
             return False
 
@@ -1325,7 +1332,7 @@ class RedisCache:
 
             logger.debug(f"Saved SLE snapshot with {sle_data.get('total', 0)} sites")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving SLE snapshot: {error}")
             return False
 
@@ -1339,7 +1346,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_SLE}:current")
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving SLE snapshot: {error}")
             return None
 
@@ -1355,7 +1362,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_METADATA}:last_sle_fetch")
             return int(float(data)) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting last SLE timestamp: {error}")
             return None
 
@@ -1379,7 +1386,7 @@ class RedisCache:
                 key, ttl or 3600, self._serialize(data)  # 1 hour default (changes frequently)
             )
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving worst sites for {metric}: {error}")
             return False
 
@@ -1397,7 +1404,7 @@ class RedisCache:
             key = f"{self.PREFIX_SLE}:worst:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving worst sites for {metric}: {error}")
             return None
 
@@ -1440,7 +1447,7 @@ class RedisCache:
 
             logger.debug(f"Saved {len(results)} alarms")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving alarms: {error}")
             return False
 
@@ -1454,7 +1461,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_ALARMS}:current")
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving alarms: {error}")
             return None
 
@@ -1470,7 +1477,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_METADATA}:last_alarms_fetch")
             return int(float(data)) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting last alarms timestamp: {error}")
             return None
 
@@ -1488,7 +1495,7 @@ class RedisCache:
             key = f"{self.PREFIX_ALARMS}:id:{alarm_id}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving alarm {alarm_id}: {error}")
             return None
 
@@ -1509,7 +1516,7 @@ class RedisCache:
 
             results = alarms_data.get("results", [])
             return [a for a in results if a.get("type") == alarm_type]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error filtering alarms by type {alarm_type}: {error}")
             return []
 
@@ -1530,7 +1537,7 @@ class RedisCache:
 
             results = alarms_data.get("results", [])
             return [a for a in results if a.get("site_id") == site_id]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error filtering alarms by site {site_id}: {error}")
             return []
 
@@ -1579,7 +1586,7 @@ class RedisCache:
                 f"{len(disconnected_sites)} disconnected sites"
             )
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving gateway inventory: {error}")
             return False
 
@@ -1593,7 +1600,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_GATEWAY}:inventory")
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving gateway inventory: {error}")
             return None
 
@@ -1608,7 +1615,7 @@ class RedisCache:
             data = self.client.get(f"{self.PREFIX_GATEWAY}:disconnected_sites")
             sites = self._deserialize(data)
             return set(sites) if sites else set()
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving disconnected site IDs: {error}")
             return set()
 
@@ -1622,7 +1629,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_METADATA}:last_gateway_fetch")
             return int(float(data)) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting last gateway timestamp: {error}")
             return None
 
@@ -1642,7 +1649,7 @@ class RedisCache:
                 return False
             age = int(time.time()) - last_fetch
             return age < max_age_seconds
-        except Exception:
+        except CACHE_OPERATION_ERRORS:
             return False
 
     # ==================== VPN Peer Path Data ====================
@@ -1669,7 +1676,7 @@ class RedisCache:
             data = {"timestamp": time.time(), "peers_by_port": peers_by_port}
             self.client.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing VPN peers for {gateway_id}: {error}")
             return False
 
@@ -1688,7 +1695,7 @@ class RedisCache:
             key = f"{self.PREFIX_VPN_PEERS}:{gateway_id}:{mac}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving VPN peers for {gateway_id}: {error}")
             return None
 
@@ -1717,7 +1724,7 @@ class RedisCache:
             pipe.execute()
             logger.info(f"[OK] Stored VPN peers for {len(all_peers)} gateways")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error storing all VPN peers: {error}")
             return False
 
@@ -1756,7 +1763,7 @@ class RedisCache:
                     f"[PERF] get_all_vpn_peers: {len(keys)} keys, {timer.elapsed_ms:.1f}ms"
                 )
                 return result
-            except Exception as error:
+            except CACHE_OPERATION_ERRORS as error:
                 logger.error(f"Error retrieving all VPN peers: {error}")
                 return {}
 
@@ -1775,10 +1782,10 @@ class RedisCache:
             paths_down = 0
             site_stats = {}  # site_id -> {total, up, down}
 
-            for cache_key, data in all_peers.items():
+            for data in all_peers.values():
                 peers_by_port = data.get("peers_by_port", {})
 
-                for port_id, peers_list in peers_by_port.items():
+                for peers_list in peers_by_port.values():
                     for peer in peers_list:
                         total_peers += 1
                         is_up = peer.get("up", False)
@@ -1805,7 +1812,7 @@ class RedisCache:
                 "site_breakdown": site_stats,
                 "timestamp": time.time(),
             }
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting VPN peer summary: {error}")
             return {
                 "total_peers": 0,
@@ -1863,7 +1870,7 @@ class RedisCache:
                     f"[PERF] get_site_vpn_peers: {len(keys)} keys, {len(site_peers)} peers, {timer.elapsed_ms:.1f}ms"
                 )
                 return site_peers
-            except Exception as error:
+            except CACHE_OPERATION_ERRORS as error:
                 logger.error(f"Error getting VPN peers for site {site_id}: {error}")
                 return []
 
@@ -1898,7 +1905,7 @@ class RedisCache:
 
             logger.debug(f"Saved SLE summary for site {site_id} metric {metric}")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving site SLE summary: {error}")
             return False
 
@@ -1917,7 +1924,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site SLE summary: {error}")
             return None
 
@@ -1941,7 +1948,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(histogram_data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving site SLE histogram: {error}")
             return False
 
@@ -1951,7 +1958,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site SLE histogram: {error}")
             return None
 
@@ -1975,7 +1982,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(gateways_data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving site impacted gateways: {error}")
             return False
 
@@ -1985,7 +1992,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site impacted gateways: {error}")
             return None
 
@@ -2009,19 +2016,17 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(interfaces_data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving site impacted interfaces: {error}")
             return False
 
-    def get_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str
-    ) -> dict[str, Any] | None:
+    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """Get cached impacted interfaces for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site impacted interfaces: {error}")
             return None
 
@@ -2045,7 +2050,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(threshold_data))
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving site SLE threshold: {error}")
             return False
 
@@ -2055,7 +2060,7 @@ class RedisCache:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
             data = self.client.get(key)
             return self._deserialize(data)
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error retrieving site SLE threshold: {error}")
             return None
 
@@ -2074,7 +2079,7 @@ class RedisCache:
         try:
             data = self.client.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
             return int(float(data)) if data else None
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting last site SLE timestamp: {error}")
             return None
 
@@ -2095,7 +2100,7 @@ class RedisCache:
                 return False
             age = int(time.time()) - last_fetch
             return age < max_age_seconds
-        except Exception:
+        except CACHE_OPERATION_ERRORS:
             return False
 
     def get_sites_needing_sle_refresh(
@@ -2136,7 +2141,7 @@ class RedisCache:
 
             # Missing sites get priority - they've never been cached
             return missing_sites + stale_sites
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error checking site SLE freshness: {error}")
             return site_ids  # Assume all need refresh on error
 
@@ -2171,7 +2176,7 @@ class RedisCache:
             # Sort by oldest first
             stale_sites.sort(key=lambda x: x[1])
             return [s[0] for s in stale_sites]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting stale SLE sites: {error}")
             return []
 
@@ -2200,7 +2205,7 @@ class RedisCache:
                     missing_sites.append(site_id)
 
             return missing_sites
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting missing SLE sites: {error}")
             return []
 
@@ -2246,7 +2251,7 @@ class RedisCache:
                 "missing": missing_count,
                 "total": len(site_ids),
             }
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting SLE cache status: {error}")
             return {"fresh": 0, "stale": 0, "missing": len(site_ids), "total": len(site_ids)}
 
@@ -2303,7 +2308,7 @@ class RedisCache:
 
             logger.debug(f"Saved {len(results)} time-series points for {clean_mac}:{port_id}")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving gateway port time-series: {error}")
             return False
 
@@ -2341,7 +2346,7 @@ class RedisCache:
             raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
 
             return [self._deserialize(item) for item in raw_data if item]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting gateway port time-series: {error}")
             return []
 
@@ -2376,7 +2381,7 @@ class RedisCache:
                 "oldest_timestamp": oldest[0][1] if oldest else None,
                 "newest_timestamp": newest[0][1] if newest else None,
             }
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting gateway time-series coverage: {error}")
             return {"has_data": False, "error": str(error)}
 
@@ -2420,7 +2425,7 @@ class RedisCache:
 
             logger.debug(f"Saved {len(results)} VPN peer time-series points")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving VPN peer time-series: {error}")
             return False
 
@@ -2458,7 +2463,7 @@ class RedisCache:
             raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
 
             return [self._deserialize(item) for item in raw_data if item]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting VPN peer time-series: {error}")
             return []
 
@@ -2489,7 +2494,7 @@ class RedisCache:
                 "oldest_timestamp": oldest[0][1] if oldest else None,
                 "newest_timestamp": newest[0][1] if newest else None,
             }
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting VPN time-series coverage: {error}")
             return {"has_data": False, "error": str(error)}
 
@@ -2532,7 +2537,7 @@ class RedisCache:
 
             logger.debug(f"Saved {len(results)} device {metric} time-series points")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error saving device metrics time-series: {error}")
             return False
 
@@ -2569,7 +2574,7 @@ class RedisCache:
             raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
 
             return [self._deserialize(item) for item in raw_data if item]
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting device metrics time-series: {error}")
             return []
 
@@ -2598,7 +2603,7 @@ class RedisCache:
 
             logger.debug(f"Found {len(missing)} sites with no {prefix} data")
             return missing
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error checking missing time-series sites: {error}")
             return []
 
@@ -2642,7 +2647,7 @@ class RedisCache:
 
             logger.debug(f"Found {len(stale)} sites with stale {prefix} data (>{max_age_seconds}s)")
             return stale
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error checking stale time-series sites: {error}")
             return []
 
@@ -2662,7 +2667,7 @@ class RedisCache:
                 self.client.delete(*keys)
                 logger.info(f"[OK] Cleared {len(keys)} cache keys")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error clearing cache: {error}")
             return False
 
@@ -2685,9 +2690,7 @@ class RedisCache:
 
             last_update = self.get_last_update()
             if last_update:
-                stats["last_update"] = datetime.fromtimestamp(
-                    last_update, tz=UTC
-                ).isoformat()
+                stats["last_update"] = datetime.fromtimestamp(last_update, tz=UTC).isoformat()
                 stats["cache_age_seconds"] = round(time.time() - last_update, 1)
 
             # Count keys by prefix
@@ -2716,7 +2719,7 @@ class RedisCache:
             stats["history"] = self.get_history_stats()
 
             return stats
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error getting cache stats: {error}")
             return {"connected": False, "error": str(error)}
 
@@ -2758,7 +2761,7 @@ class RedisCache:
                 )
 
             return config
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             logger.error(f"Error checking persistence config: {error}")
             return {"error": str(error)}
 
@@ -2775,7 +2778,7 @@ class RedisCache:
             self.client.bgsave()
             logger.info("[OK] Redis background save initiated")
             return True
-        except Exception as error:
+        except CACHE_OPERATION_ERRORS as error:
             # BGSAVE may fail if already in progress
             if "Background save already in progress" in str(error):
                 logger.info("[INFO] Redis save already in progress")
@@ -2788,7 +2791,7 @@ class RedisCache:
         try:
             self.client.close()
             logger.debug("Redis connection closed")
-        except Exception:
+        except CACHE_OPERATION_ERRORS:
             pass
 
 
@@ -3080,9 +3083,7 @@ class NullCache:
     ) -> bool:
         return False
 
-    def get_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str
-    ) -> dict[str, Any] | None:
+    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
     def save_site_sle_threshold(
@@ -3178,6 +3179,6 @@ def get_cache(redis_url: str | None = None) -> "RedisCache | NullCache":
 
     try:
         return RedisCache(redis_url)
-    except Exception as error:
+    except CACHE_OPERATION_ERRORS as error:
         logger.warning(f"[WARN] Cannot connect to Redis: {error}")
         return NullCache()

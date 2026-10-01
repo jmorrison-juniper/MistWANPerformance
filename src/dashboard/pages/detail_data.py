@@ -343,23 +343,20 @@ def _device_metrics(
         points = series[metric]
         fig.add_trace(
             go.Scatter(
-                x=[
-                    datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=UTC)
-                    for p in points
-                ],
+                x=[datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=UTC) for p in points],
                 y=[
                     _as_float(_first(p, metric, "value", f"{metric}_pct", default=0))
                     for p in points
                 ],
                 mode="lines",
                 name=metric.upper(),
-                line=dict(color=color, width=2),
+                line={"color": color, "width": 2},
             )
         )
     fig.update_layout(
         template="plotly_dark",
-        margin=dict(l=50, r=20, t=40, b=40),
-        title=dict(text="Device Metrics", font=dict(size=14)),
+        margin={"l": 50, "r": 20, "t": 40, "b": 40},
+        title={"text": "Device Metrics", "font": {"size": 14}},
         yaxis_title="Percent",
         hovermode="x unified",
     )
@@ -421,7 +418,7 @@ def shape_gateway_detail(provider: Any, context: dict[str, Any] | None) -> dict[
             "bandwidth_figure": _gateway_bandwidth(provider, site_id, gateway_id, ports),
             "device_metrics_figure": _device_metrics(provider, site_id, gateway_id, gateway),
         }
-    except Exception as error:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
         logger.warning("Error shaping gateway detail page: %s", error)
         return _gateway_empty(gateway_id, site_id, "Unable to load gateway data")
 
@@ -529,7 +526,7 @@ def shape_port_detail(
             "rx_crc": _fmt_int(_first(port, "rx_crc", "rx_crc_errors", default=0), "0"),
             "tx_crc": _fmt_int(_first(port, "tx_crc", "tx_crc_errors", default=0), "0"),
         }
-    except Exception as error:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
         logger.warning("Error shaping port detail page: %s", error)
         return _port_empty(site_id, port_id, gateway_id, "Unable to load port data")
 
@@ -644,7 +641,7 @@ def shape_vpn_peer_detail(
             "tx_packets": _fmt_int(_first(peer, "tx_pkts", "tx_packets", default=0), "0"),
             "rx_packets": _fmt_int(_first(peer, "rx_pkts", "rx_packets", default=0), "0"),
         }
-    except Exception as error:
+    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
         logger.warning("Error shaping VPN peer detail page: %s", error)
         return _vpn_empty(site_id, peer_id, "Unable to load VPN peer data")
 
@@ -682,9 +679,7 @@ def _vpn_empty(site_id: str | None, peer_id: str, message: str) -> dict[str, Any
     }
 
 
-def _vpn_quality(
-    provider: Any, site_id: str | None, peer: dict[str, Any], hours: int
-) -> go.Figure:
+def _vpn_quality(provider: Any, site_id: str | None, peer: dict[str, Any], hours: int) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_vpn_peer_timeseries"):
         return ChartBuilders.build_empty_chart("No VPN quality data available")
     points = _call_timeseries(

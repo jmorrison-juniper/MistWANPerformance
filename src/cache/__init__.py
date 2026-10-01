@@ -27,18 +27,18 @@ from src.cache.redis_cache import RedisCache
 from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 
 __all__ = [
-    "RedisCache",
-    "BackgroundRefreshWorker",
     "AsyncBackgroundRefreshWorker",
-    "refresh_stale_sites_parallel",
-    # Threading-based precomputers (legacy)
-    "DashboardPrecomputer",
-    "SiteSlePrecomputer",
-    "SiteVpnPrecomputer",
     # Async precomputers (preferred)
     "AsyncDashboardPrecomputer",
     "AsyncSiteSlePrecomputer",
     "AsyncSiteVpnPrecomputer",
+    "BackgroundRefreshWorker",
+    # Threading-based precomputers (legacy)
+    "DashboardPrecomputer",
+    "RedisCache",
+    "SiteSlePrecomputer",
+    "SiteVpnPrecomputer",
     "get_process_pool",
+    "refresh_stale_sites_parallel",
     "shutdown_process_pool",
 ]

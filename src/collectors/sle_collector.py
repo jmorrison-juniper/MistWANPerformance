@@ -135,7 +135,7 @@ class SLECollector:
             # Mark success if at least summary was collected
             result.success = result.summary_collected
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[ERROR] Failed to collect SLE for site {site_name}: {error}")
             result.error_message = str(error)
 
@@ -167,7 +167,7 @@ class SLECollector:
 
             return False
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to collect SLE summary for {site_id}: {error}")
             return False
 
@@ -196,7 +196,7 @@ class SLECollector:
 
             return False
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to collect SLE histogram for {site_id}: {error}")
             return False
 
@@ -225,7 +225,7 @@ class SLECollector:
 
             return False
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to collect impacted gateways for {site_id}: {error}")
             return False
 
@@ -254,7 +254,7 @@ class SLECollector:
 
             return False
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to collect impacted interfaces for {site_id}: {error}")
             return False
 
@@ -264,7 +264,7 @@ class SLECollector:
         key = f"{self.cache.PREFIX_SITE_SLE}:last_fetch:{site_id}"
         try:
             self.cache.client.set(key, str(timestamp), ex=CACHE_TTL_SECONDS)
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to update last fetch timestamp: {error}")
 
     def collect_for_degraded_sites(

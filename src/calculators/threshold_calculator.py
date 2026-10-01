@@ -5,7 +5,7 @@ Determines appropriate thresholds based on site/region configuration.
 """
 
 import logging
-from typing import Any
+from typing import Any, ClassVar
 
 from src.utils.config import ThresholdConfig
 
@@ -20,7 +20,7 @@ class ThresholdCalculator:
     """
 
     # Default quality thresholds
-    DEFAULT_QUALITY_THRESHOLDS = {
+    DEFAULT_QUALITY_THRESHOLDS: ClassVar[dict[str, dict[str, float]]] = {
         "loss": {"warn": 0.1, "high": 0.5, "critical": 1.0},
         "jitter": {"warn": 10.0, "high": 30.0, "critical": 50.0},
         "latency": {"warn": 50.0, "high": 100.0, "critical": 150.0},

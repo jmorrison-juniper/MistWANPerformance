@@ -141,9 +141,7 @@ class AsyncBackgroundRefreshWorker:
                     self._rate_limited = False
                     logger.info("[OK] Rate limit cleared - resuming async refresh")
 
-                cycle_start = time.time()
                 await self._run_refresh_cycle_async()
-                cycle_duration = time.time() - cycle_start
 
                 # No delay - stay busy, immediately start next cycle
 
@@ -160,8 +158,15 @@ class AsyncBackgroundRefreshWorker:
                 )
                 await asyncio.sleep(int(wait_time) + 5)
 
-            except Exception as error:
-                logger.error(f"[ERROR] Async refresh error: {error}", exc_info=True)
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
+                logger.error(f"[ERROR] Async refresh error: {error}")
                 # Brief yield to prevent CPU spin on repeated errors
                 await asyncio.sleep(0.1)
 
@@ -171,7 +176,7 @@ class AsyncBackgroundRefreshWorker:
         cycle_start = time.time()
 
         # Get stale site IDs
-        stale_ids, fresh_count, missing_count, stale_count = self._get_stale_sites()
+        _stale_ids, fresh_count, missing_count, stale_count = self._get_stale_sites()
 
         # Log coverage status
         self._log_coverage_status(fresh_count, missing_count, stale_count)
@@ -240,15 +245,22 @@ class AsyncBackgroundRefreshWorker:
             self._total_sites_refreshed += sites_cached
 
             # Track sites with data
-            sites_in_response = set(
+            sites_in_response = {
                 port.get("site_id") for port in all_port_stats if port.get("site_id")
-            )
+            }
             self._sites_with_data.update(sites_in_response)
 
             # Force Redis save
             try:
                 await loop.run_in_executor(None, self.cache.force_save)
-            except Exception as save_error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as save_error:
                 logger.debug(f"Redis save notification: {save_error}")
 
             cycle_duration = time.time() - cycle_start
@@ -265,12 +277,26 @@ class AsyncBackgroundRefreshWorker:
             if self.on_data_updated:
                 try:
                     self.on_data_updated(all_port_stats)
-                except Exception as callback_error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as callback_error:
                     logger.error(f"[ERROR] Async callback failed: {callback_error}")
 
         except RateLimitError:
             raise
-        except Exception as api_error:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            OSError,
+        ) as api_error:
             logger.error(f"[ERROR] Async API fetch failed: {api_error}")
 
     def get_status(self) -> dict[str, Any]:
@@ -345,7 +371,14 @@ async def refresh_stale_sites_parallel(
             except RateLimitError:
                 logger.warning(f"[RATE LIMIT] Hit limit refreshing site {site_id}")
                 return False
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"[ERROR] Failed to refresh site {site_id}: {error}")
                 return False
 
@@ -359,7 +392,14 @@ async def refresh_stale_sites_parallel(
         # Count successful refreshes
         refreshed_count = sum(1 for task in tasks if task.result())
 
-    except ExceptionGroup as exception_group:
+    except* (
+        RuntimeError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        OSError,
+    ) as exception_group:
         # Handle any exceptions from the TaskGroup
         logger.error(f"[ERROR] TaskGroup exceptions: {len(exception_group.exceptions)} errors")
         for error in exception_group.exceptions[:3]:  # Log first 3 errors
@@ -481,9 +521,7 @@ class BackgroundRefreshWorker:
                     self._rate_limited = False
                     logger.info("[OK] Rate limit cleared - resuming refresh operations")
 
-                cycle_start = time.time()
                 self._run_refresh_cycle()
-                cycle_duration = time.time() - cycle_start
 
                 # No delay - stay busy, immediately start next cycle
 
@@ -498,8 +536,15 @@ class BackgroundRefreshWorker:
                 # Sleep until reset time
                 self._interruptible_sleep(int(wait_time) + 5)
 
-            except Exception as error:
-                logger.error(f"[ERROR] Background refresh error: {error}", exc_info=True)
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
+                logger.error(f"[ERROR] Background refresh error: {error}")
                 # Brief pause on error before retry (0.1s to prevent CPU spin)
                 self._interruptible_sleep(0.1)
 
@@ -516,7 +561,7 @@ class BackgroundRefreshWorker:
 
         # Check current cache state
         if hasattr(self.cache, "get_stale_site_ids_pipelined"):
-            stale_ids, fresh_count, missing_count, stale_count = (
+            _stale_ids, fresh_count, missing_count, stale_count = (
                 self.cache.get_stale_site_ids_pipelined(
                     self.site_ids, max_age_seconds=self.max_age_seconds
                 )
@@ -566,15 +611,22 @@ class BackgroundRefreshWorker:
             self._total_sites_refreshed += sites_cached
 
             # Track which sites have data
-            sites_in_response = set(
+            sites_in_response = {
                 port.get("site_id") for port in all_port_stats if port.get("site_id")
-            )
+            }
             self._sites_with_data.update(sites_in_response)
 
             # Force Redis to save data to disk
             try:
                 self.cache.force_save()
-            except Exception as save_error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as save_error:
                 logger.debug(f"Redis save notification: {save_error}")
 
             cycle_duration = time.time() - cycle_start
@@ -590,13 +642,27 @@ class BackgroundRefreshWorker:
             if self.on_data_updated:
                 try:
                     self.on_data_updated(all_port_stats)
-                except Exception as callback_error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as callback_error:
                     logger.error(f"[ERROR] Data update callback failed: {callback_error}")
 
         except RateLimitError:
             # Re-raise rate limit errors to be handled by the refresh loop
             raise
-        except Exception as api_error:
+        except (
+            RuntimeError,
+            ValueError,
+            TypeError,
+            KeyError,
+            AttributeError,
+            OSError,
+        ) as api_error:
             logger.error(f"[ERROR] API fetch failed in refresh cycle: {api_error}")
 
     def get_status(self) -> dict[str, Any]:
@@ -715,12 +781,17 @@ class SLEBackgroundWorker:
 
                 self._run_inner_loop(sle_collector)
 
-            except Exception as fatal_error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ):
                 restart_count += 1
-                logger.error(
-                    f"[ERROR] SLE worker crashed (restart {restart_count}/{max_restarts}): "
-                    f"{fatal_error}",
-                    exc_info=True,
+                logger.exception(
+                    f"[ERROR] SLE worker crashed (restart {restart_count}/{max_restarts})"
                 )
                 # Wait before restart to avoid rapid cycling
                 time.sleep(5)
@@ -766,8 +837,15 @@ class SLEBackgroundWorker:
                 )
                 time.sleep(int(wait_time) + 5)
 
-            except Exception as error:
-                logger.error(f"[ERROR] SLE collection error: {error}", exc_info=True)
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
+                logger.error(f"[ERROR] SLE collection error: {error}")
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -1006,12 +1084,17 @@ class VPNPeerBackgroundWorker:
             try:
                 self._run_inner_vpn_loop()
 
-            except Exception as fatal_error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ):
                 restart_count += 1
-                logger.error(
-                    f"[ERROR] VPN worker crashed (restart {restart_count}/{max_restarts}): "
-                    f"{fatal_error}",
-                    exc_info=True,
+                logger.exception(
+                    f"[ERROR] VPN worker crashed (restart {restart_count}/{max_restarts})"
                 )
                 # Wait before restart to avoid rapid cycling
                 time.sleep(5)
@@ -1058,8 +1141,15 @@ class VPNPeerBackgroundWorker:
                 )
                 time.sleep(int(wait_time) + 5)
 
-            except Exception as error:
-                logger.error(f"[ERROR] VPN collection error: {error}", exc_info=True)
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
+                logger.error(f"[ERROR] VPN collection error: {error}")
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -1121,8 +1211,8 @@ class VPNPeerBackgroundWorker:
                 error_msg = result.get("error", "Unknown error")
                 logger.warning(f"[WARN] VPN peer collection failed: {error_msg}")
 
-        except Exception as error:
-            logger.error(f"[ERROR] VPN peer collection cycle failed: {error}", exc_info=True)
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+            logger.error(f"[ERROR] VPN peer collection cycle failed: {error}")
 
     def get_status(self) -> dict[str, Any]:
         """Get current worker status for monitoring."""

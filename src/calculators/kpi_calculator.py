@@ -648,7 +648,14 @@ def calculate_availability_bulk(
                 circuit_id = futures[future]
                 try:
                     results[circuit_id] = future.result()
-                except Exception as error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as error:
                     logger.error(f"Error calculating availability for {circuit_id}: {error}")
                     results[circuit_id] = 100.0
     else:
@@ -739,7 +746,14 @@ def create_daily_aggregates_parallel(
                 try:
                     result_dict = future.result()
                     results.append(AggregatedMetrics(**result_dict))
-                except Exception as error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as error:
                     logger.error(f"Error creating daily aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -747,7 +761,14 @@ def create_daily_aggregates_parallel(
             try:
                 result_dict = _create_daily_aggregate_worker(inp)
                 results.append(AggregatedMetrics(**result_dict))
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error creating daily aggregate: {error}")
 
     logger.info(f"[OK] Created {len(results)} daily aggregates")

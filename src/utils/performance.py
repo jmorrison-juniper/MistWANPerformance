@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Optional
+from typing import Any, Optional, Self
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class PerformanceMetrics:
 
     _instance: Optional["PerformanceMetrics"] = None
 
-    def __new__(cls) -> "PerformanceMetrics":
+    def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._metrics: dict[str, list[float]] = {}
@@ -120,7 +120,7 @@ class PerformanceTimer:
         self.end_time: float = 0
         self.elapsed_ms: float = 0
 
-    def __enter__(self) -> "PerformanceTimer":
+    def __enter__(self) -> Self:
         self.start_time = time.perf_counter()
         return self
 

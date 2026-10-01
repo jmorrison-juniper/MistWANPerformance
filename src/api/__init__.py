@@ -21,17 +21,17 @@ from src.api.mist_client import (
 )
 
 __all__ = [
+    "AsyncMistAPIClient",
+    # Async API
+    "AsyncMistConnection",
+    "AsyncMistStatsOperations",
+    "MistAPIClient",
     # Sync API
     "MistConnection",
     "MistSiteOperations",
     "MistStatsOperations",
-    "MistAPIClient",
-    "RateLimitState",
     "RateLimitError",
+    "RateLimitState",
     "get_rate_limit_status",
     "is_rate_limited",
-    # Async API
-    "AsyncMistConnection",
-    "AsyncMistStatsOperations",
-    "AsyncMistAPIClient",
 ]

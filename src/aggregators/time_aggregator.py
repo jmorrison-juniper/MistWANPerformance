@@ -309,7 +309,7 @@ class CalendarAggregator:
 
     def _get_week_key(self, date_key: str) -> str:
         """Get ISO week key (YYYYWW) from date key (YYYYMMDD)."""
-        parsed_date = datetime.strptime(date_key, "%Y%m%d")
+        parsed_date = datetime.strptime(date_key, "%Y%m%d").replace(tzinfo=UTC)
         iso_year, iso_week, _ = parsed_date.isocalendar()
         return f"{iso_year}{iso_week:02d}"
 
@@ -794,7 +794,7 @@ def aggregate_daily_to_weekly_parallel(
     grouped = defaultdict(list)
     for aggregate in daily_aggregates:
         # Get ISO week key (YYYYWW)
-        parsed_date = datetime.strptime(aggregate.period_key, "%Y%m%d")
+        parsed_date = datetime.strptime(aggregate.period_key, "%Y%m%d").replace(tzinfo=UTC)
         iso_year, iso_week, _ = parsed_date.isocalendar()
         week_key = f"{iso_year}{iso_week:02d}"
         key = (aggregate.site_id, aggregate.circuit_id, week_key)
@@ -835,7 +835,14 @@ def aggregate_daily_to_weekly_parallel(
                 try:
                     result_dict = future.result()
                     weekly_aggregates.append(AggregatedMetrics(**result_dict))
-                except Exception as error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as error:
                     logger.error(f"Error merging weekly aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -843,7 +850,14 @@ def aggregate_daily_to_weekly_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 weekly_aggregates.append(AggregatedMetrics(**result_dict))
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error merging weekly aggregate: {error}")
 
     logger.info(f"[OK] Created {len(weekly_aggregates)} weekly aggregates")
@@ -910,7 +924,14 @@ def aggregate_daily_to_monthly_parallel(
                 try:
                     result_dict = future.result()
                     monthly_aggregates.append(AggregatedMetrics(**result_dict))
-                except Exception as error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as error:
                     logger.error(f"Error merging monthly aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -918,7 +939,14 @@ def aggregate_daily_to_monthly_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 monthly_aggregates.append(AggregatedMetrics(**result_dict))
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error merging monthly aggregate: {error}")
 
     logger.info(f"[OK] Created {len(monthly_aggregates)} monthly aggregates")
@@ -986,7 +1014,14 @@ def aggregate_to_region_parallel(
                 try:
                     result_dict = future.result()
                     region_aggregates.append(AggregatedMetrics(**result_dict))
-                except Exception as error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as error:
                     logger.error(f"Error merging region aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -994,7 +1029,14 @@ def aggregate_to_region_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 region_aggregates.append(AggregatedMetrics(**result_dict))
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error merging region aggregate: {error}")
 
     logger.info(f"[OK] Created {len(region_aggregates)} region aggregates")

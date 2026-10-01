@@ -77,8 +77,15 @@ class DashboardPrecomputer:
                 self._run_precompute_cycle()
                 # No delay - stay busy, immediately start next cycle
 
-            except Exception as error:
-                logger.error(f"[ERROR] Precompute cycle failed: {error}", exc_info=True)
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
+                logger.error(f"[ERROR] Precompute cycle failed: {error}")
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -126,8 +133,8 @@ class DashboardPrecomputer:
                     f"{self._last_duration_ms:.0f}ms"
                 )
 
-        except Exception as error:
-            logger.error(f"[ERROR] Precompute failed: {error}", exc_info=True)
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+            logger.error(f"[ERROR] Precompute failed: {error}")
 
     def _precompute_dashboard_data(self) -> dict[str, Any]:
         """Pre-compute main dashboard data."""
@@ -182,7 +189,7 @@ class DashboardPrecomputer:
 
         return {
             "loading": False,
-            "total_sites": len(set(r.site_id for r in records)),
+            "total_sites": len({r.site_id for r in records}),
             "healthy_sites": site_statuses.get("healthy", 0),
             "degraded_sites": site_statuses.get("degraded", 0),
             "critical_sites": site_statuses.get("critical", 0),
@@ -460,7 +467,7 @@ class DashboardPrecomputer:
         if hasattr(self.cache, "get_cache_stats"):
             try:
                 cache_status = self.cache.get_cache_stats()
-            except Exception:
+            except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError):
                 pass
 
         # Worker statuses
@@ -499,7 +506,7 @@ class DashboardPrecomputer:
             elif hasattr(self.cache, "_precomputed"):
                 # Fallback for NullCache
                 self.cache._precomputed[key] = data
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
 
     def get_precomputed(self, key: str) -> dict[str, Any] | None:
@@ -522,7 +529,7 @@ class DashboardPrecomputer:
                     return json.loads(data)
             elif hasattr(self.cache, "_precomputed"):
                 return self.cache._precomputed.get(key)
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"[WARN] Failed to get precomputed {key}: {error}")
 
         return None

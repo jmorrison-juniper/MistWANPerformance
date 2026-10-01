@@ -13,7 +13,7 @@ Split into focused classes per 5-item rule:
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 
@@ -87,9 +87,7 @@ class AsyncMistConnection:
         if status == 429:
             return True
         text_lower = text.lower()
-        if "rate limit" in text_lower or "too many requests" in text_lower:
-            return True
-        return False
+        return bool("rate limit" in text_lower or "too many requests" in text_lower)
 
     async def execute_get_async(
         self, operation: str, endpoint: str, params: dict[str, Any] | None = None
@@ -141,7 +139,14 @@ class AsyncMistConnection:
 
             except RateLimitError:
                 raise  # Don't retry 429 errors, propagate immediately
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 last_error = error
                 logger.warning(
                     f"[WARN] {operation} failed (attempt {attempt}/{self.ops_config.max_retries}): {error}"
@@ -242,7 +247,7 @@ class AsyncMistStatsOperations:
         batch_count = 0
 
         # First page must be sequential to get initial cursor
-        page_num, first_batch, next_cursor = await self._fetch_port_stats_page(
+        _page_num, first_batch, next_cursor = await self._fetch_port_stats_page(
             page_number=1, search_after=None, duration=duration
         )
 
@@ -255,7 +260,14 @@ class AsyncMistStatsOperations:
         if on_batch and first_batch:
             try:
                 on_batch(first_batch, batch_count, next_cursor)
-            except Exception as callback_error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as callback_error:
                 logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
         # Continue with parallel fetches if more data exists
@@ -265,7 +277,7 @@ class AsyncMistStatsOperations:
             # However, we can still benefit from async I/O (no blocking)
             batch_count += 1
 
-            page_num, batch, next_cursor = await self._fetch_port_stats_page(
+            _page_num, batch, next_cursor = await self._fetch_port_stats_page(
                 page_number=batch_count, search_after=next_cursor, duration=duration
             )
 
@@ -276,7 +288,14 @@ class AsyncMistStatsOperations:
             if on_batch and batch:
                 try:
                     on_batch(batch, batch_count, next_cursor)
-                except Exception as callback_error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as callback_error:
                     logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
             # Update first_batch length for loop condition
@@ -355,7 +374,7 @@ class AsyncMistAPIClient:
 
         logger.info("[OK] AsyncMistAPIClient initialized")
 
-    async def __aenter__(self) -> "AsyncMistAPIClient":
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 

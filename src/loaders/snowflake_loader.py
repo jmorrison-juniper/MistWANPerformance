@@ -6,7 +6,7 @@ Organized per 5-item rule into focused classes.
 """
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 # Handle optional snowflake dependency
 SNOWFLAKE_AVAILABLE = False
@@ -20,11 +20,6 @@ try:
     SNOWFLAKE_AVAILABLE = True
 except ImportError:
     pass
-
-# For type checking only (IDE support)
-if TYPE_CHECKING:
-    import snowflake.connector as snowflake_connector
-    from snowflake.connector import DictCursor
 
 from src.models.facts import (
     AggregatedMetrics,
@@ -88,7 +83,7 @@ class SnowflakeConnection:
             logger.info("[OK] Connected to Snowflake")
             logger.debug(f"Database: {self.config.database}, Schema: {self.config.schema}")
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[ERROR] Failed to connect to Snowflake: {error}")
             raise
 
@@ -170,7 +165,7 @@ class SnowflakeConnection:
             logger.info("[OK] Snowflake connection test successful")
             self.disconnect()
             return True
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[ERROR] Snowflake connection test failed: {error}")
             return False
 

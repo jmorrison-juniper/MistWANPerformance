@@ -14,7 +14,7 @@ Split into focused classes per 5-item rule:
 import logging
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 # Mist API SDK import with graceful fallback
@@ -77,7 +77,7 @@ class RateLimitState:
             self._hit_count += 1
 
             # Calculate seconds until top of next hour
-            now = datetime.now()
+            now = datetime.now(UTC)
             minutes_until_reset = 60 - now.minute
             seconds_until_reset = (minutes_until_reset * 60) - now.second
 
@@ -223,7 +223,7 @@ class MistConnection:
                 host=self.config.api_host, apitoken=self.config.api_token
             )
             logger.debug("Mist API session initialized successfully")
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[ERROR] Failed to initialize Mist API session: {error}")
             raise
 
@@ -269,10 +269,15 @@ class MistConnection:
                 self.apply_rate_limit()
                 response = api_call(*args, **kwargs)
                 return response
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 last_error = error
-                error_str = str(error).lower()
-
                 # Check for 429 rate limit error
                 if self._is_rate_limit_error(error):
                     seconds_wait = _rate_limit_state.set_rate_limited()
@@ -311,10 +316,7 @@ class MistConnection:
                 return True
 
         # Check for status_code attribute directly
-        if hasattr(error, "status_code") and error.status_code == 429:
-            return True
-
-        return False
+        return bool(hasattr(error, "status_code") and error.status_code == 429)
 
     def close(self) -> None:
         """Close the API session and clean up resources."""
@@ -359,7 +361,7 @@ class MistSiteOperations:
             logger.info("[OK] Mist API connection successful")
             logger.debug(f"Organization: {result.data.get('name', 'Unknown')}")
             return True
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[ERROR] Mist API connection failed: {error}")
             return False
 
@@ -598,7 +600,14 @@ class MistStatsOperations:
             if on_batch and batch:
                 try:
                     on_batch(batch, batch_count, next_cursor)
-                except Exception as callback_error:
+                except (
+                    RuntimeError,
+                    ValueError,
+                    TypeError,
+                    KeyError,
+                    AttributeError,
+                    OSError,
+                ) as callback_error:
                     logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
             if not next_cursor or len(batch) < 1000:
@@ -1122,7 +1131,7 @@ class MistInsightsOperations:
                 "total_peers": len(all_results),
             }
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error fetching VPN peer stats: {error}")
             return {
                 "success": False,
@@ -1282,7 +1291,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error fetching gateway port time-series: {error}")
             return {
                 "start": start_time,
@@ -1386,7 +1395,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error fetching VPN peer metrics time-series: {error}")
             return {
                 "start": start_time,
@@ -1475,7 +1484,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error fetching device metric {metric}: {error}")
             return {
                 "start": start_time,

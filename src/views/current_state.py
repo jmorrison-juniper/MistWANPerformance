@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from src.models.facts import (
     CircuitQualityRecord,
@@ -149,10 +149,18 @@ class CurrentStateViews:
     """
 
     # Thresholds for alerts
-    UTIL_THRESHOLDS = {"warning": 70.0, "high": 80.0, "critical": 90.0}
-    LOSS_THRESHOLDS = {"warning": 0.1, "high": 0.5, "critical": 1.0}
-    JITTER_THRESHOLDS = {"warning": 10.0, "high": 30.0, "critical": 50.0}
-    LATENCY_THRESHOLDS = {"warning": 50.0, "high": 100.0, "critical": 150.0}
+    UTIL_THRESHOLDS: ClassVar[dict[str, float]] = {"warning": 70.0, "high": 80.0, "critical": 90.0}
+    LOSS_THRESHOLDS: ClassVar[dict[str, float]] = {"warning": 0.1, "high": 0.5, "critical": 1.0}
+    JITTER_THRESHOLDS: ClassVar[dict[str, float]] = {
+        "warning": 10.0,
+        "high": 30.0,
+        "critical": 50.0,
+    }
+    LATENCY_THRESHOLDS: ClassVar[dict[str, float]] = {
+        "warning": 50.0,
+        "high": 100.0,
+        "critical": 150.0,
+    }
 
     def __init__(
         self,
@@ -638,14 +646,18 @@ class CurrentStateViews:
                     f"Significant utilization difference: {higher} is {abs(util_diff):.1f}% higher"
                 )
 
-        if primary_quality and secondary_quality:
-            if primary_quality.latency_avg and secondary_quality.latency_avg:
-                latency_diff = primary_quality.latency_avg - secondary_quality.latency_avg
-                if abs(latency_diff) > 20:
-                    higher = "primary" if latency_diff > 0 else "secondary"
-                    notes.append(
-                        f"Latency difference: {higher} has {abs(latency_diff):.0f}ms higher latency"
-                    )
+        if (
+            primary_quality
+            and secondary_quality
+            and primary_quality.latency_avg
+            and secondary_quality.latency_avg
+        ):
+            latency_diff = primary_quality.latency_avg - secondary_quality.latency_avg
+            if abs(latency_diff) > 20:
+                higher = "primary" if latency_diff > 0 else "secondary"
+                notes.append(
+                    f"Latency difference: {higher} has {abs(latency_diff):.0f}ms higher latency"
+                )
 
         if not notes:
             notes.append("Both circuits operating normally")

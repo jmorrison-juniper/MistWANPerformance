@@ -457,7 +457,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -502,7 +504,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -547,7 +551,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -593,6 +599,8 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig

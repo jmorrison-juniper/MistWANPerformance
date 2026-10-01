@@ -8,7 +8,7 @@ Designed for NOC dashboard consumption.
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from src.models.facts import (
     AggregatedMetrics,
@@ -82,8 +82,8 @@ class RankingViews:
     """
 
     # Default thresholds for status classification
-    UTIL_THRESHOLDS = {"warning": 70.0, "high": 80.0, "critical": 90.0}
-    AVAIL_THRESHOLDS = {"critical": 99.0, "high": 99.5, "warning": 99.9}
+    UTIL_THRESHOLDS: ClassVar[dict[str, float]] = {"warning": 70.0, "high": 80.0, "critical": 90.0}
+    AVAIL_THRESHOLDS: ClassVar[dict[str, float]] = {"critical": 99.0, "high": 99.5, "warning": 99.9}
 
     def __init__(
         self,

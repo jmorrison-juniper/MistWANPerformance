@@ -7,7 +7,7 @@ Collects circuit status and flap events from Mist WAN edge devices.
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from src.api.mist_client import MistAPIClient
 from src.models.facts import CircuitStatusRecord
@@ -54,7 +54,12 @@ class StatusCollector:
     """
 
     # Status event types to monitor
-    STATUS_EVENT_TYPES = ["GW_PORT_UP", "GW_PORT_DOWN", "GW_WAN_UP", "GW_WAN_DOWN"]
+    STATUS_EVENT_TYPES: ClassVar[list[str]] = [
+        "GW_PORT_UP",
+        "GW_PORT_DOWN",
+        "GW_WAN_UP",
+        "GW_WAN_DOWN",
+    ]
 
     def __init__(self, api_client: MistAPIClient):
         """
@@ -301,7 +306,7 @@ class StatusCollector:
                 collected_at=datetime.now(UTC),
             )
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(
                 f"[WARN] Failed to create status record for {record_input.port_name}: {error}"
             )

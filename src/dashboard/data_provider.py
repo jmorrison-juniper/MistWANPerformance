@@ -149,7 +149,6 @@ class DashboardDataProvider:
             # Process port stats into utilization records
             current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
-            circuits = []
             utilization_records = []
             wan_down = 0
             wan_disabled = 0
@@ -220,8 +219,8 @@ class DashboardDataProvider:
             )
             return True
 
-        except Exception as error:
-            logger.error(f"[REFRESH] Failed to refresh from cache: {error}", exc_info=True)
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+            logger.error(f"[REFRESH] Failed to refresh from cache: {error}")
             return False
 
     def update_status(self, records: list[CircuitStatusRecord]):
@@ -496,7 +495,7 @@ class DashboardDataProvider:
                 "cache_fresh": self.redis_cache.is_site_sle_cache_fresh(site_id),
             }
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.warning(f"Failed to get site SLE details for {site_id}: {error}")
             return {"available": False, "error": str(error)}
 
@@ -575,7 +574,7 @@ class DashboardDataProvider:
         active_failovers = self.get_active_failover_count()
 
         return {
-            "total_sites": len(set(r.site_id for r in self.utilization_records)),
+            "total_sites": len({r.site_id for r in self.utilization_records}),
             "healthy_sites": site_statuses.get("healthy", 0),
             "degraded_sites": site_statuses.get("degraded", 0),
             "critical_sites": site_statuses.get("critical", 0),
@@ -745,8 +744,7 @@ class DashboardDataProvider:
             region_counts[region] += 1
 
         summaries = []
-        for region in region_utilizations:
-            util_list = region_utilizations[region]
+        for region, util_list in region_utilizations.items():
             if util_list:
                 avg_util = sum(util_list) / len(util_list)
             else:
@@ -779,7 +777,14 @@ class DashboardDataProvider:
                 if trends and len(trends) > 1:
                     logger.debug(f"[TRENDS] Loaded {len(trends)} historical points from Redis")
                     return trends
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.warning(f"[TRENDS] Redis trends unavailable: {error}")
 
         # Fallback: Use current snapshot grouped by hour_key
@@ -823,7 +828,14 @@ class DashboardDataProvider:
                         f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis"
                     )
                     return throughput
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.warning(f"[THROUGHPUT] Redis throughput unavailable: {error}")
 
         # Fallback: Return current snapshot totals as single point
@@ -880,7 +892,7 @@ class DashboardDataProvider:
 
             avg_util = sum(utils) / len(utils) if utils else 0
             max_util = max(utils) if utils else 0
-            circuit_count = len(set((r.site_id, r.circuit_id) for r in self.utilization_records))
+            circuit_count = len({(r.site_id, r.circuit_id) for r in self.utilization_records})
 
             # Store snapshot
             success = self.redis_cache.store_utilization_snapshot(
@@ -902,7 +914,7 @@ class DashboardDataProvider:
                 )
 
             return success
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"[TRENDS] Failed to store snapshot: {error}")
             return False
 
@@ -927,7 +939,7 @@ class DashboardDataProvider:
             site_utils = [r for r in self.utilization_records if r.site_id == site_id]
             site_status = [r for r in self.status_records if r.site_id == site_id]
 
-            circuit_count = len(set(r.circuit_id for r in site_utils))
+            circuit_count = len({r.circuit_id for r in site_utils})
             avg_util = (
                 sum(r.utilization_pct for r in site_utils) / len(site_utils) if site_utils else 0
             )
@@ -1098,7 +1110,7 @@ class DashboardDataProvider:
             }
 
         # Get unique circuits from records
-        circuit_ids = set(r.circuit_id for r in self.utilization_records)
+        circuit_ids = {r.circuit_id for r in self.utilization_records}
 
         # Calculate per-circuit max utilization
         circuit_max_util: dict[str, float] = {}
@@ -1113,9 +1125,6 @@ class DashboardDataProvider:
         above_70 = sum(1 for util in circuit_max_util.values() if util >= 70)
         above_80 = sum(1 for util in circuit_max_util.values() if util >= 80)
         above_90 = sum(1 for util in circuit_max_util.values() if util >= 90)
-
-        # Circuit status from status records (most recent)
-        circuits_down = len(set(r.circuit_id for r in self.status_records if r.status_code == 0))
 
         # Count by role from circuit dimension
         primary_count = sum(1 for c in self.circuits if c.role == "primary")
@@ -1176,7 +1185,7 @@ class DashboardDataProvider:
 
         failover_count = 0
 
-        for site_id, circuits in site_circuits.items():
+        for circuits in site_circuits.values():
             # Find primary and secondary circuits
             primary = next((c for c in circuits if c.role == "primary"), None)
             secondary = next((c for c in circuits if c.role in ("secondary", "backup")), None)
@@ -1306,7 +1315,7 @@ class DashboardDataProvider:
                     "health_percentage": round(health_pct, 1),
                     "timestamp": summary.get("timestamp", 0),
                 }
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error getting VPN peer summary: {error}")
 
         return {
@@ -1339,7 +1348,7 @@ class DashboardDataProvider:
         try:
             if hasattr(self, "redis_cache") and self.redis_cache is not None:
                 return self.redis_cache.get_site_vpn_peers(site_id)
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error getting VPN peers for site {site_id}: {error}")
 
         return []
@@ -1376,7 +1385,7 @@ class DashboardDataProvider:
             elif hasattr(self, "redis_cache") and self.redis_cache is not None:
                 all_data = self.redis_cache.get_all_vpn_peers()
                 peers = []
-                for cache_key, data in all_data.items():
+                for data in all_data.values():
                     peers_by_port = data.get("peers_by_port", {})
                     for port_id, peer_list in peers_by_port.items():
                         for peer in peer_list:
@@ -1411,7 +1420,7 @@ class DashboardDataProvider:
 
             return table_data
 
-        except Exception as error:
+        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
             logger.error(f"Error getting VPN peer table data: {error}")
             return []
 
@@ -1480,7 +1489,14 @@ class DashboardDataProvider:
                     )
 
                 return result.get("results", [])
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error fetching gateway port time-series: {error}")
 
         return []
@@ -1539,7 +1555,14 @@ class DashboardDataProvider:
                     self.redis_cache.save_vpn_peer_timeseries(site_id, device_mac, peer_mac, result)
 
                 return result.get("results", [])
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error fetching VPN peer time-series: {error}")
 
         return []
@@ -1600,7 +1623,14 @@ class DashboardDataProvider:
                     )
 
                 return result.get("results", [])
-            except Exception as error:
+            except (
+                RuntimeError,
+                ValueError,
+                TypeError,
+                KeyError,
+                AttributeError,
+                OSError,
+            ) as error:
                 logger.error(f"Error fetching device metrics time-series: {error}")
 
         return []

@@ -198,9 +198,9 @@ class ChartBuilders:
             x=0.5,
             y=0.5,
             showarrow=False,
-            font=dict(size=14, color=COLORS["text_secondary"]),
+            font={"size": 14, "color": COLORS["text_secondary"]},
         )
-        fig.update_layout(template="plotly_dark", margin=dict(l=40, r=20, t=20, b=40))
+        fig.update_layout(template="plotly_dark", margin={"l": 40, "r": 20, "t": 20, "b": 40})
         return fig
 
     @staticmethod
@@ -221,8 +221,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
             tx_mbps = [t.get("tx_bps", 0) / 1_000_000 for t in timeseries_data]
@@ -233,7 +232,7 @@ class ChartBuilders:
                     y=rx_mbps,
                     mode="lines",
                     name="RX (Mbps)",
-                    line=dict(color=COLORS["info"], width=2),
+                    line={"color": COLORS["info"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(23, 162, 184, 0.15)",
                     hovertemplate="Time: %{x}<br>RX: %{y:.2f} Mbps<extra></extra>",
@@ -246,7 +245,7 @@ class ChartBuilders:
                     y=tx_mbps,
                     mode="lines",
                     name="TX (Mbps)",
-                    line=dict(color=COLORS["primary"], width=2),
+                    line={"color": COLORS["primary"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(226, 0, 116, 0.15)",
                     hovertemplate="Time: %{x}<br>TX: %{y:.2f} Mbps<extra></extra>",
@@ -257,11 +256,11 @@ class ChartBuilders:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=20, t=40, b=40),
-            title=dict(text=title, font=dict(size=14)),
+            margin={"l": 50, "r": 20, "t": 40, "b": 40},
+            title={"text": title, "font": {"size": 14}},
             xaxis_title="Time",
             yaxis_title="Bandwidth (Mbps)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
@@ -285,8 +284,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             loss_pct = [t.get("loss", 0) for t in timeseries_data]
             latency_ms = [t.get("latency", 0) for t in timeseries_data]
@@ -298,7 +296,7 @@ class ChartBuilders:
                     y=loss_pct,
                     mode="lines",
                     name="Loss (%)",
-                    line=dict(color=COLORS["critical"], width=2),
+                    line={"color": COLORS["critical"], "width": 2},
                     hovertemplate="Loss: %{y:.2f}%<extra></extra>",
                 ),
                 secondary_y=False,
@@ -310,7 +308,7 @@ class ChartBuilders:
                     y=latency_ms,
                     mode="lines",
                     name="Latency (ms)",
-                    line=dict(color=COLORS["warning"], width=2),
+                    line={"color": COLORS["warning"], "width": 2},
                     hovertemplate="Latency: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -322,7 +320,7 @@ class ChartBuilders:
                     y=jitter_ms,
                     mode="lines",
                     name="Jitter (ms)",
-                    line=dict(color=COLORS["info"], width=2, dash="dot"),
+                    line={"color": COLORS["info"], "width": 2, "dash": "dot"},
                     hovertemplate="Jitter: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -332,9 +330,9 @@ class ChartBuilders:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=50, t=40, b=40),
-            title=dict(text=title, font=dict(size=14)),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin={"l": 50, "r": 50, "t": 40, "b": 40},
+            title={"text": title, "font": {"size": 14}},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
@@ -393,7 +391,9 @@ class ChartBuilders:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=50, b=20), height=200)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 50, "b": 20}, height=200
+        )
 
         return fig
 
