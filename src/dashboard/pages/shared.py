@@ -56,7 +56,7 @@ class NavigationBar:
         Build navigation bar with breadcrumbs.
 
         Args:
-            current_page: Current page title
+            _current_page: Current page title. The method does not use it.
             breadcrumbs: List of {label, href} for breadcrumb trail
             show_home: Whether to show home link
 
