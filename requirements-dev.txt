@@ -4,4 +4,5 @@
 # The tests import the code in src, so this file also installs requirements.txt.
 -r requirements.txt
 bandit>=1.9.4,<2
+black>=26.5.1,<27
 pip-audit>=2.10.1,<3
