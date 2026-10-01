@@ -69,14 +69,14 @@ class VPNPeerPage:
         # Use provided data_provider or fall back to instance provider
         if data_provider is not None:
             self.data_provider = data_provider
-        breadcrumbs = [{"label": "VPN Peer Details", "href": None}]
+        breadcrumbs: list[dict[str, str | None]] = [{"label": "VPN Peer Details", "href": None}]
 
         return html.Div(
             [
                 # Store peer context
                 dcc.Store(id="vpn-peer-context", data={"site_id": site_id, "peer_id": peer_id}),
                 # Navigation bar
-                NavigationBar.build("VPN Peer Details", breadcrumbs),  # type: ignore[arg-type]  # possible bug, see #28
+                NavigationBar.build("VPN Peer Details", breadcrumbs),
                 # Main container
                 dbc.Container(
                     [

@@ -13,7 +13,7 @@ Split into focused classes per 5-item rule:
 import asyncio
 import logging
 from collections.abc import Callable
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import aiohttp
 
@@ -135,7 +135,7 @@ class AsyncMistConnection:
                         )
 
                     response.raise_for_status()
-                    return await response.json()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+                    return cast(dict[str, Any], await response.json())
 
             except RateLimitError:
                 raise  # Don't retry 429 errors, propagate immediately
@@ -311,7 +311,7 @@ class AsyncMistStatsOperations:
             )
 
             # Response is a list directly for this endpoint
-            batch = data if isinstance(data, list) else []  # type: ignore[var-annotated]  # collection type is established by later runtime data
+            batch: list[dict[str, Any]] = data if isinstance(data, list) else []
             all_devices.extend(batch)
 
             logger.debug(f"Retrieved {len(batch)} device stats from page {page}")

@@ -18,7 +18,7 @@ import logging
 import os
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from src.utils.performance import PerformanceTimer
 
@@ -32,7 +32,7 @@ try:
 
     REDIS_AVAILABLE = True
 except ImportError:
-    redis = None  # type: ignore[assignment]
+    redis = None  # type: ignore[assignment]  # optional dependency fallback keeps import-time module name available
 
 
 class RedisCache:
@@ -245,7 +245,7 @@ class RedisCache:
         """Retrieve organization data."""
         try:
             data = self.client.get(self.PREFIX_ORG)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving organization data: {error}")
             return None
@@ -266,7 +266,7 @@ class RedisCache:
         """Retrieve sites list."""
         try:
             data = self.client.get(self.PREFIX_SITES)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(list[dict[str, Any]] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving sites data: {error}")
             return None
@@ -289,7 +289,7 @@ class RedisCache:
         """Retrieve site groups mapping."""
         try:
             data = self.client.get(self.PREFIX_SITEGROUPS)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, str] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site groups: {error}")
             return None
@@ -329,7 +329,7 @@ class RedisCache:
             result = self._deserialize(data)
             if result:
                 logger.info(f"[OK] Retrieved {len(result)} port stats from cache")
-            return result  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(list[dict[str, Any]] | None, result)
         except Exception as error:
             logger.error(f"Error retrieving port stats: {error}")
             return None
@@ -372,7 +372,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_PORT_STATS}:site:{site_id}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site port stats for {site_id}: {error}")
             return None
@@ -394,7 +394,7 @@ class RedisCache:
 
         timestamp = cached.get("timestamp", 0)
         age = time.time() - timestamp
-        return age < max_age_seconds  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+        return cast(bool, age < max_age_seconds)
 
     def get_stale_site_ids(self, site_ids: list[str], max_age_seconds: int = 3600) -> list[str]:
         """
@@ -688,7 +688,7 @@ class RedisCache:
         """Retrieve calculated utilization records."""
         try:
             data = self.client.get(self.PREFIX_UTILIZATION)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(list[dict[str, Any]] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving utilization records: {error}")
             return None
@@ -787,7 +787,7 @@ class RedisCache:
             removed = self.client.zremrangebyscore(key, "-inf", cutoff)
             if removed > 0:
                 logger.debug(f"Pruned {removed} old records from {key}")
-            return removed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(int, removed)
         except Exception as error:
             logger.error(f"Error pruning history: {error}")
             return 0
@@ -1340,7 +1340,7 @@ class RedisCache:
         """
         try:
             data = self.client.get(f"{self.PREFIX_SLE}:current")
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving SLE snapshot: {error}")
             return None
@@ -1398,7 +1398,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SLE}:worst:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving worst sites for {metric}: {error}")
             return None
@@ -1455,7 +1455,7 @@ class RedisCache:
         """
         try:
             data = self.client.get(f"{self.PREFIX_ALARMS}:current")
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving alarms: {error}")
             return None
@@ -1489,7 +1489,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_ALARMS}:id:{alarm_id}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving alarm {alarm_id}: {error}")
             return None
@@ -1594,7 +1594,7 @@ class RedisCache:
         """
         try:
             data = self.client.get(f"{self.PREFIX_GATEWAY}:inventory")
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving gateway inventory: {error}")
             return None
@@ -1690,7 +1690,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_VPN_PEERS}:{gateway_id}:{mac}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving VPN peers for {gateway_id}: {error}")
             return None
@@ -1919,7 +1919,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site SLE summary: {error}")
             return None
@@ -1953,7 +1953,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site SLE histogram: {error}")
             return None
@@ -1987,7 +1987,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site impacted gateways: {error}")
             return None
@@ -2021,7 +2021,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site impacted interfaces: {error}")
             return None
@@ -2055,7 +2055,7 @@ class RedisCache:
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
             data = self.client.get(key)
-            return self._deserialize(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+            return cast(dict[str, Any] | None, self._deserialize(data))
         except Exception as error:
             logger.error(f"Error retrieving site SLE threshold: {error}")
             return None
@@ -2676,7 +2676,7 @@ class RedisCache:
             Dictionary with cache statistics
         """
         try:
-            stats = {  # type: ignore[var-annotated]  # collection type is established by later runtime data
+            stats: dict[str, Any] = {
                 "connected": self.is_connected(),
                 "last_update": None,
                 "cache_age_seconds": None,
@@ -2687,27 +2687,27 @@ class RedisCache:
 
             last_update = self.get_last_update()
             if last_update:
-                stats["last_update"] = datetime.fromtimestamp(last_update, tz=UTC).isoformat()  # type: ignore[assignment]  # possible bug, see #28
-                stats["cache_age_seconds"] = round(time.time() - last_update, 1)  # type: ignore[assignment]  # possible bug, see #28
+                stats["last_update"] = datetime.fromtimestamp(last_update, tz=UTC).isoformat()
+                stats["cache_age_seconds"] = round(time.time() - last_update, 1)
 
             # Count keys by prefix
             for prefix_name in ["org", "sites", "sitegroups", "port_stats", "utilization"]:
                 key = f"mistwan:{prefix_name}"
-                stats["keys"][prefix_name] = self.client.exists(key)  # type: ignore[index]  # possible bug, see #28
+                stats["keys"][prefix_name] = self.client.exists(key)
 
             # Count per-site port stats and history keys
             site_keys = self.client.keys(f"{self.PREFIX_PORT_STATS}:site:*")
-            stats["keys"]["per_site_port_stats"] = len(site_keys)  # type: ignore[index]  # possible bug, see #28
+            stats["keys"]["per_site_port_stats"] = len(site_keys)
 
             history_keys = self.client.keys(f"{self.PREFIX_HISTORY}:*")
-            stats["keys"]["history_series"] = len(history_keys)  # type: ignore[index]  # possible bug, see #28
+            stats["keys"]["history_series"] = len(history_keys)
 
             # Count SLE and Alarms keys
             sle_keys = self.client.keys(f"{self.PREFIX_SLE}:*")
-            stats["keys"]["sle_keys"] = len(sle_keys)  # type: ignore[index]  # possible bug, see #28
+            stats["keys"]["sle_keys"] = len(sle_keys)
 
             alarms_keys = self.client.keys(f"{self.PREFIX_ALARMS}:*")
-            stats["keys"]["alarms_keys"] = len(alarms_keys)  # type: ignore[index]  # possible bug, see #28
+            stats["keys"]["alarms_keys"] = len(alarms_keys)
 
             # Get persistence configuration
             stats["persistence"] = self.get_persistence_config()

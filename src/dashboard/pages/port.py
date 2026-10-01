@@ -75,12 +75,12 @@ class PortPage:
             self.data_provider = data_provider
 
         # Build breadcrumbs
-        breadcrumbs = []
+        breadcrumbs: list[dict[str, str | None]] = []
         if gateway_id:
             breadcrumbs.append(
                 {"label": "Gateway", "href": f"/gateway/{gateway_id}?site_id={site_id}"}
             )
-        breadcrumbs.append({"label": "Port Details", "href": None})  # type: ignore[dict-item]  # possible bug, see #28
+        breadcrumbs.append({"label": "Port Details", "href": None})
 
         return html.Div(
             [

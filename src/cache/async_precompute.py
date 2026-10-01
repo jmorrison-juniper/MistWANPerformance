@@ -16,7 +16,7 @@ import logging
 import time
 from concurrent.futures import ProcessPoolExecutor
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -466,7 +466,10 @@ class AsyncDashboardPrecomputer:
     def _compute_active_alerts(self) -> list[dict[str, Any]]:
         """Compute active alerts."""
         circuit_states = self.data_provider._get_all_circuit_states()
-        return self.data_provider.current_state_views.get_active_alerts(circuit_states)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+        return cast(
+            list[dict[str, Any]],
+            self.data_provider.current_state_views.get_active_alerts(circuit_states),
+        )
 
     def _compute_circuit_summary(self) -> dict[str, Any]:
         """Compute circuit summary including bandwidth."""
@@ -585,7 +588,7 @@ class AsyncDashboardPrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(full_key)
                 if data:
-                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+                    return cast(dict[str, Any] | None, json.loads(data))
         except Exception as error:
             logger.warning(f"[WARN] Failed to get precomputed {key}: {error}")
 
@@ -798,7 +801,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+                    return cast(dict[str, Any] | None, json.loads(data))
         except Exception as error:
             logger.debug(f"Failed to get site SLE {site_id[:8]}: {error}")
 
@@ -879,7 +882,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
+                    return cast(dict[str, Any] | None, json.loads(data))
         except Exception as error:
             logger.debug(f"Failed to get site VPN {site_id[:8]}: {error}")
 

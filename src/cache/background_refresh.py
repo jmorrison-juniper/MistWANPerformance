@@ -16,7 +16,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
 from src.api.async_mist_client import AsyncMistAPIClient
 from src.api.mist_client import RateLimitError, get_rate_limit_status, is_rate_limited
@@ -182,8 +182,11 @@ class AsyncBackgroundRefreshWorker:
     def _get_stale_sites(self) -> tuple:
         """Get stale site IDs and cache statistics."""
         if hasattr(self.cache, "get_stale_site_ids_pipelined"):
-            return self.cache.get_stale_site_ids_pipelined(  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
-                self.site_ids, max_age_seconds=self.max_age_seconds
+            return cast(
+                tuple,
+                self.cache.get_stale_site_ids_pipelined(
+                    self.site_ids, max_age_seconds=self.max_age_seconds
+                ),
             )
 
         site_ages = self.cache.get_sites_sorted_by_cache_age(self.site_ids)
@@ -501,9 +504,9 @@ class BackgroundRefreshWorker:
                     f"[ERROR] Background refresh error: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
                 )
                 # Brief pause on error before retry (0.1s to prevent CPU spin)
-                self._interruptible_sleep(0.1)  # type: ignore[arg-type]  # possible bug, see #28
+                self._interruptible_sleep(0.1)
 
-    def _interruptible_sleep(self, seconds: int) -> None:
+    def _interruptible_sleep(self, seconds: float) -> None:
         """Sleep that can be interrupted by stop()."""
         end_time = time.time() + seconds
         while self._running and time.time() < end_time:

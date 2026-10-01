@@ -67,7 +67,7 @@ class GatewayPage:
         # Use provided data_provider or fall back to instance provider
         if data_provider is not None:
             self.data_provider = data_provider
-        breadcrumbs = [{"label": "Gateway Details", "href": None}]
+        breadcrumbs: list[dict[str, str | None]] = [{"label": "Gateway Details", "href": None}]
 
         return html.Div(
             [
@@ -76,7 +76,7 @@ class GatewayPage:
                     id="gateway-context", data={"gateway_id": gateway_id, "site_id": site_id}
                 ),
                 # Navigation bar
-                NavigationBar.build("Gateway Details", breadcrumbs),  # type: ignore[arg-type]  # possible bug, see #28
+                NavigationBar.build("Gateway Details", breadcrumbs),
                 # Main container
                 dbc.Container(
                     [
@@ -199,7 +199,7 @@ class GatewayPage:
                 ),
                 dbc.CardBody(
                     [
-                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+                        dash_table.DataTable(
                             id="gw-wan-ports-table",
                             columns=[
                                 {"name": "Port", "id": "port_name", "presentation": "markdown"},
@@ -254,7 +254,7 @@ class GatewayPage:
                 ),
                 dbc.CardBody(
                     [
-                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+                        dash_table.DataTable(
                             id="gw-vpn-peers-table",
                             columns=[
                                 {"name": "Peer", "id": "peer_name", "presentation": "markdown"},

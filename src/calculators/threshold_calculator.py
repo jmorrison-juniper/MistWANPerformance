@@ -180,7 +180,7 @@ class ThresholdCalculator:
         Returns:
             Dictionary with individual and overall health assessment
         """
-        results = {
+        results: dict[str, Any] = {
             "utilization": {"value": utilization_pct, "severity": "unknown"},
             "loss": {"value": loss_pct, "severity": "unknown"},
             "jitter": {"value": jitter_ms, "severity": "unknown"},
@@ -194,28 +194,28 @@ class ThresholdCalculator:
         if utilization_pct is not None:
             thresholds = self.get_utilization_thresholds(region, store_type)
             severity = self.get_severity(utilization_pct, thresholds)
-            results["utilization"]["severity"] = severity  # type: ignore[index]  # possible bug, see #28
+            results["utilization"]["severity"] = severity
             severities.append(severity)
 
         # Evaluate loss
         if loss_pct is not None:
             thresholds = self.get_quality_thresholds("loss", region, store_type)
             severity = self.get_severity(loss_pct, thresholds)
-            results["loss"]["severity"] = severity  # type: ignore[index]  # possible bug, see #28
+            results["loss"]["severity"] = severity
             severities.append(severity)
 
         # Evaluate jitter
         if jitter_ms is not None:
             thresholds = self.get_quality_thresholds("jitter", region, store_type)
             severity = self.get_severity(jitter_ms, thresholds)
-            results["jitter"]["severity"] = severity  # type: ignore[index]  # possible bug, see #28
+            results["jitter"]["severity"] = severity
             severities.append(severity)
 
         # Evaluate latency
         if latency_ms is not None:
             thresholds = self.get_quality_thresholds("latency", region, store_type)
             severity = self.get_severity(latency_ms, thresholds)
-            results["latency"]["severity"] = severity  # type: ignore[index]  # possible bug, see #28
+            results["latency"]["severity"] = severity
             severities.append(severity)
 
         # Determine overall health (worst case)

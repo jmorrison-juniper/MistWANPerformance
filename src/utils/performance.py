@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Optional, Self
+from typing import Any, Self, cast
 
 logger = logging.getLogger(__name__)
 
@@ -32,28 +32,30 @@ class PerformanceMetrics:
     Singleton pattern ensures all timing data goes to one place.
     """
 
-    _instance: Optional["PerformanceMetrics"] = None
+    _instance: "PerformanceMetrics | None" = None
+    _metrics: dict[str, list[float]]
+    _enabled: bool
 
     def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._metrics: dict[str, list[float]] = {}  # type: ignore[attr-defined,misc]  # attribute is created dynamically at runtime
+            cls._instance._metrics = {}
             cls._instance._enabled = True
-        return cls._instance  # type: ignore[return-value]  # possible bug, see #28
+        return cast(Self, cls._instance)
 
     def record(self, operation: str, elapsed_ms: float) -> None:
         """Record a timing measurement."""
         if not self._enabled:
             return
 
-        if operation not in self._metrics:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
-            self._metrics[operation] = []  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        if operation not in self._metrics:
+            self._metrics[operation] = []
 
         # Keep last 100 measurements per operation
-        if len(self._metrics[operation]) >= 100:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
-            self._metrics[operation].pop(0)  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        if len(self._metrics[operation]) >= 100:
+            self._metrics[operation].pop(0)
 
-        self._metrics[operation].append(elapsed_ms)  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        self._metrics[operation].append(elapsed_ms)
 
     def get_stats(self, operation: str) -> dict[str, float]:
         """
@@ -62,7 +64,7 @@ class PerformanceMetrics:
         Returns:
             Dict with count, avg, min, max, last
         """
-        measurements = self._metrics.get(operation, [])  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        measurements = self._metrics.get(operation, [])
         if not measurements:
             return {"count": 0, "avg": 0, "min": 0, "max": 0, "last": 0}
 
@@ -76,11 +78,11 @@ class PerformanceMetrics:
 
     def get_all_stats(self) -> dict[str, dict[str, float]]:
         """Get statistics for all recorded operations."""
-        return {op: self.get_stats(op) for op in self._metrics}  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        return {op: self.get_stats(op) for op in self._metrics}
 
     def clear(self) -> None:
         """Clear all metrics."""
-        self._metrics.clear()  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
+        self._metrics.clear()
 
     def enable(self) -> None:
         """Enable metric collection."""
