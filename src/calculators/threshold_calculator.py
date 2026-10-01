@@ -180,7 +180,7 @@ class ThresholdCalculator:
         Returns:
             Dictionary with individual and overall health assessment
         """
-        results = {
+        results: dict[str, Any] = {
             "utilization": {"value": utilization_pct, "severity": "unknown"},
             "loss": {"value": loss_pct, "severity": "unknown"},
             "jitter": {"value": jitter_ms, "severity": "unknown"},

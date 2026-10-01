@@ -25,8 +25,8 @@ try:
 
     MIST_API_AVAILABLE = True
 except ImportError:
-    mistapi = None  # type: ignore[assignment]
-    APISession = None  # type: ignore[assignment, misc]
+    mistapi = None  # type: ignore[assignment]  # optional dependency fallback keeps import-time module names available
+    APISession = None  # type: ignore[assignment, misc]  # optional dependency fallback keeps import-time module names available
 
 from src.utils.config import MistConfig, OperationalConfig
 
@@ -71,7 +71,7 @@ class RateLimitState:
         Returns:
             Seconds until the top of the next hour (reset time)
         """
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # singleton _lock starts as None and is created in __new__
             self.rate_limited = True
             self.rate_limit_hit_time = time.time()
             self._hit_count += 1
@@ -102,11 +102,11 @@ class RateLimitState:
         Returns:
             True if currently rate limited, False if clear
         """
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # singleton _lock starts as None and is created in __new__
             if not self.rate_limited:
                 return False
 
-            if time.time() >= self.rate_limit_reset_time:
+            if time.time() >= self.rate_limit_reset_time:  # type: ignore[operator]  # rate_limit_reset_time is set whenever rate_limited is True
                 self.rate_limited = False
                 self.rate_limit_hit_time = None
                 self.rate_limit_reset_time = None
@@ -117,14 +117,14 @@ class RateLimitState:
 
     def seconds_until_reset(self) -> float | None:
         """Get seconds remaining until rate limit resets."""
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # singleton _lock starts as None and is created in __new__
             if not self.rate_limited or not self.rate_limit_reset_time:
                 return None
             return max(0, self.rate_limit_reset_time - time.time())
 
     def get_status(self) -> dict[str, Any]:
         """Get current rate limit status for status bar display."""
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # singleton _lock starts as None and is created in __new__
             if not self.rate_limited:
                 return {
                     "rate_limited": False,
@@ -219,7 +219,7 @@ class MistConnection:
     def _initialize_session(self) -> None:
         """Initialize the Mist API session."""
         try:
-            self.session = APISession(  # type: ignore[misc]
+            self.session = APISession(  # type: ignore[misc]  # optional APISession constructor is present only when mistapi imports
                 host=self.config.api_host, apitoken=self.config.api_token
             )
             logger.debug("Mist API session initialized successfully")
@@ -347,7 +347,7 @@ class MistSiteOperations:
             logger.info("[...] Testing Mist API connection")
             result = self.connection.execute_with_retry(
                 "Get organization info",
-                mistapi.api.v1.orgs.orgs.getOrg,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.orgs.getOrg,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
             )
@@ -367,13 +367,13 @@ class MistSiteOperations:
         """
         logger.info("[...] Retrieving organization sites")
 
-        sites = []
+        sites: list[dict[str, Any]] = []
         page = 1
 
         while True:
             response = self.connection.execute_with_retry(
                 f"Get sites (page {page})",
-                mistapi.api.v1.orgs.sites.listOrgSites,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.sites.listOrgSites,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
                 limit=1000,
@@ -407,7 +407,7 @@ class MistSiteOperations:
         while True:
             response = self.connection.execute_with_retry(
                 f"Get site groups (page {page})",
-                mistapi.api.v1.orgs.sitegroups.listOrgSiteGroups,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.sitegroups.listOrgSiteGroups,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
                 limit=1000,
@@ -445,7 +445,7 @@ class MistSiteOperations:
 
         response = self.connection.execute_with_retry(
             f"Get WAN edges for site {site_id}",
-            mistapi.api.v1.sites.devices.listSiteDevices,  # type: ignore[union-attr]
+            mistapi.api.v1.sites.devices.listSiteDevices,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
             self.connection.session,
             site_id,
             type="gateway",  # CRITICAL: Must specify type=gateway for WAN devices
@@ -474,13 +474,13 @@ class MistSiteOperations:
         """
         logger.info("[...] Retrieving gateway inventory status")
 
-        all_gateways = []
+        all_gateways: list[dict[str, Any]] = []
         page = 1
 
         while True:
             response = self.connection.execute_with_retry(
                 f"Get gateway inventory (page {page})",
-                mistapi.api.v1.orgs.inventory.getOrgInventory,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.inventory.getOrgInventory,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
                 type="gateway",  # Filter to gateway devices only
@@ -571,7 +571,7 @@ class MistStatsOperations:
             batch_count += 1
             response = self.connection.execute_with_retry(
                 f"Get gateway port stats (batch {batch_count})",
-                mistapi.api.v1.orgs.stats.searchOrgSwOrGwPorts,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.stats.searchOrgSwOrGwPorts,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
                 type="gateway",  # CRITICAL: Filter to gateway devices only
@@ -616,13 +616,13 @@ class MistStatsOperations:
         """
         logger.info("[...] Retrieving organization gateway device stats")
 
-        all_devices = []
+        all_devices: list[dict[str, Any]] = []
         page = 1
 
         while True:
             response = self.connection.execute_with_retry(
                 f"Get gateway device stats (page {page})",
-                mistapi.api.v1.orgs.stats.listOrgDevicesStats,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.stats.listOrgDevicesStats,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 self.connection.config.org_id,
                 page=page,
@@ -672,7 +672,7 @@ class MistStatsOperations:
 
         response = self.connection.execute_with_retry(
             f"Get WAN edge stats for {device_id}",
-            mistapi.api.v1.sites.stats.getSiteDeviceStats,  # type: ignore[union-attr]
+            mistapi.api.v1.sites.stats.getSiteDeviceStats,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
             self.connection.session,
             **api_kwargs,
         )
@@ -722,7 +722,7 @@ class MistStatsOperations:
 
             response = self.connection.execute_with_retry(
                 f"Get WAN edge events for {device_id} (page {page})",
-                mistapi.api.v1.sites.devices.searchSiteDeviceEvents,  # type: ignore[union-attr]
+                mistapi.api.v1.sites.devices.searchSiteDeviceEvents,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -765,7 +765,7 @@ class MistStatsOperations:
 
         response = self.connection.execute_with_retry(
             "Get org WAN client stats",
-            mistapi.api.v1.orgs.stats.searchOrgWanClientStats,  # type: ignore[union-attr]
+            mistapi.api.v1.orgs.stats.searchOrgWanClientStats,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
             self.connection.session,
             **api_kwargs,
         )
@@ -855,7 +855,7 @@ class MistInsightsOperations:
 
             response = self.connection.execute_with_retry(
                 f"Get org sites SLE (page {page})",
-                mistapi.api.v1.orgs.insights.getOrgSitesSle,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.insights.getOrgSitesSle,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -924,7 +924,7 @@ class MistInsightsOperations:
 
         response = self.connection.execute_with_retry(
             "Get org worst sites by SLE",
-            mistapi.api.v1.orgs.insights.getOrgSle,  # type: ignore[union-attr]
+            mistapi.api.v1.orgs.insights.getOrgSle,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
             self.connection.session,
             **api_kwargs,
         )
@@ -1003,7 +1003,7 @@ class MistInsightsOperations:
 
             response = self.connection.execute_with_retry(
                 f"Search org alarms (page {page_num})",
-                mistapi.api.v1.orgs.alarms.searchOrgAlarms,  # type: ignore[union-attr]
+                mistapi.api.v1.orgs.alarms.searchOrgAlarms,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -1259,7 +1259,7 @@ class MistInsightsOperations:
         try:
             response = self.connection.execute_with_retry(
                 f"Get gateway port time-series ({device_mac})",
-                mistapi.api.v1.sites.insights.getSiteGatewayMetrics,  # type: ignore[union-attr]
+                mistapi.api.v1.sites.insights.getSiteGatewayMetrics,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -1361,7 +1361,7 @@ class MistInsightsOperations:
         try:
             response = self.connection.execute_with_retry(
                 f"Get VPN peer metrics time-series ({clean_mac})",
-                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]
+                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -1452,7 +1452,7 @@ class MistInsightsOperations:
         try:
             response = self.connection.execute_with_retry(
                 f"Get device insight metric ({metric})",
-                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]
+                mistapi.api.v1.sites.insights.getSiteInsightMetricsForDevice,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
                 self.connection.session,
                 **api_kwargs,
             )
@@ -1535,7 +1535,7 @@ class MistInsightsOperations:
 
         response = self.connection.execute_with_retry(
             f"Get site SLE trend ({metric})",
-            mistapi.api.v1.sites.sle.getSiteSleSummaryTrend,  # type: ignore[union-attr]
+            mistapi.api.v1.sites.sle.getSiteSleSummaryTrend,  # type: ignore[union-attr]  # mistapi exposes versioned API attributes dynamically
             self.connection.session,
             **api_kwargs,
         )

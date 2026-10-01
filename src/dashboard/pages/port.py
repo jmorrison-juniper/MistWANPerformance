@@ -75,7 +75,7 @@ class PortPage:
             self.data_provider = data_provider
 
         # Build breadcrumbs
-        breadcrumbs = []
+        breadcrumbs: list[dict[str, str | None]] = []
         if gateway_id:
             breadcrumbs.append(
                 {"label": "Gateway", "href": f"/gateway/{gateway_id}?site_id={site_id}"}

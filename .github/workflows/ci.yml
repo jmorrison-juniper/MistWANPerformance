@@ -20,9 +20,8 @@ jobs:
   # Each job installs requirements-dev.txt. Each check name starts with the job
   # ID, for example "gates / pytest (tests)".
   #
-  # The mypy gate stays off, because it fails on the current code. mypy
-  # reports 129 errors. Turn a gate on in the pull request that fixes its
-  # findings.
+  # The shared workflow reports each gate result to the quality-gate issue
+  # sync job below.
   gates:
     permissions:
       contents: read
@@ -33,6 +32,7 @@ jobs:
       ruff: true
       black: true
       vulture: true
+      mypy: true
       pytest: true
       bandit: true
       pip-audit: true

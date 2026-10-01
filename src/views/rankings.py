@@ -48,8 +48,8 @@ class RankedCircuit:
     rank: int
     site_id: str
     site_name: str | None
-    port_id: str
-    bandwidth_mbps: int
+    port_id: str | None
+    bandwidth_mbps: float
     metric_value: float
     metric_name: str
     threshold_status: str  # "normal", "warning", "high", "critical"

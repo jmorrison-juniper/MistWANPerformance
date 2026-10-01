@@ -7,7 +7,7 @@ without a live Mist API or Redis cache.
 
 import logging
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from urllib.parse import quote, unquote
 
 import plotly.graph_objects as go
@@ -109,7 +109,7 @@ def _site_name(provider: Any, site_id: str | None) -> str:
         return EMPTY
     lookup = getattr(provider, "site_lookup", {}) or {}
     if site_id in lookup:
-        return lookup[site_id]
+        return cast(str, lookup[site_id])
     for site in getattr(provider, "sites", []) or []:
         if isinstance(site, dict):
             if site.get("id") == site_id or site.get("site_id") == site_id:

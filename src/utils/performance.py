@@ -20,7 +20,7 @@ import logging
 import time
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Optional, Self
+from typing import Any, Self, cast
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +32,16 @@ class PerformanceMetrics:
     Singleton pattern ensures all timing data goes to one place.
     """
 
-    _instance: Optional["PerformanceMetrics"] = None
+    _instance: "PerformanceMetrics | None" = None
+    _metrics: dict[str, list[float]]
+    _enabled: bool
 
     def __new__(cls) -> Self:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._metrics: dict[str, list[float]] = {}
+            cls._instance._metrics = {}
             cls._instance._enabled = True
-        return cls._instance
+        return cast(Self, cls._instance)
 
     def record(self, operation: str, elapsed_ms: float) -> None:
         """Record a timing measurement."""

@@ -13,7 +13,7 @@ import logging
 import threading
 import time
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -185,7 +185,7 @@ class SiteSlePrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)
+                    return cast(dict[str, Any] | None, json.loads(data))
         except Exception as error:
             logger.debug(f"Failed to get site SLE {site_id}: {error}")
 
@@ -374,7 +374,7 @@ class SiteVpnPrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)
+                    return cast(dict[str, Any] | None, json.loads(data))
         except Exception as error:
             logger.debug(f"Failed to get site VPN {site_id}: {error}")
 

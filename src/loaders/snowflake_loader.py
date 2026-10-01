@@ -10,12 +10,14 @@ from typing import Any
 
 # Handle optional snowflake dependency
 SNOWFLAKE_AVAILABLE = False
-snowflake_connector = None
-DictCursor = None
+snowflake_connector: Any = None
+DictCursor: Any = None
 
 try:
     import snowflake.connector as snowflake_connector
-    from snowflake.connector import DictCursor
+    from snowflake.connector import (
+        DictCursor,
+    )
 
     SNOWFLAKE_AVAILABLE = True
 except ImportError:

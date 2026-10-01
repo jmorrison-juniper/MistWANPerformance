@@ -20,7 +20,7 @@ from typing import Any, ClassVar, cast
 from urllib.parse import parse_qs, unquote
 
 import dash
-import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
+import dash_bootstrap_components as dbc  # type: ignore[import-untyped]  # dash-bootstrap-components has no bundled stubs
 import plotly.graph_objects as go
 from dash import Input, Output, State, dash_table, dcc, html
 from dash.exceptions import PreventUpdate
@@ -785,7 +785,7 @@ class WANPerformanceDashboard:
                                                                 "fontWeight": "bold",
                                                                 "borderBottom": f"2px solid {self.COLORS['primary']}",
                                                             },
-                                                            style_data_conditional=[  # type: ignore[arg-type]
+                                                            style_data_conditional=[  # type: ignore[arg-type]  # Dash accepts style_data_conditional dictionaries at runtime
                                                                 {
                                                                     "if": {
                                                                         "filter_query": "{threshold_status} = critical"
@@ -896,7 +896,7 @@ class WANPerformanceDashboard:
                                                                 "fontWeight": "bold",
                                                                 "borderBottom": f"2px solid {self.COLORS['primary']}",
                                                             },
-                                                            style_data_conditional=[  # type: ignore[arg-type]
+                                                            style_data_conditional=[  # type: ignore[arg-type]  # Dash accepts style_data_conditional dictionaries at runtime
                                                                 {
                                                                     "if": {
                                                                         "filter_query": "{gateway_health} < 90"

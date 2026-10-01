@@ -69,7 +69,7 @@ class VPNPeerPage:
         # Use provided data_provider or fall back to instance provider
         if data_provider is not None:
             self.data_provider = data_provider
-        breadcrumbs = [{"label": "VPN Peer Details", "href": None}]
+        breadcrumbs: list[dict[str, str | None]] = [{"label": "VPN Peer Details", "href": None}]
 
         return html.Div(
             [

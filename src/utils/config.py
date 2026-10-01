@@ -8,6 +8,7 @@ and configuration files.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import cast
 
 from dotenv import load_dotenv
 
@@ -228,4 +229,4 @@ class Config:
                 return overrides[attr_name]
 
         # Return default threshold
-        return getattr(self.thresholds, attr_name)
+        return cast(float, getattr(self.thresholds, attr_name))

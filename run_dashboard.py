@@ -26,7 +26,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from src.cache.async_precompute import (
     AsyncDashboardPrecomputer,
@@ -347,17 +347,17 @@ def stop_async_precomputers() -> None:
     if _dashboard_precomputer:
         _dashboard_precomputer._running = False
         if _dashboard_precomputer._task:
-            _async_loop.call_soon_threadsafe(_dashboard_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_dashboard_precomputer._task.cancel)  # type: ignore[union-attr]  # start_async_precomputers sets _async_loop before it creates a task
 
     if _site_sle_precomputer:
         _site_sle_precomputer._running = False
         if _site_sle_precomputer._task:
-            _async_loop.call_soon_threadsafe(_site_sle_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_site_sle_precomputer._task.cancel)  # type: ignore[union-attr]  # start_async_precomputers sets _async_loop before it creates a task
 
     if _site_vpn_precomputer:
         _site_vpn_precomputer._running = False
         if _site_vpn_precomputer._task:
-            _async_loop.call_soon_threadsafe(_site_vpn_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_site_vpn_precomputer._task.cancel)  # type: ignore[union-attr]  # start_async_precomputers sets _async_loop before it creates a task
 
     # Stop the event loop
     if _async_loop and _async_loop.is_running():
@@ -535,7 +535,7 @@ def load_from_cache(cache, config: Config) -> tuple:
 
 def _process_port_batch(
     port_batch: list[dict[str, Any]], site_lookup_keys: set, current_hour: str
-) -> tuple[list[dict], list[dict], int]:
+) -> tuple[list[dict], list[dict], int, int, int]:
     """
     Process a batch of port stats in parallel.
 
@@ -654,8 +654,8 @@ def process_port_stats_to_utilization(
     current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
     # Log diagnostic info (sample first 500)
-    port_usage_counts = {}
-    device_type_counts = {}
+    port_usage_counts: dict[str, int] = {}
+    device_type_counts: dict[str, int] = {}
     for port in port_stats[:500]:
         usage = port.get("port_usage", "NONE")
         device_type = port.get("device_type", "unknown")
@@ -665,7 +665,7 @@ def process_port_stats_to_utilization(
     logger.info(f"[DEBUG] Device types in sample (500): {device_type_counts}")
 
     # Count device types across ALL data
-    all_device_types = {}
+    all_device_types: dict[str, int] = {}
     for port in port_stats:
         device_type = port.get("device_type", "unknown")
         all_device_types[device_type] = all_device_types.get(device_type, 0) + 1
@@ -701,7 +701,9 @@ def process_port_stats_to_utilization(
             ]
 
             for future in as_completed(futures):
-                circuits, util_records, wan_count, wan_down, wan_disabled = future.result()
+                circuits, util_records, wan_count, wan_down, wan_disabled = cast(
+                    Any, future.result()
+                )
                 all_circuits.extend(circuits)
                 all_utilization_records.extend(util_records)
                 total_wan_count += wan_count

@@ -50,7 +50,7 @@ class NavigationBar:
 
     @staticmethod
     def build(
-        _current_page: str, breadcrumbs: list[dict[str, str]], show_home: bool = True
+        _current_page: str, breadcrumbs: list[dict[str, str | None]], show_home: bool = True
     ) -> dbc.Navbar:
         """
         Build navigation bar with breadcrumbs.
@@ -163,7 +163,7 @@ class StatusCards:
         Returns:
             Bootstrap card component
         """
-        color = COLORS.get(status, COLORS["text_primary"])
+        color = COLORS.get(status, COLORS["text_primary"])  # type: ignore[arg-type]  # dict.get returns the default for None
 
         trend_icon = ""
         if trend == "up":
@@ -480,7 +480,7 @@ class PageLayout:
     def wrap(
         page_id: str,
         title: str,
-        breadcrumbs: list[dict[str, str]],
+        breadcrumbs: list[dict[str, str | None]],
         content: list[Any],
         refresh_interval: int = REFRESH_INTERVAL_MS,
     ) -> html.Div:

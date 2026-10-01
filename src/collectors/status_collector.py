@@ -227,8 +227,8 @@ class StatusCollector:
         # Sort events by timestamp
         sorted_events = sorted(events, key=lambda event: event.get("timestamp", 0))
 
-        up_seconds = 0
-        down_seconds = 0
+        up_seconds = 0.0
+        down_seconds = 0.0
         flap_count = 0
         last_timestamp = time_window.start_time.timestamp()
         last_status = "unknown"

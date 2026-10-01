@@ -9,7 +9,7 @@ import os
 import statistics
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from src.models.facts import (
     AggregatedMetrics,
@@ -461,7 +461,7 @@ def _calculate_availability_worker(status_records_data: list[dict[str, Any]]) ->
         return 100.0
 
     availability = (total_up / total_minutes) * 100
-    return round(availability, 4)
+    return cast(float, round(availability, 4))
 
 
 def _create_daily_aggregate_worker(
@@ -586,17 +586,26 @@ def _aggregate_quality_data(quality_data: list[dict[str, Any]]) -> dict[str, Any
             "latency_max": None,
         }
 
-    loss_values = [
-        record.get("frame_loss_pct")
-        for record in quality_data
-        if record.get("frame_loss_pct") is not None
-    ]
-    jitter_values = [
-        record.get("jitter_ms") for record in quality_data if record.get("jitter_ms") is not None
-    ]
-    latency_values = [
-        record.get("latency_ms") for record in quality_data if record.get("latency_ms") is not None
-    ]
+    loss_values = cast(
+        list[float],
+        [
+            record.get("frame_loss_pct")
+            for record in quality_data
+            if record.get("frame_loss_pct") is not None
+        ],
+    )
+    jitter_values = cast(
+        list[float],
+        [record.get("jitter_ms") for record in quality_data if record.get("jitter_ms") is not None],
+    )
+    latency_values = cast(
+        list[float],
+        [
+            record.get("latency_ms")
+            for record in quality_data
+            if record.get("latency_ms") is not None
+        ],
+    )
 
     return {
         "loss_avg": round(statistics.mean(loss_values), 4) if loss_values else None,
@@ -685,7 +694,17 @@ def create_daily_aggregates_parallel(
         "critical": thresholds.critical,
     }
 
-    worker_inputs = []
+    worker_inputs: list[
+        tuple[
+            str,
+            str,
+            str,
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            list[dict[str, Any]],
+            dict[str, float],
+        ]
+    ] = []
     for inp in aggregate_inputs:
         util_data = [
             {
@@ -743,7 +762,7 @@ def create_daily_aggregates_parallel(
                     logger.error(f"Error creating daily aggregate: {error}")
     else:
         # Single-threaded for small datasets
-        for inp in worker_inputs:
+        for inp in cast(Any, worker_inputs):
             try:
                 result_dict = _create_daily_aggregate_worker(inp)
                 results.append(AggregatedMetrics(**result_dict))
