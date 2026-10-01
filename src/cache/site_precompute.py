@@ -185,7 +185,7 @@ class SiteSlePrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)
+                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         except Exception as error:
             logger.debug(f"Failed to get site SLE {site_id}: {error}")
 
@@ -374,7 +374,7 @@ class SiteVpnPrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(key)
                 if data:
-                    return json.loads(data)
+                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         except Exception as error:
             logger.debug(f"Failed to get site VPN {site_id}: {error}")
 

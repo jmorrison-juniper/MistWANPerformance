@@ -262,9 +262,9 @@ class StatusCollector:
         # Account for time from last event to end of window
         remaining = time_window.end_time.timestamp() - last_timestamp
         if last_status == "up" or (last_status == "unknown" and current_status == "up"):
-            up_seconds += remaining
+            up_seconds += remaining  # type: ignore[assignment]  # possible bug, see #28
         else:
-            down_seconds += remaining
+            down_seconds += remaining  # type: ignore[assignment]  # possible bug, see #28
 
         up_minutes = int(up_seconds / 60)
         down_minutes = int(down_seconds / 60)

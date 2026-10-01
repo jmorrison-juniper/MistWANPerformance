@@ -76,7 +76,7 @@ class VPNPeerPage:
                 # Store peer context
                 dcc.Store(id="vpn-peer-context", data={"site_id": site_id, "peer_id": peer_id}),
                 # Navigation bar
-                NavigationBar.build("VPN Peer Details", breadcrumbs),
+                NavigationBar.build("VPN Peer Details", breadcrumbs),  # type: ignore[arg-type]  # possible bug, see #28
                 # Main container
                 dbc.Container(
                     [

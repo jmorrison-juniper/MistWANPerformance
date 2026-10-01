@@ -182,7 +182,7 @@ class AsyncBackgroundRefreshWorker:
     def _get_stale_sites(self) -> tuple:
         """Get stale site IDs and cache statistics."""
         if hasattr(self.cache, "get_stale_site_ids_pipelined"):
-            return self.cache.get_stale_site_ids_pipelined(
+            return self.cache.get_stale_site_ids_pipelined(  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
                 self.site_ids, max_age_seconds=self.max_age_seconds
             )
 
@@ -225,7 +225,7 @@ class AsyncBackgroundRefreshWorker:
                 # Run blocking API call in thread pool to avoid blocking event loop
                 loop = asyncio.get_event_loop()
                 all_port_stats = await loop.run_in_executor(
-                    None, self.api_client.get_org_gateway_port_stats
+                    None, self.api_client.get_org_gateway_port_stats  # type: ignore[union-attr]  # possible bug, see #28
                 )
 
             if not all_port_stats:
@@ -501,7 +501,7 @@ class BackgroundRefreshWorker:
                     f"[ERROR] Background refresh error: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
                 )
                 # Brief pause on error before retry (0.1s to prevent CPU spin)
-                self._interruptible_sleep(0.1)
+                self._interruptible_sleep(0.1)  # type: ignore[arg-type]  # possible bug, see #28
 
     def _interruptible_sleep(self, seconds: int) -> None:
         """Sleep that can be interrupted by stop()."""

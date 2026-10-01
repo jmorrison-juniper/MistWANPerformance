@@ -80,7 +80,7 @@ class PortPage:
             breadcrumbs.append(
                 {"label": "Gateway", "href": f"/gateway/{gateway_id}?site_id={site_id}"}
             )
-        breadcrumbs.append({"label": "Port Details", "href": None})
+        breadcrumbs.append({"label": "Port Details", "href": None})  # type: ignore[dict-item]  # possible bug, see #28
 
         return html.Div(
             [

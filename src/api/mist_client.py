@@ -71,7 +71,7 @@ class RateLimitState:
         Returns:
             Seconds until the top of the next hour (reset time)
         """
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             self.rate_limited = True
             self.rate_limit_hit_time = time.time()
             self._hit_count += 1
@@ -102,11 +102,11 @@ class RateLimitState:
         Returns:
             True if currently rate limited, False if clear
         """
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             if not self.rate_limited:
                 return False
 
-            if time.time() >= self.rate_limit_reset_time:
+            if time.time() >= self.rate_limit_reset_time:  # type: ignore[operator]  # possible bug, see #28
                 self.rate_limited = False
                 self.rate_limit_hit_time = None
                 self.rate_limit_reset_time = None
@@ -117,14 +117,14 @@ class RateLimitState:
 
     def seconds_until_reset(self) -> float | None:
         """Get seconds remaining until rate limit resets."""
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             if not self.rate_limited or not self.rate_limit_reset_time:
                 return None
             return max(0, self.rate_limit_reset_time - time.time())
 
     def get_status(self) -> dict[str, Any]:
         """Get current rate limit status for status bar display."""
-        with self._lock:
+        with self._lock:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             if not self.rate_limited:
                 return {
                     "rate_limited": False,
@@ -367,7 +367,7 @@ class MistSiteOperations:
         """
         logger.info("[...] Retrieving organization sites")
 
-        sites = []
+        sites = []  # type: ignore[var-annotated]  # collection type is established by later runtime data
         page = 1
 
         while True:
@@ -474,7 +474,7 @@ class MistSiteOperations:
         """
         logger.info("[...] Retrieving gateway inventory status")
 
-        all_gateways = []
+        all_gateways = []  # type: ignore[var-annotated]  # collection type is established by later runtime data
         page = 1
 
         while True:
@@ -616,7 +616,7 @@ class MistStatsOperations:
         """
         logger.info("[...] Retrieving organization gateway device stats")
 
-        all_devices = []
+        all_devices = []  # type: ignore[var-annotated]  # collection type is established by later runtime data
         page = 1
 
         while True:

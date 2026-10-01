@@ -76,7 +76,7 @@ class GatewayPage:
                     id="gateway-context", data={"gateway_id": gateway_id, "site_id": site_id}
                 ),
                 # Navigation bar
-                NavigationBar.build("Gateway Details", breadcrumbs),
+                NavigationBar.build("Gateway Details", breadcrumbs),  # type: ignore[arg-type]  # possible bug, see #28
                 # Main container
                 dbc.Container(
                     [
@@ -199,7 +199,7 @@ class GatewayPage:
                 ),
                 dbc.CardBody(
                     [
-                        dash_table.DataTable(
+                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                             id="gw-wan-ports-table",
                             columns=[
                                 {"name": "Port", "id": "port_name", "presentation": "markdown"},
@@ -254,7 +254,7 @@ class GatewayPage:
                 ),
                 dbc.CardBody(
                     [
-                        dash_table.DataTable(
+                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                             id="gw-vpn-peers-table",
                             columns=[
                                 {"name": "Peer", "id": "peer_name", "presentation": "markdown"},

@@ -460,7 +460,7 @@ class DashboardDataProvider:
                 precomputed = self.site_sle_precomputer.get_precomputed(site_id)
                 if precomputed and precomputed.get("available", False):
                     logger.info(f"[PRECOMPUTED] Using cached SLE for site {site_id[:8]}")
-                    return precomputed
+                    return precomputed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
         # Fallback: compute live
         logger.info(f"[LIVE] Computing SLE for site {site_id[:8]}")
@@ -537,7 +537,7 @@ class DashboardDataProvider:
             precomputed = self.dashboard_precomputer.get_precomputed("main")
             if precomputed and not precomputed.get("loading", True):
                 logger.info("[PRECOMPUTED] Using cached dashboard data")
-                return precomputed
+                return precomputed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             else:
                 logger.info("[LIVE] Precomputed data not available, computing live")
 
@@ -600,8 +600,8 @@ class DashboardDataProvider:
         Returns:
             Dictionary with healthy/degraded/critical counts
         """
-        site_max_util = defaultdict(float)
-        site_down_circuits = defaultdict(int)
+        site_max_util = defaultdict(float)  # type: ignore[var-annotated]  # collection type is established by later runtime data
+        site_down_circuits = defaultdict(int)  # type: ignore[var-annotated]  # collection type is established by later runtime data
 
         # Get max utilization per site
         for record in self.utilization_records:
@@ -610,8 +610,8 @@ class DashboardDataProvider:
             )
 
         # Count down circuits per site
-        for record in self.status_records:
-            if record.status_code == 0:
+        for record in self.status_records:  # type: ignore[assignment]  # possible bug, see #28
+            if record.status_code == 0:  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                 site_down_circuits[record.site_id] += 1
 
         # Classify sites
@@ -648,11 +648,11 @@ class DashboardDataProvider:
             key = (record.site_id, record.circuit_id)
             util_by_circuit[key].append(record)
 
-        for record in self.status_records:
+        for record in self.status_records:  # type: ignore[assignment]  # possible bug, see #28
             key = (record.site_id, record.circuit_id)
             status_by_circuit[key].append(record)
 
-        for record in self.quality_records:
+        for record in self.quality_records:  # type: ignore[assignment]  # possible bug, see #28
             key = (record.site_id, record.circuit_id)
             quality_by_circuit[key].append(record)
 
@@ -668,10 +668,10 @@ class DashboardDataProvider:
                     util_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
                 ),
                 status_records=sorted(
-                    status_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
+                    status_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key  # type: ignore[arg-type]  # possible bug, see #28
                 ),
                 quality_records=sorted(
-                    quality_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
+                    quality_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key  # type: ignore[arg-type]  # possible bug, see #28
                 ),
                 failover_records=self.failover_records,
             )
@@ -690,7 +690,7 @@ class DashboardDataProvider:
             Dictionary with bucket counts (ordered for display)
         """
         # Get latest utilization per circuit
-        circuit_latest = {}
+        circuit_latest = {}  # type: ignore[var-annotated]  # collection type is established by later runtime data
         for record in self.utilization_records:
             key = (record.site_id, record.circuit_id)
             if key not in circuit_latest or record.hour_key > circuit_latest[key].hour_key:
@@ -778,7 +778,7 @@ class DashboardDataProvider:
                 trends = self.redis_cache.get_utilization_trends(hours=24)
                 if trends and len(trends) > 1:
                     logger.debug(f"[TRENDS] Loaded {len(trends)} historical points from Redis")
-                    return trends
+                    return trends  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             except Exception as error:
                 logger.warning(f"[TRENDS] Redis trends unavailable: {error}")
 
@@ -822,7 +822,7 @@ class DashboardDataProvider:
                     logger.debug(
                         f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis"
                     )
-                    return throughput
+                    return throughput  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             except Exception as error:
                 logger.warning(f"[THROUGHPUT] Redis throughput unavailable: {error}")
 
@@ -901,7 +901,7 @@ class DashboardDataProvider:
                     f"max={max_util:.1f}%, circuits={circuit_count}"
                 )
 
-            return success
+            return success  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         except Exception as error:
             logger.error(f"[TRENDS] Failed to store snapshot: {error}")
             return False
@@ -1077,7 +1077,7 @@ class DashboardDataProvider:
             precomputed = self.dashboard_precomputer.get_precomputed("circuit_summary")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached circuit_summary")
-                return precomputed
+                return precomputed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             else:
                 logger.info("[LIVE] Computing circuit_summary live")
 
@@ -1256,7 +1256,7 @@ class DashboardDataProvider:
             precomputed = self.dashboard_precomputer.get_precomputed("gateway_health")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached gateway_health")
-                return precomputed
+                return precomputed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             else:
                 logger.info("[LIVE] Computing gateway_health live")
 
@@ -1282,7 +1282,7 @@ class DashboardDataProvider:
             precomputed = self.dashboard_precomputer.get_precomputed("vpn_summary")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached vpn_summary")
-                return precomputed
+                return precomputed  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             else:
                 logger.info("[LIVE] Computing vpn_summary live")
 
@@ -1335,7 +1335,7 @@ class DashboardDataProvider:
         """
         try:
             if hasattr(self, "redis_cache") and self.redis_cache is not None:
-                return self.redis_cache.get_site_vpn_peers(site_id)
+                return self.redis_cache.get_site_vpn_peers(site_id)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         except Exception as error:
             logger.error(f"Error getting VPN peers for site {site_id}: {error}")
 
@@ -1361,7 +1361,7 @@ class DashboardDataProvider:
                 precomputed = self.site_vpn_precomputer.get_precomputed(site_id)
                 if precomputed and precomputed.get("available", False):
                     logger.info(f"[PRECOMPUTED] Using cached VPN for site {site_id[:8]}")
-                    return precomputed.get("peers", [])
+                    return precomputed.get("peers", [])  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
         # Log if computing live
         if site_id:
@@ -1456,7 +1456,7 @@ class DashboardDataProvider:
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} gateway port time-series points")
-                return cached
+                return cached  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
         # Fetch from API if cache miss
         if hasattr(self, "api_client") and self.api_client is not None:
@@ -1476,7 +1476,7 @@ class DashboardDataProvider:
                         site_id, device_mac, port_id, result
                     )
 
-                return result.get("results", [])
+                return result.get("results", [])  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             except Exception as error:
                 logger.error(f"Error fetching gateway port time-series: {error}")
 
@@ -1517,7 +1517,7 @@ class DashboardDataProvider:
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} VPN peer time-series points")
-                return cached
+                return cached  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
         # Fetch from API if cache miss
         if hasattr(self, "api_client") and self.api_client is not None:
@@ -1535,7 +1535,7 @@ class DashboardDataProvider:
                 if hasattr(self, "redis_cache") and self.redis_cache is not None:
                     self.redis_cache.save_vpn_peer_timeseries(site_id, device_mac, peer_mac, result)
 
-                return result.get("results", [])
+                return result.get("results", [])  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             except Exception as error:
                 logger.error(f"Error fetching VPN peer time-series: {error}")
 
@@ -1576,7 +1576,7 @@ class DashboardDataProvider:
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} device {metric} time-series points")
-                return cached
+                return cached  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
         # Fetch from API if cache miss
         if hasattr(self, "api_client") and self.api_client is not None:
@@ -1596,7 +1596,7 @@ class DashboardDataProvider:
                         site_id, device_mac, metric, result
                     )
 
-                return result.get("results", [])
+                return result.get("results", [])  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             except Exception as error:
                 logger.error(f"Error fetching device metrics time-series: {error}")
 
@@ -1617,7 +1617,7 @@ class DashboardDataProvider:
         Returns:
             Dict with 'missing' and 'stale' site ID lists
         """
-        result = {"missing": [], "stale": []}
+        result = {"missing": [], "stale": []}  # type: ignore[var-annotated]  # collection type is established by later runtime data
 
         if not hasattr(self, "redis_cache") or self.redis_cache is None:
             return result

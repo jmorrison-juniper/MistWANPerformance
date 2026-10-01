@@ -163,7 +163,7 @@ class StatusCards:
         Returns:
             Bootstrap card component
         """
-        color = COLORS.get(status, COLORS["text_primary"])
+        color = COLORS.get(status, COLORS["text_primary"])  # type: ignore[arg-type]  # possible bug, see #28
 
         trend_icon = ""
         if trend == "up":

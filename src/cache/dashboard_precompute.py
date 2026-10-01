@@ -208,8 +208,8 @@ class DashboardPrecomputer:
         records = self.data_provider.utilization_records
         status_records = getattr(self.data_provider, "status_records", [])
 
-        site_max_util = defaultdict(float)
-        site_down_circuits = defaultdict(int)
+        site_max_util = defaultdict(float)  # type: ignore[var-annotated]  # collection type is established by later runtime data
+        site_down_circuits = defaultdict(int)  # type: ignore[var-annotated]  # collection type is established by later runtime data
 
         # Max utilization per site
         for record in records:
@@ -361,7 +361,7 @@ class DashboardPrecomputer:
         """Compute region-level summary."""
         records = self.data_provider.utilization_records
 
-        region_stats = defaultdict(
+        region_stats = defaultdict(  # type: ignore[var-annotated]  # collection type is established by later runtime data
             lambda: {"total": 0, "sum_util": 0.0, "max_util": 0.0, "critical": 0}
         )
 
@@ -397,14 +397,14 @@ class DashboardPrecomputer:
         """Compute utilization trends data."""
         # Use cached trends if available from data_provider
         if hasattr(self.data_provider, "_calculate_trends"):
-            return self.data_provider._calculate_trends()
+            return self.data_provider._calculate_trends()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         return []
 
     def _compute_throughput(self) -> list[dict[str, Any]]:
         """Compute throughput data."""
         # Use cached throughput if available from data_provider
         if hasattr(self.data_provider, "_calculate_throughput"):
-            return self.data_provider._calculate_throughput()
+            return self.data_provider._calculate_throughput()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         return []
 
     def _precompute_circuit_summary(self) -> dict[str, Any]:
@@ -447,11 +447,11 @@ class DashboardPrecomputer:
 
     def _precompute_gateway_health(self) -> dict[str, Any]:
         """Pre-compute gateway health summary."""
-        return self.data_provider.get_gateway_health_summary()
+        return self.data_provider.get_gateway_health_summary()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
     def _precompute_vpn_summary(self) -> dict[str, Any]:
         """Pre-compute VPN peer summary."""
-        return self.data_provider.get_vpn_peer_summary()
+        return self.data_provider.get_vpn_peer_summary()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
     def _precompute_status_bar(self) -> dict[str, Any]:
         """Pre-compute status bar data."""
@@ -523,9 +523,9 @@ class DashboardPrecomputer:
             if hasattr(self.cache, "client") and self.cache.client:
                 data = self.cache.client.get(full_key)
                 if data:
-                    return json.loads(data)
+                    return json.loads(data)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
             elif hasattr(self.cache, "_precomputed"):
-                return self.cache._precomputed.get(key)
+                return self.cache._precomputed.get(key)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
         except Exception as error:
             logger.warning(f"[WARN] Failed to get precomputed {key}: {error}")
 

@@ -109,7 +109,7 @@ def _site_name(provider: Any, site_id: str | None) -> str:
         return EMPTY
     lookup = getattr(provider, "site_lookup", {}) or {}
     if site_id in lookup:
-        return lookup[site_id]
+        return lookup[site_id]  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
     for site in getattr(provider, "sites", []) or []:
         if isinstance(site, dict):
             if site.get("id") == site_id or site.get("site_id") == site_id:

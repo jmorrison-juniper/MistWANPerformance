@@ -347,17 +347,17 @@ def stop_async_precomputers() -> None:
     if _dashboard_precomputer:
         _dashboard_precomputer._running = False
         if _dashboard_precomputer._task:
-            _async_loop.call_soon_threadsafe(_dashboard_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_dashboard_precomputer._task.cancel)  # type: ignore[union-attr]  # possible bug, see #28
 
     if _site_sle_precomputer:
         _site_sle_precomputer._running = False
         if _site_sle_precomputer._task:
-            _async_loop.call_soon_threadsafe(_site_sle_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_site_sle_precomputer._task.cancel)  # type: ignore[union-attr]  # possible bug, see #28
 
     if _site_vpn_precomputer:
         _site_vpn_precomputer._running = False
         if _site_vpn_precomputer._task:
-            _async_loop.call_soon_threadsafe(_site_vpn_precomputer._task.cancel)
+            _async_loop.call_soon_threadsafe(_site_vpn_precomputer._task.cancel)  # type: ignore[union-attr]  # possible bug, see #28
 
     # Stop the event loop
     if _async_loop and _async_loop.is_running():
@@ -483,7 +483,7 @@ def load_from_cache(cache, config: Config) -> tuple:
 
     # Create data provider with Redis cache reference for trends
     provider = DashboardDataProvider(sites=sites, circuits=circuits)
-    provider.redis_cache = cache  # Enable historical trends storage/retrieval
+    provider.redis_cache = cache  # type: ignore[attr-defined]  # attribute is created dynamically at runtime  # Enable historical trends storage/retrieval
     provider.wan_down_count = wan_down
     provider.wan_disabled_count = wan_disabled
     provider.update_utilization(utilization_records)
@@ -631,7 +631,7 @@ def _process_port_batch(
             }
         )
 
-    return circuits, utilization_records, wan_port_count, wan_down_count, wan_disabled_count
+    return circuits, utilization_records, wan_port_count, wan_down_count, wan_disabled_count  # type: ignore[return-value]  # possible bug, see #28
 
 
 def process_port_stats_to_utilization(
@@ -654,8 +654,8 @@ def process_port_stats_to_utilization(
     current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
     # Log diagnostic info (sample first 500)
-    port_usage_counts = {}
-    device_type_counts = {}
+    port_usage_counts = {}  # type: ignore[var-annotated]  # collection type is established by later runtime data
+    device_type_counts = {}  # type: ignore[var-annotated]  # collection type is established by later runtime data
     for port in port_stats[:500]:
         usage = port.get("port_usage", "NONE")
         device_type = port.get("device_type", "unknown")
@@ -665,7 +665,7 @@ def process_port_stats_to_utilization(
     logger.info(f"[DEBUG] Device types in sample (500): {device_type_counts}")
 
     # Count device types across ALL data
-    all_device_types = {}
+    all_device_types = {}  # type: ignore[var-annotated]  # collection type is established by later runtime data
     for port in port_stats:
         device_type = port.get("device_type", "unknown")
         all_device_types[device_type] = all_device_types.get(device_type, 0) + 1
@@ -701,7 +701,7 @@ def process_port_stats_to_utilization(
             ]
 
             for future in as_completed(futures):
-                circuits, util_records, wan_count, wan_down, wan_disabled = future.result()
+                circuits, util_records, wan_count, wan_down, wan_disabled = future.result()  # type: ignore[misc]  # singleton attributes are initialized dynamically
                 all_circuits.extend(circuits)
                 all_utilization_records.extend(util_records)
                 total_wan_count += wan_count
@@ -928,7 +928,7 @@ def quick_load_from_cache(config: Config) -> tuple:
 
         # Create data provider with cached data and Redis cache reference
         provider = DashboardDataProvider(sites=sites, circuits=circuits)
-        provider.redis_cache = cache  # Enable historical trends storage/retrieval
+        provider.redis_cache = cache  # type: ignore[attr-defined]  # attribute is created dynamically at runtime  # Enable historical trends storage/retrieval
         provider.wan_down_count = wan_down
         provider.wan_disabled_count = wan_disabled
         provider.update_utilization(utilization_records)
@@ -1224,7 +1224,7 @@ def load_live_data(config: Config) -> tuple:
 
     # Create data provider with Redis cache reference for trends
     provider = DashboardDataProvider(sites=sites, circuits=circuits)
-    provider.redis_cache = cache  # Enable historical trends storage/retrieval
+    provider.redis_cache = cache  # type: ignore[attr-defined]  # attribute is created dynamically at runtime  # Enable historical trends storage/retrieval
     provider.wan_down_count = wan_down
     provider.wan_disabled_count = wan_disabled
 
@@ -1294,7 +1294,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
         data_provider.ranking_views = provider.ranking_views
         data_provider.current_state_views = provider.current_state_views
         data_provider.utilization_records = provider.utilization_records
-        data_provider.redis_cache = provider.redis_cache  # Transfer cache reference for trends
+        data_provider.redis_cache = provider.redis_cache  # type: ignore[attr-defined]  # attribute is created dynamically at runtime  # Transfer cache reference for trends
         data_provider.data_load_complete = True
 
         logger.info(
@@ -1353,7 +1353,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
                 max_age_seconds=3600,  # Refresh cache older than 1 hour
             )
             _sle_background_worker.start()
-            data_provider.sle_background_worker = _sle_background_worker
+            data_provider.sle_background_worker = _sle_background_worker  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             logger.info("[OK] SLE background worker started (site-level collection)")
 
             # Start VPN peer background worker (collects VPN peer path stats)
@@ -1366,7 +1366,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             )
             _vpn_peer_background_worker.start()
             # Use 'vpn_background_worker' to match status bar check in app.py
-            data_provider.vpn_background_worker = _vpn_peer_background_worker
+            data_provider.vpn_background_worker = _vpn_peer_background_worker  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             logger.info("[OK] VPN peer background worker started (peer path collection)")
 
             # Start async precomputers (TaskGroup I/O + ProcessPoolExecutor CPU)

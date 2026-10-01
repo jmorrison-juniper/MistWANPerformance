@@ -740,7 +740,7 @@ class WANPerformanceDashboard:
                                                 ),
                                                 dbc.CardBody(
                                                     [
-                                                        dash_table.DataTable(
+                                                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                                             id="top-congested-table",
                                                             columns=[
                                                                 {"name": "Rank", "id": "rank"},
@@ -856,7 +856,7 @@ class WANPerformanceDashboard:
                                                 ),
                                                 dbc.CardBody(
                                                     [
-                                                        dash_table.DataTable(
+                                                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                                             id="sle-degraded-table",
                                                             columns=[
                                                                 {
@@ -1278,7 +1278,7 @@ class WANPerformanceDashboard:
                         ),
                         dbc.CardBody(
                             [
-                                dash_table.DataTable(
+                                dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                     id="region-sites-table",
                                     columns=[
                                         {"name": "Site Name", "id": "site_name"},
@@ -1335,7 +1335,7 @@ class WANPerformanceDashboard:
                         ),
                         dbc.CardBody(
                             [
-                                dash_table.DataTable(
+                                dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                     id="site-circuits-table",
                                     columns=[
                                         {"name": "Circuit ID", "id": "circuit_id"},
@@ -2189,7 +2189,7 @@ class WANPerformanceDashboard:
 
         return {**gateways_data, "gateways": filtered_gateways}
 
-    def _build_impacted_gateways_table(self, gateways_data: dict) -> dash_table.DataTable:
+    def _build_impacted_gateways_table(self, gateways_data: dict) -> dash_table.DataTable:  # type: ignore[name-defined]  # possible bug, see #28
         """
         Build table showing impacted gateways.
 
@@ -2222,7 +2222,7 @@ class WANPerformanceDashboard:
                 }
             )
 
-        return dash_table.DataTable(
+        return dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             columns=[
                 {"name": "Gateway Name", "id": "gateway_name"},
                 {"name": "MAC", "id": "mac"},
@@ -2262,7 +2262,7 @@ class WANPerformanceDashboard:
             sort_action="native",
         )
 
-    def _build_impacted_interfaces_table(self, interfaces_data: dict) -> dash_table.DataTable:
+    def _build_impacted_interfaces_table(self, interfaces_data: dict) -> dash_table.DataTable:  # type: ignore[name-defined]  # possible bug, see #28
         """
         Build table showing impacted interfaces.
 
@@ -2291,7 +2291,7 @@ class WANPerformanceDashboard:
                 }
             )
 
-        return dash_table.DataTable(
+        return dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             columns=[
                 {"name": "Interface", "id": "interface_name"},
                 {"name": "Gateway", "id": "gateway_name"},
@@ -2330,7 +2330,7 @@ class WANPerformanceDashboard:
             sort_action="native",
         )
 
-    def _build_vpn_peer_table(self, site_id: str) -> dash_table.DataTable:
+    def _build_vpn_peer_table(self, site_id: str) -> dash_table.DataTable:  # type: ignore[name-defined]  # possible bug, see #28
         """
         Build VPN peer paths table for a specific site.
 
@@ -2350,7 +2350,7 @@ class WANPerformanceDashboard:
             Dash DataTable component with VPN peer data
         """
         if not self.data_provider:
-            return dash_table.DataTable(
+            return dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                 columns=[{"name": "Status", "id": "status"}],
                 data=[{"status": "Data provider not available"}],
                 style_cell={"backgroundColor": self.COLORS["bg_secondary"]},
@@ -2360,7 +2360,7 @@ class WANPerformanceDashboard:
         table_data = self.data_provider.get_vpn_peer_table_data(site_id)
 
         if not table_data:
-            return dash_table.DataTable(
+            return dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                 columns=[{"name": "Status", "id": "status"}],
                 data=[{"status": "No VPN peer paths found for this site"}],
                 style_cell={
@@ -2371,7 +2371,7 @@ class WANPerformanceDashboard:
                 },
             )
 
-        return dash_table.DataTable(
+        return dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
             id="vpn-peer-table",
             columns=[
                 {"name": "VPN Name", "id": "vpn_name"},

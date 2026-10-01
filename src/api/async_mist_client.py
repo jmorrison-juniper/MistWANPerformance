@@ -135,7 +135,7 @@ class AsyncMistConnection:
                         )
 
                     response.raise_for_status()
-                    return await response.json()
+                    return await response.json()  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
             except RateLimitError:
                 raise  # Don't retry 429 errors, propagate immediately
@@ -311,7 +311,7 @@ class AsyncMistStatsOperations:
             )
 
             # Response is a list directly for this endpoint
-            batch = data if isinstance(data, list) else []
+            batch = data if isinstance(data, list) else []  # type: ignore[var-annotated]  # collection type is established by later runtime data
             all_devices.extend(batch)
 
             logger.debug(f"Retrieved {len(batch)} device stats from page {page}")

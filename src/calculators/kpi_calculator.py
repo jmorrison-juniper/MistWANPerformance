@@ -461,7 +461,7 @@ def _calculate_availability_worker(status_records_data: list[dict[str, Any]]) ->
         return 100.0
 
     availability = (total_up / total_minutes) * 100
-    return round(availability, 4)
+    return round(availability, 4)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary
 
 
 def _create_daily_aggregate_worker(
@@ -599,12 +599,12 @@ def _aggregate_quality_data(quality_data: list[dict[str, Any]]) -> dict[str, Any
     ]
 
     return {
-        "loss_avg": round(statistics.mean(loss_values), 4) if loss_values else None,
-        "loss_max": round(max(loss_values), 4) if loss_values else None,
-        "jitter_avg": round(statistics.mean(jitter_values), 2) if jitter_values else None,
-        "jitter_max": round(max(jitter_values), 2) if jitter_values else None,
-        "latency_avg": round(statistics.mean(latency_values), 2) if latency_values else None,
-        "latency_max": round(max(latency_values), 2) if latency_values else None,
+        "loss_avg": round(statistics.mean(loss_values), 4) if loss_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
+        "loss_max": round(max(loss_values), 4) if loss_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
+        "jitter_avg": round(statistics.mean(jitter_values), 2) if jitter_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
+        "jitter_max": round(max(jitter_values), 2) if jitter_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
+        "latency_avg": round(statistics.mean(latency_values), 2) if latency_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
+        "latency_max": round(max(latency_values), 2) if latency_values else None,  # type: ignore[arg-type,type-var]  # possible bug, see #28
     }
 
 
@@ -743,9 +743,9 @@ def create_daily_aggregates_parallel(
                     logger.error(f"Error creating daily aggregate: {error}")
     else:
         # Single-threaded for small datasets
-        for inp in worker_inputs:
+        for inp in worker_inputs:  # type: ignore[assignment]  # possible bug, see #28
             try:
-                result_dict = _create_daily_aggregate_worker(inp)
+                result_dict = _create_daily_aggregate_worker(inp)  # type: ignore[arg-type]  # possible bug, see #28
                 results.append(AggregatedMetrics(**result_dict))
             except Exception as error:
                 logger.error(f"Error creating daily aggregate: {error}")

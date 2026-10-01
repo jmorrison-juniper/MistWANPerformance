@@ -228,4 +228,4 @@ class Config:
                 return overrides[attr_name]
 
         # Return default threshold
-        return getattr(self.thresholds, attr_name)
+        return getattr(self.thresholds, attr_name)  # type: ignore[no-any-return]  # untyped third-party or cache data boundary

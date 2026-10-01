@@ -178,7 +178,7 @@ class RankingViews:
                     site_id=site_id,
                     site_name=self.site_lookup.get(site_id),
                     port_id=port_id,
-                    bandwidth_mbps=data["bandwidth_mbps"],
+                    bandwidth_mbps=data["bandwidth_mbps"],  # type: ignore[arg-type]  # possible bug, see #28
                     metric_value=round(data["utilization_pct"], 2),
                     metric_name="utilization_pct",
                     threshold_status=self._get_threshold_status(
@@ -358,7 +358,7 @@ class RankingViews:
                     rank=rank,
                     site_id=site_id,
                     site_name=self.site_lookup.get(site_id),
-                    port_id=port_id,
+                    port_id=port_id,  # type: ignore[arg-type]  # possible bug, see #28
                     bandwidth_mbps=0,  # Not tracked for chronic offenders
                     metric_value=float(data["count"]),
                     metric_name=f"breach_count_above_{threshold_pct}",

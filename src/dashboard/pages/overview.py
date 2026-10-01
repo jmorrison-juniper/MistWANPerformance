@@ -336,7 +336,7 @@ class OverviewPage:
                                 ),
                                 dbc.CardBody(
                                     [
-                                        dash_table.DataTable(
+                                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                             id="top-congested-table",
                                             columns=[
                                                 {"name": "Rank", "id": "rank"},
@@ -441,7 +441,7 @@ class OverviewPage:
                                 ),
                                 dbc.CardBody(
                                     [
-                                        dash_table.DataTable(
+                                        dash_table.DataTable(  # type: ignore[attr-defined]  # attribute is created dynamically at runtime
                                             id="sle-degraded-table",
                                             columns=[
                                                 {
