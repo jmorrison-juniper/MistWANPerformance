@@ -12,13 +12,13 @@ from src.api.mist_client import (
     RateLimitState,
     RateLimitError,
     get_rate_limit_status,
-    is_rate_limited
+    is_rate_limited,
 )
 
 from src.api.async_mist_client import (
     AsyncMistConnection,
     AsyncMistStatsOperations,
-    AsyncMistAPIClient
+    AsyncMistAPIClient,
 )
 
 __all__ = [
@@ -34,5 +34,5 @@ __all__ = [
     # Async API
     "AsyncMistConnection",
     "AsyncMistStatsOperations",
-    "AsyncMistAPIClient"
+    "AsyncMistAPIClient",
 ]

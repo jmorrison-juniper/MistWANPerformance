@@ -11,17 +11,17 @@ from src.models.facts import (
     CircuitQualityRecord,
     FailoverEventRecord,
     RollingWindowMetrics,
-    AggregatedMetrics
+    AggregatedMetrics,
 )
 
 __all__ = [
     "DimSite",
-    "DimCircuit", 
+    "DimCircuit",
     "DimTime",
     "CircuitUtilizationRecord",
     "CircuitStatusRecord",
     "CircuitQualityRecord",
     "FailoverEventRecord",
     "RollingWindowMetrics",
-    "AggregatedMetrics"
+    "AggregatedMetrics",
 ]

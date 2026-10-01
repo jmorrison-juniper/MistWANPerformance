@@ -15,13 +15,12 @@ from src.models.facts import (
     CircuitStatusRecord,
     CircuitQualityRecord,
     FailoverEventRecord,
-    AggregatedMetrics
+    AggregatedMetrics,
 )
 from src.models.dimensions import DimSite, DimCircuit
 from src.views.rankings import RankingViews
 from src.views.current_state import CurrentStateViews
 from src.utils.performance import PerformanceTimer, timed
-
 
 logger = logging.getLogger(__name__)
 
@@ -29,78 +28,72 @@ logger = logging.getLogger(__name__)
 class DashboardDataProvider:
     """
     Data provider for the WAN Performance Dashboard.
-    
+
     Aggregates data from collectors and provides formatted
     data structures for dashboard consumption.
     """
-    
+
     def __init__(
-        self,
-        sites: Optional[List[DimSite]] = None,
-        circuits: Optional[List[DimCircuit]] = None
+        self, sites: Optional[List[DimSite]] = None, circuits: Optional[List[DimCircuit]] = None
     ):
         """
         Initialize the data provider.
-        
+
         Args:
             sites: List of site dimension records
             circuits: List of circuit dimension records
         """
         self.sites = sites or []
         self.circuits = circuits or []
-        
+
         # Build lookup dictionaries
-        self.site_lookup: Dict[str, str] = {
-            s.site_id: s.site_name for s in self.sites
-        }
+        self.site_lookup: Dict[str, str] = {s.site_id: s.site_name for s in self.sites}
         self.region_lookup: Dict[str, str] = {
             s.site_id: (s.region or "Unknown") for s in self.sites
         }
-        self.circuit_role_lookup: Dict[str, str] = {
-            c.circuit_id: c.role for c in self.circuits
-        }
-        
+        self.circuit_role_lookup: Dict[str, str] = {c.circuit_id: c.role for c in self.circuits}
+
         # Initialize view generators
         self.ranking_views = RankingViews(self.site_lookup, self.region_lookup)
         self.current_state_views = CurrentStateViews(
             self.site_lookup, self.region_lookup, self.circuit_role_lookup
         )
-        
+
         # Data stores (in-memory cache)
         self.utilization_records: List[CircuitUtilizationRecord] = []
         self.status_records: List[CircuitStatusRecord] = []
         self.quality_records: List[CircuitQualityRecord] = []
         self.gateway_inventory: List[Dict[str, Any]] = []
-        
+
         # Status tracking for UI display
         self.cache_status: Dict[str, Any] = {
             "fresh_sites": 0,
             "stale_sites": 0,
             "missing_sites": 0,
             "total_records": 0,
-            "last_update": None
+            "last_update": None,
         }
         self.refresh_activity: Dict[str, Any] = {
             "active": False,
             "current_sites": [],
             "current_interfaces": [],
             "last_refresh_time": None,
-            "status": "initializing"  # initializing, loading, running, idle
+            "status": "initializing",  # initializing, loading, running, idle
         }
         self.background_worker: Optional[Any] = None  # Set externally
         self.data_load_complete: bool = False  # Tracks if initial load finished
         self.failover_records: List[FailoverEventRecord] = []
         self.daily_aggregates: List[AggregatedMetrics] = []
-        
+
         # WAN port status counts (set externally after port processing)
         self.wan_down_count: int = 0
         self.wan_disabled_count: int = 0
-        
+
         # Gateway health counts (set externally from inventory API)
         self.gateways_connected: int = 0
         self.gateways_disconnected: int = 0
         self.gateways_total: int = 0
-        
+
         # Trend snapshot tracking - only store when data changes
         self._last_snapshot_rx: int = 0
         self._last_snapshot_tx: int = 0
@@ -108,74 +101,74 @@ class DashboardDataProvider:
         self._min_snapshot_interval: float = 60.0  # Minimum 60 seconds between snapshots
         self.disconnected_site_ids: set = set()  # Sites with offline gateways
         self.region_aggregates: List[AggregatedMetrics] = []
-        
+
         # SLE (Service Level Experience) data
         self.sle_data: Optional[Dict[str, Any]] = None
         self.worst_sites_gateway_health: Optional[Dict[str, Any]] = None
         self.worst_sites_wan_link: Optional[Dict[str, Any]] = None
-        
+
         # Alarms data
         self.alarms_data: Optional[Dict[str, Any]] = None
         self.alarms_by_severity: Dict[str, int] = {}
         self.alarms_by_type: Dict[str, int] = {}
-        
+
         logger.debug("DashboardDataProvider initialized")
-    
+
     def update_utilization(self, records: List[CircuitUtilizationRecord]):
         """Update utilization records cache."""
         self.utilization_records = records
         logger.debug(f"Updated {len(records)} utilization records")
-    
+
     def refresh_utilization_from_cache(self) -> bool:
         """
         Refresh utilization records by reloading from Redis cache.
-        
+
         This method reloads port statistics from Redis and converts them to
         utilization records, ensuring the dashboard always shows fresh data
         instead of stale startup-time data.
-        
+
         Returns:
             True if refresh was successful, False otherwise
         """
-        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+        if not hasattr(self, "redis_cache") or self.redis_cache is None:
             return False
-        
+
         try:
             # Get all site IDs
             site_ids = list(self.site_lookup.keys())
             if not site_ids:
                 return False
-            
+
             # Fetch port stats from Redis cache
             port_stats = self.redis_cache.get_all_site_port_stats(site_ids)
-            
+
             if not port_stats:
                 logger.warning("[REFRESH] No port stats found in cache")
                 return False
-            
+
             # Process port stats into utilization records
             current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
-            
+
             circuits = []
             utilization_records = []
             wan_down = 0
             wan_disabled = 0
-            
+
             for port in port_stats:
                 device_type = port.get("device_type", "")
                 port_usage = port.get("port_usage", "")
                 port_id = port.get("port_id", "")
-                
+
                 # Check if WAN port
                 is_wan_port = (
-                    (device_type == "gateway" and port_usage == "wan") or
-                    port_usage == "wan" or
-                    port_id.startswith("lte")
+                    (device_type == "gateway" and port_usage == "wan")
+                    or port_usage == "wan"
+                    or port_id.startswith("lte")
                 )
-                
+
                 if not is_wan_port:
                     continue
-                
+
                 # Skip disabled or down ports
                 is_disabled = port.get("disabled", False)
                 is_up = port.get("up", True)
@@ -185,26 +178,26 @@ class DashboardDataProvider:
                 if not is_up:
                     wan_down += 1
                     continue
-                
+
                 site_id = port.get("site_id", "")
                 if site_id not in self.site_lookup:
                     continue
-                
+
                 device_mac = port.get("mac", "")
                 rx_bps = port.get("rx_bps", 0) or 0
                 tx_bps = port.get("tx_bps", 0) or 0
                 rx_bytes = port.get("rx_bytes", 0) or 0
                 tx_bytes = port.get("tx_bytes", 0) or 0
                 speed = port.get("speed", 1000) or 1000
-                
+
                 circuit_id = f"{device_mac}:{port_id}"
-                
+
                 # Calculate utilization
                 max_bps = max(rx_bps, tx_bps)
                 speed_bps = speed * 1_000_000
                 utilization_pct = (max_bps / speed_bps) * 100 if speed_bps > 0 else 0
                 utilization_pct = min(utilization_pct, 100.0)
-                
+
                 util_record = CircuitUtilizationRecord(
                     site_id=site_id,
                     circuit_id=circuit_id,
@@ -212,21 +205,21 @@ class DashboardDataProvider:
                     utilization_pct=round(utilization_pct, 2),
                     rx_bytes=rx_bytes,
                     tx_bytes=tx_bytes,
-                    bandwidth_mbps=speed
+                    bandwidth_mbps=speed,
                 )
                 utilization_records.append(util_record)
-            
+
             # Update instance variables
             self.utilization_records = utilization_records
             self.wan_down_count = wan_down
             self.wan_disabled_count = wan_disabled
-            
+
             logger.info(
                 f"[REFRESH] Loaded {len(utilization_records)} utilization records from cache "
                 f"(down: {wan_down}, disabled: {wan_disabled})"
             )
             return True
-            
+
         except Exception as error:
             logger.error(f"[REFRESH] Failed to refresh from cache: {error}", exc_info=True)
             return False
@@ -235,83 +228,81 @@ class DashboardDataProvider:
         """Update status records cache."""
         self.status_records = records
         logger.debug(f"Updated {len(records)} status records")
-    
+
     def update_quality(self, records: List[CircuitQualityRecord]):
         """Update quality records cache."""
         self.quality_records = records
         logger.debug(f"Updated {len(records)} quality records")
-    
+
     def update_failovers(self, records: List[FailoverEventRecord]):
         """Update failover records cache."""
         self.failover_records = records
         logger.debug(f"Updated {len(records)} failover records")
-    
-    def update_aggregates(
-        self,
-        daily: List[AggregatedMetrics],
-        region: List[AggregatedMetrics]
-    ):
+
+    def update_aggregates(self, daily: List[AggregatedMetrics], region: List[AggregatedMetrics]):
         """Update aggregate caches."""
         self.daily_aggregates = daily
         self.region_aggregates = region
         logger.debug(f"Updated {len(daily)} daily, {len(region)} region aggregates")
-    
+
     def update_sle_data(self, sle_data: Dict[str, Any]):
         """
         Update SLE data cache.
-        
+
         Args:
             sle_data: Response from get_org_sites_sle() API call
         """
         self.sle_data = sle_data
         logger.debug(f"Updated SLE data for {sle_data.get('total', 0)} sites")
-    
+
     def update_worst_sites(
         self,
         gateway_health: Optional[Dict[str, Any]] = None,
-        wan_link: Optional[Dict[str, Any]] = None
+        wan_link: Optional[Dict[str, Any]] = None,
     ):
         """
         Update worst sites by SLE metric.
-        
+
         Args:
             gateway_health: Worst sites by gateway-health
             wan_link: Worst sites by wan-link-health
         """
         if gateway_health:
             self.worst_sites_gateway_health = gateway_health
-            logger.debug(f"Updated {len(gateway_health.get('results', []))} worst gateway-health sites")
+            logger.debug(
+                f"Updated {len(gateway_health.get('results', []))} worst gateway-health sites"
+            )
         if wan_link:
             self.worst_sites_wan_link = wan_link
             logger.debug(f"Updated {len(wan_link.get('results', []))} worst wan-link sites")
-    
+
     def update_alarms(self, alarms_data: Dict[str, Any]):
         """
         Update alarms data cache and compute summary stats.
-        
+
         Args:
             alarms_data: Response from search_org_alarms() API call
         """
         self.alarms_data = alarms_data
-        
+
         # Compute severity counts
         self.alarms_by_severity = {}
         self.alarms_by_type = {}
-        
+
         for alarm in alarms_data.get("results", []):
             severity = alarm.get("severity", "unknown")
             alarm_type = alarm.get("type", "unknown")
-            
+
             self.alarms_by_severity[severity] = self.alarms_by_severity.get(severity, 0) + 1
             self.alarms_by_type[alarm_type] = self.alarms_by_type.get(alarm_type, 0) + 1
-        
+
         total = alarms_data.get("total", len(alarms_data.get("results", [])))
         logger.debug(f"Updated {total} alarms ({len(self.alarms_by_type)} types)")
-    
+
     def update_gateway_inventory(self, inventory_data: Dict[str, Any]):
         """
         Update gateway inventory counts from API response.
-        
+
         Args:
             inventory_data: Dictionary with connected, disconnected, total counts
                             and gateways[] array
@@ -320,53 +311,54 @@ class DashboardDataProvider:
         self.gateways_disconnected = inventory_data.get("disconnected", 0)
         self.gateways_total = inventory_data.get("total", 0)
         self.gateway_inventory = list(inventory_data.get("gateways", []))
-        
+
         # Compute disconnected site IDs from gateway list
         # A site is considered "disconnected" if ALL its gateways are disconnected
         site_gateway_status = {}  # site_id -> {"connected": count, "disconnected": count}
-        
+
         for gw in inventory_data.get("gateways", []):
             site_id = gw.get("site_id")
             if not site_id:
                 continue
-            
+
             if site_id not in site_gateway_status:
                 site_gateway_status[site_id] = {"connected": 0, "disconnected": 0}
-            
+
             if gw.get("connected", False):
                 site_gateway_status[site_id]["connected"] += 1
             else:
                 site_gateway_status[site_id]["disconnected"] += 1
-        
+
         # Site is disconnected only if ALL gateways are disconnected
         self.disconnected_site_ids = {
-            site_id for site_id, status in site_gateway_status.items()
+            site_id
+            for site_id, status in site_gateway_status.items()
             if status["connected"] == 0 and status["disconnected"] > 0
         }
-        
+
         logger.info(
             f"[OK] Gateway inventory: {self.gateways_connected} connected, "
             f"{self.gateways_disconnected} disconnected, "
             f"{len(self.disconnected_site_ids)} sites fully offline"
         )
-    
+
     def get_sle_summary(self) -> Dict[str, Any]:
         """
         Get SLE summary for dashboard display.
-        
+
         Returns:
             Dictionary with SLE metrics summary
         """
         if not self.sle_data:
             return {"available": False}
-        
+
         results = self.sle_data.get("results", [])
-        
+
         # Calculate average SLE scores across all sites
         gateway_health_scores = []
         wan_link_scores = []
         app_health_scores = []
-        
+
         for site in results:
             if "gateway-health" in site:
                 gateway_health_scores.append(site["gateway-health"])
@@ -374,13 +366,13 @@ class DashboardDataProvider:
                 wan_link_scores.append(site["wan-link-health"])
             if "application-health" in site:
                 app_health_scores.append(site["application-health"])
-        
+
         def avg(lst: List[float]) -> float:
             return sum(lst) / len(lst) if lst else 0.0
-        
+
         def count_below_threshold(lst: List[float], threshold: float) -> int:
             return len([v for v in lst if v < threshold])
-        
+
         return {
             "available": True,
             "total_sites": len(results),
@@ -391,90 +383,90 @@ class DashboardDataProvider:
             "sites_wan_degraded": count_below_threshold(wan_link_scores, 0.9),
             "sites_app_degraded": count_below_threshold(app_health_scores, 0.9),
             "worst_gateway_health": self.worst_sites_gateway_health,
-            "worst_wan_link": self.worst_sites_wan_link
+            "worst_wan_link": self.worst_sites_wan_link,
         }
-    
+
     def get_sle_degraded_sites(self, threshold: float = 0.9) -> List[Dict[str, Any]]:
         """
         Get list of sites with any degraded SLE metric (below threshold).
-        
+
         Args:
             threshold: SLE threshold (default 0.9 = 90%)
-        
+
         Returns:
             List of degraded sites with their SLE scores, sorted by worst first
         """
         if not self.sle_data:
             return []
-        
+
         results = self.sle_data.get("results", [])
         degraded_sites = []
-        
+
         for site in results:
             site_id = site.get("site_id", "")
-            
+
             # Skip sites with disconnected/offline gateways
             if site_id in self.disconnected_site_ids:
                 continue
-            
+
             gateway_health = site.get("gateway-health", 1.0)
             wan_link = site.get("wan-link-health", 1.0)
             app_health = site.get("application-health", 1.0)
-            
+
             # Check if any metric is below threshold
             is_degraded = (
-                gateway_health < threshold or
-                wan_link < threshold or
-                app_health < threshold
+                gateway_health < threshold or wan_link < threshold or app_health < threshold
             )
-            
+
             if is_degraded:
                 # Find worst metric for sorting
                 worst_score = min(gateway_health, wan_link, app_health)
                 site_name = self.site_lookup.get(site_id, site_id[:8] + "...")
-                
-                degraded_sites.append({
-                    "site_name": site_name,
-                    "site_id": site_id,
-                    "gateway_health": round(gateway_health * 100, 1),
-                    "wan_link": round(wan_link * 100, 1),
-                    "app_health": round(app_health * 100, 1),
-                    "worst_score": round(worst_score * 100, 1)
-                })
-        
+
+                degraded_sites.append(
+                    {
+                        "site_name": site_name,
+                        "site_id": site_id,
+                        "gateway_health": round(gateway_health * 100, 1),
+                        "wan_link": round(wan_link * 100, 1),
+                        "app_health": round(app_health * 100, 1),
+                        "worst_score": round(worst_score * 100, 1),
+                    }
+                )
+
         # Sort by worst score (ascending - worst first)
         degraded_sites.sort(key=lambda x: x["worst_score"])
-        
+
         return degraded_sites
-    
+
     def get_site_sle_details(self, site_id: str, metric: str = "wan-link-health") -> Dict[str, Any]:
         """
         Get detailed SLE data for a specific site from cache.
-        
+
         OPTIMIZED: Returns pre-computed data if available.
-        
+
         Args:
             site_id: Mist site UUID
             metric: SLE metric name (default: wan-link-health)
-        
+
         Returns:
             Dictionary with SLE details including summary, histogram,
             impacted gateways, and impacted interfaces
         """
         # Try precomputed data first (fast path)
         with PerformanceTimer("sle_precomputed_lookup", log_threshold_ms=10):
-            if hasattr(self, 'site_sle_precomputer') and self.site_sle_precomputer:
+            if hasattr(self, "site_sle_precomputer") and self.site_sle_precomputer:
                 precomputed = self.site_sle_precomputer.get_precomputed(site_id)
                 if precomputed and precomputed.get("available", False):
                     logger.info(f"[PRECOMPUTED] Using cached SLE for site {site_id[:8]}")
                     return precomputed
-        
+
         # Fallback: compute live
         logger.info(f"[LIVE] Computing SLE for site {site_id[:8]}")
-        
-        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+
+        if not hasattr(self, "redis_cache") or self.redis_cache is None:
             return {"available": False, "error": "Cache not available"}
-        
+
         try:
             with PerformanceTimer("redis_get_sle_summary", log_threshold_ms=50):
                 summary = self.redis_cache.get_site_sle_summary(site_id, metric)
@@ -485,12 +477,12 @@ class DashboardDataProvider:
             with PerformanceTimer("redis_get_sle_interfaces", log_threshold_ms=50):
                 interfaces = self.redis_cache.get_site_sle_impacted_interfaces(site_id, metric)
             last_fetch = self.redis_cache.get_last_site_sle_timestamp(site_id)
-            
+
             # Check if we have any data
             has_data = any([summary, histogram, gateways, interfaces])
-            
+
             site_name = self.site_lookup.get(site_id, site_id[:8] + "...")
-            
+
             return {
                 "available": has_data,
                 "site_id": site_id,
@@ -501,23 +493,23 @@ class DashboardDataProvider:
                 "impacted_gateways": gateways,
                 "impacted_interfaces": interfaces,
                 "last_fetch_timestamp": last_fetch,
-                "cache_fresh": self.redis_cache.is_site_sle_cache_fresh(site_id)
+                "cache_fresh": self.redis_cache.is_site_sle_cache_fresh(site_id),
             }
-            
+
         except Exception as error:
             logger.warning(f"Failed to get site SLE details for {site_id}: {error}")
             return {"available": False, "error": str(error)}
-    
+
     def get_alarms_summary(self) -> Dict[str, Any]:
         """
         Get alarms summary for dashboard display.
-        
+
         Returns:
             Dictionary with alarm counts and breakdown
         """
         if not self.alarms_data:
             return {"available": False, "total": 0}
-        
+
         return {
             "available": True,
             "total": self.alarms_data.get("total", 0),
@@ -525,29 +517,29 @@ class DashboardDataProvider:
             "by_type": self.alarms_by_type,
             "critical_count": self.alarms_by_severity.get("critical", 0),
             "warn_count": self.alarms_by_severity.get("warn", 0),
-            "recent_alarms": self.alarms_data.get("results", [])[:10]  # Top 10 recent
+            "recent_alarms": self.alarms_data.get("results", [])[:10],  # Top 10 recent
         }
-    
+
     def get_dashboard_data(self) -> Dict[str, Any]:
         """
         Get all data needed for dashboard rendering.
-        
+
         OPTIMIZED: Returns pre-computed data from Redis if available.
         Falls back to live computation only if precomputed data is stale.
-        
+
         Returns:
             Dictionary with all dashboard data structures.
             Returns loading state if no data available yet.
         """
         # Try to get pre-computed data first (fast path)
-        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+        if hasattr(self, "dashboard_precomputer") and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("main")
             if precomputed and not precomputed.get("loading", True):
                 logger.info("[PRECOMPUTED] Using cached dashboard data")
                 return precomputed
             else:
                 logger.info("[LIVE] Precomputed data not available, computing live")
-        
+
         # Fallback: Return loading state if no data yet
         if not self.utilization_records:
             return {
@@ -563,27 +555,25 @@ class DashboardDataProvider:
                 "utilization_dist": {},
                 "region_summary": [],
                 "trends": [],
-                "throughput": []
+                "throughput": [],
             }
-        
+
         # Fallback: Compute live (only used if precomputer not running)
         site_statuses = self._calculate_site_statuses()
-        
-        top_congested = self.ranking_views.top_n_by_utilization(
-            self.utilization_records, top_n=10
-        )
-        
+
+        top_congested = self.ranking_views.top_n_by_utilization(self.utilization_records, top_n=10)
+
         circuit_states = self._get_all_circuit_states()
         alerts = self.current_state_views.get_active_alerts(circuit_states)
-        
+
         util_dist = self._calculate_utilization_distribution()
         region_summary = self._calculate_region_summary()
         trends = self._calculate_trends()
         throughput = self._calculate_throughput()
-        
+
         # Active failovers - sites where primary is down and secondary is up
         active_failovers = self.get_active_failover_count()
-        
+
         return {
             "total_sites": len(set(r.site_id for r in self.utilization_records)),
             "healthy_sites": site_statuses.get("healthy", 0),
@@ -599,53 +589,52 @@ class DashboardDataProvider:
             "throughput": throughput,
             "sle_summary": self.get_sle_summary(),
             "alarms_summary": self.get_alarms_summary(),
-            "sle_degraded_sites": self.get_sle_degraded_sites()
+            "sle_degraded_sites": self.get_sle_degraded_sites(),
         }
-    
+
     def _calculate_site_statuses(self) -> Dict[str, int]:
         """
         Calculate site health status counts.
-        
+
         Returns:
             Dictionary with healthy/degraded/critical counts
         """
         site_max_util = defaultdict(float)
         site_down_circuits = defaultdict(int)
-        
+
         # Get max utilization per site
         for record in self.utilization_records:
             site_max_util[record.site_id] = max(
-                site_max_util[record.site_id],
-                record.utilization_pct
+                site_max_util[record.site_id], record.utilization_pct
             )
-        
+
         # Count down circuits per site
         for record in self.status_records:
             if record.status_code == 0:
                 site_down_circuits[record.site_id] += 1
-        
+
         # Classify sites
         all_sites = set(site_max_util.keys()) | set(site_down_circuits.keys())
-        
+
         statuses = {"healthy": 0, "degraded": 0, "critical": 0}
-        
+
         for site_id in all_sites:
             max_util = site_max_util.get(site_id, 0)
             down_count = site_down_circuits.get(site_id, 0)
-            
+
             if down_count > 0 or max_util >= 90:
                 statuses["critical"] += 1
             elif max_util >= 70:
                 statuses["degraded"] += 1
             else:
                 statuses["healthy"] += 1
-        
+
         return statuses
-    
+
     def _get_all_circuit_states(self) -> List:
         """
         Get current state for all circuits.
-        
+
         Returns:
             List of CircuitCurrentState objects
         """
@@ -653,52 +642,49 @@ class DashboardDataProvider:
         util_by_circuit = defaultdict(list)
         status_by_circuit = defaultdict(list)
         quality_by_circuit = defaultdict(list)
-        
+
         for record in self.utilization_records:
             key = (record.site_id, record.circuit_id)
             util_by_circuit[key].append(record)
-        
+
         for record in self.status_records:
             key = (record.site_id, record.circuit_id)
             status_by_circuit[key].append(record)
-        
+
         for record in self.quality_records:
             key = (record.site_id, record.circuit_id)
             quality_by_circuit[key].append(record)
-        
+
         # Generate states
         all_circuits = set(util_by_circuit.keys()) | set(status_by_circuit.keys())
-        
+
         states = []
         for site_id, circuit_id in all_circuits:
             state = self.current_state_views.get_circuit_current_state(
                 site_id=site_id,
                 circuit_id=circuit_id,
                 utilization_records=sorted(
-                    util_by_circuit[(site_id, circuit_id)],
-                    key=lambda r: r.hour_key
+                    util_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
                 ),
                 status_records=sorted(
-                    status_by_circuit[(site_id, circuit_id)],
-                    key=lambda r: r.hour_key
+                    status_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
                 ),
                 quality_records=sorted(
-                    quality_by_circuit[(site_id, circuit_id)],
-                    key=lambda r: r.hour_key
+                    quality_by_circuit[(site_id, circuit_id)], key=lambda r: r.hour_key
                 ),
-                failover_records=self.failover_records
+                failover_records=self.failover_records,
             )
             states.append(state)
-        
+
         return states
-    
+
     def _calculate_utilization_distribution(self) -> Dict[str, int]:
         """
         Calculate distribution of circuits across utilization buckets.
-        
+
         Uses finer granularity for low utilization (where most circuits live)
         and coarser buckets for high utilization (alert conditions).
-        
+
         Returns:
             Dictionary with bucket counts (ordered for display)
         """
@@ -708,7 +694,7 @@ class DashboardDataProvider:
             key = (record.site_id, record.circuit_id)
             if key not in circuit_latest or record.hour_key > circuit_latest[key].hour_key:
                 circuit_latest[key] = record
-        
+
         # Buckets with finer granularity at low end, coarser at high end
         # Most WAN circuits operate well below 10% utilization
         buckets = {
@@ -719,9 +705,9 @@ class DashboardDataProvider:
             "25-50%": 0,
             "50-70%": 0,
             "70-90%": 0,
-            "90-100%": 0
+            "90-100%": 0,
         }
-        
+
         for record in circuit_latest.values():
             util = record.utilization_pct
             if util < 1:
@@ -740,24 +726,24 @@ class DashboardDataProvider:
                 buckets["70-90%"] += 1
             else:
                 buckets["90-100%"] += 1
-        
+
         return buckets
-    
+
     def _calculate_region_summary(self) -> List[Dict[str, Any]]:
         """
         Calculate summary statistics by region.
-        
+
         Returns:
             List of region summary dictionaries
         """
         region_utilizations: Dict[str, List[float]] = defaultdict(list)
         region_counts: Dict[str, int] = defaultdict(int)
-        
+
         for record in self.utilization_records:
             region = self.region_lookup.get(record.site_id, "Unknown")
             region_utilizations[region].append(record.utilization_pct)
             region_counts[region] += 1
-        
+
         summaries = []
         for region in region_utilizations:
             util_list = region_utilizations[region]
@@ -765,27 +751,29 @@ class DashboardDataProvider:
                 avg_util = sum(util_list) / len(util_list)
             else:
                 avg_util = 0.0
-            
-            summaries.append({
-                "region": region,
-                "avg_utilization": round(avg_util, 1),
-                "circuit_count": region_counts[region]
-            })
-        
+
+            summaries.append(
+                {
+                    "region": region,
+                    "avg_utilization": round(avg_util, 1),
+                    "circuit_count": region_counts[region],
+                }
+            )
+
         return sorted(summaries, key=lambda x: x["avg_utilization"], reverse=True)
-    
+
     def _calculate_trends(self) -> List[Dict[str, Any]]:
         """
         Calculate trend data for the last 24 hours.
-        
+
         First tries to load historical trends from Redis cache.
         Falls back to current snapshot data if no historical data available.
-        
+
         Returns:
             List of trend data points for real-time utilization chart
         """
         # Try to get historical trends from Redis if cache is available
-        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+        if hasattr(self, "redis_cache") and self.redis_cache is not None:
             try:
                 trends = self.redis_cache.get_utilization_trends(hours=24)
                 if trends and len(trends) > 1:
@@ -793,113 +781,116 @@ class DashboardDataProvider:
                     return trends
             except Exception as error:
                 logger.warning(f"[TRENDS] Redis trends unavailable: {error}")
-        
+
         # Fallback: Use current snapshot grouped by hour_key
         # (only useful if we have data from multiple hours)
         hour_data = defaultdict(list)
-        
+
         for record in self.utilization_records:
             hour_key = record.hour_key
             hour_data[hour_key].append(record.utilization_pct)
-        
+
         # Calculate stats per hour
         trends = []
         for hour_key in sorted(hour_data.keys())[-24:]:
             values = hour_data[hour_key]
-            trends.append({
-                "timestamp": f"{hour_key[8:10]}:00",
-                "avg_utilization": round(sum(values) / len(values), 1) if values else 0,
-                "max_utilization": round(max(values), 1) if values else 0
-            })
-        
+            trends.append(
+                {
+                    "timestamp": f"{hour_key[8:10]}:00",
+                    "avg_utilization": round(sum(values) / len(values), 1) if values else 0,
+                    "max_utilization": round(max(values), 1) if values else 0,
+                }
+            )
+
         return trends
-    
+
     def _calculate_throughput(self) -> List[Dict[str, Any]]:
         """
         Calculate cumulative throughput data for the last 24 hours.
-        
+
         Uses historical byte counters from Redis to show actual throughput
         over time (delta between snapshots).
-        
+
         Returns:
             List of throughput data points (rx_mbps, tx_mbps)
         """
         # Try to get throughput history from Redis
-        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+        if hasattr(self, "redis_cache") and self.redis_cache is not None:
             try:
                 throughput = self.redis_cache.get_throughput_history(hours=24)
                 if throughput and len(throughput) > 1:
-                    logger.debug(f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis")
+                    logger.debug(
+                        f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis"
+                    )
                     return throughput
             except Exception as error:
                 logger.warning(f"[THROUGHPUT] Redis throughput unavailable: {error}")
-        
+
         # Fallback: Return current snapshot totals as single point
         total_rx = sum(r.rx_bytes for r in self.utilization_records)
         total_tx = sum(r.tx_bytes for r in self.utilization_records)
-        
-        return [{
-            "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
-            "datetime": datetime.now(timezone.utc).isoformat(),
-            "rx_mbps": 0,  # Can't calculate rate from single snapshot
-            "tx_mbps": 0,
-            "total_rx_gb": round(total_rx / (1024 ** 3), 2),
-            "total_tx_gb": round(total_tx / (1024 ** 3), 2)
-        }]
-    
+
+        return [
+            {
+                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
+                "datetime": datetime.now(timezone.utc).isoformat(),
+                "rx_mbps": 0,  # Can't calculate rate from single snapshot
+                "tx_mbps": 0,
+                "total_rx_gb": round(total_rx / (1024**3), 2),
+                "total_tx_gb": round(total_tx / (1024**3), 2),
+            }
+        ]
+
     def store_snapshot_for_trends(self) -> bool:
         """
         Store current utilization snapshot for trends history.
-        
+
         Only stores when data has actually changed AND minimum interval has passed.
         This prevents storing duplicate snapshots when precompute runs faster
         than the API refresh rate.
-        
+
         Returns:
             True if snapshot was stored successfully
         """
-        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+        if not hasattr(self, "redis_cache") or self.redis_cache is None:
             return False
-        
+
         if not self.utilization_records:
             return False
-        
+
         try:
             # Calculate summary metrics
             utils = [r.utilization_pct for r in self.utilization_records]
             total_rx = sum(r.rx_bytes for r in self.utilization_records)
             total_tx = sum(r.tx_bytes for r in self.utilization_records)
-            
+
             # Check if data has actually changed since last snapshot
             # (comparing cumulative byte counters - different values = new API data)
-            data_changed = (
-                total_rx != self._last_snapshot_rx or 
-                total_tx != self._last_snapshot_tx
-            )
-            
+            data_changed = total_rx != self._last_snapshot_rx or total_tx != self._last_snapshot_tx
+
             # Only store if data has actually changed from the API
             if not data_changed:
                 return False  # Same data as last snapshot, skip
-            
+
             # Also enforce minimum interval to avoid bursts during startup
             now = time.time()
             time_since_last = now - self._last_snapshot_time
             if time_since_last < self._min_snapshot_interval and self._last_snapshot_time > 0:
                 return False  # Too soon since last snapshot
-            
+
             avg_util = sum(utils) / len(utils) if utils else 0
             max_util = max(utils) if utils else 0
             circuit_count = len(set((r.site_id, r.circuit_id) for r in self.utilization_records))
-            
+
             # Store snapshot
             success = self.redis_cache.store_utilization_snapshot(
                 avg_utilization=avg_util,
                 max_utilization=max_util,
                 circuit_count=circuit_count,
                 total_rx_bytes=total_rx,
-                total_tx_bytes=total_tx
+                total_tx_bytes=total_tx,
             )
-            
+
             if success:
                 # Update tracking
                 self._last_snapshot_rx = total_rx
@@ -909,7 +900,7 @@ class DashboardDataProvider:
                     f"[TRENDS] Stored snapshot: avg={avg_util:.1f}%, "
                     f"max={max_util:.1f}%, circuits={circuit_count}"
                 )
-            
+
             return success
         except Exception as error:
             logger.error(f"[TRENDS] Failed to store snapshot: {error}")
@@ -918,30 +909,29 @@ class DashboardDataProvider:
     def get_region_sites(self, region: str) -> List[Dict[str, Any]]:
         """
         Get all sites in a region for drilldown view.
-        
+
         Args:
             region: Region name
-        
+
         Returns:
             List of site dictionaries with metrics
         """
         # Find sites in this region
-        sites_in_region = [
-            s for s in self.sites
-            if (s.region or "Unknown") == region
-        ]
-        
+        sites_in_region = [s for s in self.sites if (s.region or "Unknown") == region]
+
         site_data = []
         for site in sites_in_region:
             site_id = site.site_id
-            
+
             # Get latest metrics for this site
             site_utils = [r for r in self.utilization_records if r.site_id == site_id]
             site_status = [r for r in self.status_records if r.site_id == site_id]
-            
+
             circuit_count = len(set(r.circuit_id for r in site_utils))
-            avg_util = sum(r.utilization_pct for r in site_utils) / len(site_utils) if site_utils else 0
-            
+            avg_util = (
+                sum(r.utilization_pct for r in site_utils) / len(site_utils) if site_utils else 0
+            )
+
             # Determine status
             down_count = sum(1 for r in site_status if r.status_code == 0)
             status = "healthy"
@@ -951,129 +941,148 @@ class DashboardDataProvider:
                 status = "critical"
             elif avg_util >= 70:
                 status = "degraded"
-            
-            site_data.append({
-                "site_id": site_id,
-                "site_name": site.site_name,
-                "circuit_count": circuit_count,
-                "avg_utilization": round(avg_util, 1),
-                "status": status
-            })
-        
+
+            site_data.append(
+                {
+                    "site_id": site_id,
+                    "site_name": site.site_name,
+                    "circuit_count": circuit_count,
+                    "avg_utilization": round(avg_util, 1),
+                    "status": status,
+                }
+            )
+
         return sorted(site_data, key=lambda x: x["avg_utilization"], reverse=True)
-    
+
     def get_site_circuits(self, site_id: str) -> List[Dict[str, Any]]:
         """
         Get all circuits for a site for drilldown view.
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             List of circuit dictionaries with metrics
         """
         # Get circuits for this site
         site_circuits = [c for c in self.circuits if c.site_id == site_id]
-        
+
         circuit_data = []
         for circuit in site_circuits:
             circuit_id = circuit.circuit_id
-            
+
             # Get latest metrics
             util_records = [r for r in self.utilization_records if r.circuit_id == circuit_id]
             status_records = [r for r in self.status_records if r.circuit_id == circuit_id]
             quality_records = [r for r in self.quality_records if r.circuit_id == circuit_id]
-            
+
             latest_util = max(util_records, key=lambda r: r.hour_key) if util_records else None
-            latest_status = max(status_records, key=lambda r: r.hour_key) if status_records else None
-            latest_quality = max(quality_records, key=lambda r: r.hour_key) if quality_records else None
-            
+            latest_status = (
+                max(status_records, key=lambda r: r.hour_key) if status_records else None
+            )
+            latest_quality = (
+                max(quality_records, key=lambda r: r.hour_key) if quality_records else None
+            )
+
             # Calculate availability
             total_up = sum(r.up_minutes for r in status_records)
             total_down = sum(r.down_minutes for r in status_records)
-            availability = (total_up / (total_up + total_down) * 100) if (total_up + total_down) > 0 else 100
-            
-            circuit_data.append({
-                "circuit_id": circuit_id,
-                "role": circuit.role,
-                "status": "Up" if latest_status and latest_status.status_code == 1 else "Down",
-                "utilization_pct": round(latest_util.utilization_pct, 1) if latest_util else None,
-                "availability_pct": round(availability, 2),
-                "latency_ms": round(latest_quality.latency_avg, 1) if latest_quality and latest_quality.latency_avg else None,
-                "is_active": circuit.active_state
-            })
-        
+            availability = (
+                (total_up / (total_up + total_down) * 100) if (total_up + total_down) > 0 else 100
+            )
+
+            circuit_data.append(
+                {
+                    "circuit_id": circuit_id,
+                    "role": circuit.role,
+                    "status": "Up" if latest_status and latest_status.status_code == 1 else "Down",
+                    "utilization_pct": (
+                        round(latest_util.utilization_pct, 1) if latest_util else None
+                    ),
+                    "availability_pct": round(availability, 2),
+                    "latency_ms": (
+                        round(latest_quality.latency_avg, 1)
+                        if latest_quality and latest_quality.latency_avg
+                        else None
+                    ),
+                    "is_active": circuit.active_state,
+                }
+            )
+
         return circuit_data
-    
+
     def get_circuit_timeseries(self, circuit_id: str) -> List[Dict[str, Any]]:
         """
         Get time series data for a circuit for drilldown view.
-        
+
         Args:
             circuit_id: Circuit identifier
-        
+
         Returns:
             List of time series data points
         """
         util_records = sorted(
             [r for r in self.utilization_records if r.circuit_id == circuit_id],
-            key=lambda r: r.hour_key
+            key=lambda r: r.hour_key,
         )
         status_records = sorted(
-            [r for r in self.status_records if r.circuit_id == circuit_id],
-            key=lambda r: r.hour_key
+            [r for r in self.status_records if r.circuit_id == circuit_id], key=lambda r: r.hour_key
         )
         quality_records = sorted(
             [r for r in self.quality_records if r.circuit_id == circuit_id],
-            key=lambda r: r.hour_key
+            key=lambda r: r.hour_key,
         )
-        
+
         # Build time series
         time_series = []
-        all_hours = sorted(set(
-            [r.hour_key for r in util_records] +
-            [r.hour_key for r in status_records] +
-            [r.hour_key for r in quality_records]
-        ))
-        
+        all_hours = sorted(
+            set(
+                [r.hour_key for r in util_records]
+                + [r.hour_key for r in status_records]
+                + [r.hour_key for r in quality_records]
+            )
+        )
+
         util_by_hour = {r.hour_key: r for r in util_records}
         status_by_hour = {r.hour_key: r for r in status_records}
         quality_by_hour = {r.hour_key: r for r in quality_records}
-        
+
         for hour_key in all_hours[-24:]:  # Last 24 hours
             util = util_by_hour.get(hour_key)
             status = status_by_hour.get(hour_key)
             quality = quality_by_hour.get(hour_key)
-            
-            time_series.append({
-                "timestamp": f"{hour_key[:4]}-{hour_key[4:6]}-{hour_key[6:8]} {hour_key[8:10]}:00",
-                "utilization_pct": util.utilization_pct if util else None,
-                "availability_pct": status.availability_pct if status else 100,
-                "latency_ms": quality.latency_avg if quality else None,
-                "jitter_ms": quality.jitter_avg if quality else None,
-                "loss_pct": quality.loss_avg if quality else None
-            })
-        
+
+            time_series.append(
+                {
+                    "timestamp": f"{hour_key[:4]}-{hour_key[4:6]}-{hour_key[6:8]} {hour_key[8:10]}:00",
+                    "utilization_pct": util.utilization_pct if util else None,
+                    "availability_pct": status.availability_pct if status else 100,
+                    "latency_ms": quality.latency_avg if quality else None,
+                    "jitter_ms": quality.jitter_avg if quality else None,
+                    "loss_pct": quality.loss_avg if quality else None,
+                }
+            )
+
         return time_series
-    
+
     def get_circuit_summary(self) -> Dict[str, Any]:
         """
         Get summary statistics for WAN circuits.
-        
+
         OPTIMIZED: Returns pre-computed data from Redis if available.
-        
+
         Returns:
             Dictionary with circuit counts and utilization summaries
         """
         # Try precomputed data first
-        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+        if hasattr(self, "dashboard_precomputer") and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("circuit_summary")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached circuit_summary")
                 return precomputed
             else:
                 logger.info("[LIVE] Computing circuit_summary live")
-        
+
         if not self.utilization_records:
             return {
                 "total_circuits": 0,
@@ -1087,70 +1096,73 @@ class DashboardDataProvider:
                 "circuits_above_90": 0,
                 "primary_circuits": 0,
                 "secondary_circuits": 0,
-                "total_bandwidth_gbps": 0.0
+                "total_bandwidth_gbps": 0.0,
             }
-        
+
         # Get unique circuits from records
         circuit_ids = set(r.circuit_id for r in self.utilization_records)
-        
+
         # Calculate per-circuit max utilization
         circuit_max_util: Dict[str, float] = {}
         circuit_bandwidth: Dict[str, int] = {}
         for record in self.utilization_records:
             circuit_max_util[record.circuit_id] = max(
-                circuit_max_util.get(record.circuit_id, 0.0),
-                record.utilization_pct
+                circuit_max_util.get(record.circuit_id, 0.0), record.utilization_pct
             )
             circuit_bandwidth[record.circuit_id] = record.bandwidth_mbps
-        
+
         # Count circuits in status thresholds
         above_70 = sum(1 for util in circuit_max_util.values() if util >= 70)
         above_80 = sum(1 for util in circuit_max_util.values() if util >= 80)
         above_90 = sum(1 for util in circuit_max_util.values() if util >= 90)
-        
+
         # Circuit status from status records (most recent)
-        circuits_down = len(set(
-            r.circuit_id for r in self.status_records if r.status_code == 0
-        ))
-        
+        circuits_down = len(set(r.circuit_id for r in self.status_records if r.status_code == 0))
+
         # Count by role from circuit dimension
         primary_count = sum(1 for c in self.circuits if c.role == "primary")
         secondary_count = sum(1 for c in self.circuits if c.role in ("secondary", "backup"))
-        
+
         # Total bandwidth
         total_bandwidth_mbps = sum(circuit_bandwidth.values())
         total_bandwidth_gbps = total_bandwidth_mbps / 1000.0
-        
+
         # Debug logging for bandwidth calculation
         if total_bandwidth_mbps == 0 and len(circuit_bandwidth) > 0:
             sample_bws = list(circuit_bandwidth.values())[:5]
-            logger.warning(f"[DEBUG] Zero bandwidth despite {len(circuit_bandwidth)} circuits. Sample values: {sample_bws}")
+            logger.warning(
+                f"[DEBUG] Zero bandwidth despite {len(circuit_bandwidth)} circuits. Sample values: {sample_bws}"
+            )
         elif len(circuit_bandwidth) > 0:
-            logger.debug(f"[DEBUG] Total BW: {total_bandwidth_gbps:.1f} Gbps from {len(circuit_bandwidth)} circuits")
-        
+            logger.debug(
+                f"[DEBUG] Total BW: {total_bandwidth_gbps:.1f} Gbps from {len(circuit_bandwidth)} circuits"
+            )
+
         return {
             "total_circuits": len(circuit_ids),
             "circuits_up": len(circuit_ids),
             "circuits_down": self.wan_down_count,
             "circuits_disabled": self.wan_disabled_count,
-            "avg_utilization": sum(circuit_max_util.values()) / len(circuit_max_util) if circuit_max_util else 0.0,
+            "avg_utilization": (
+                sum(circuit_max_util.values()) / len(circuit_max_util) if circuit_max_util else 0.0
+            ),
             "max_utilization": max(circuit_max_util.values()) if circuit_max_util else 0.0,
             "circuits_above_70": above_70,
             "circuits_above_80": above_80,
             "circuits_above_90": above_90,
             "primary_circuits": primary_count,
             "secondary_circuits": secondary_count,
-            "total_bandwidth_gbps": total_bandwidth_mbps / 1000.0
+            "total_bandwidth_gbps": total_bandwidth_mbps / 1000.0,
         }
 
     def get_active_failover_count(self) -> int:
         """
         Count sites currently in failover state.
-        
+
         A site is in failover when:
         - It has a primary circuit that is DOWN
         - It has a secondary/backup circuit that is UP
-        
+
         Returns:
             Number of sites currently using backup circuits
         """
@@ -1158,39 +1170,39 @@ class DashboardDataProvider:
         site_circuits: Dict[str, List] = defaultdict(list)
         for circuit in self.circuits:
             site_circuits[circuit.site_id].append(circuit)
-        
+
         # Get current status for each circuit (most recent)
         circuit_status: Dict[str, bool] = {}
         for record in self.status_records:
-            circuit_status[record.circuit_id] = (record.status_code == 1)
-        
+            circuit_status[record.circuit_id] = record.status_code == 1
+
         failover_count = 0
-        
+
         for site_id, circuits in site_circuits.items():
             # Find primary and secondary circuits
             primary = next((c for c in circuits if c.role == "primary"), None)
             secondary = next((c for c in circuits if c.role in ("secondary", "backup")), None)
-            
+
             # Skip sites without both circuit types
             if not primary or not secondary:
                 continue
-            
+
             # Check if primary is down and secondary is up
             primary_up = circuit_status.get(primary.circuit_id, True)
             secondary_up = circuit_status.get(secondary.circuit_id, False)
-            
+
             if not primary_up and secondary_up:
                 failover_count += 1
-        
+
         return failover_count
 
     def get_primary_secondary_comparison(self, site_id: str) -> Dict[str, Any]:
         """
         Get primary vs secondary comparison data for a site.
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             Comparison dictionary
         """
@@ -1198,18 +1210,32 @@ class DashboardDataProvider:
         site_circuits = [c for c in self.circuits if c.site_id == site_id]
         primary = next((c for c in site_circuits if c.role == "primary"), None)
         secondary = next((c for c in site_circuits if c.role in ("secondary", "backup")), None)
-        
+
         if not primary and not secondary:
             return {"error": "No circuits found for site"}
-        
+
         # Get records for each circuit
-        primary_util = [r for r in self.utilization_records if primary and r.circuit_id == primary.circuit_id]
-        secondary_util = [r for r in self.utilization_records if secondary and r.circuit_id == secondary.circuit_id]
-        primary_quality = [r for r in self.quality_records if primary and r.circuit_id == primary.circuit_id]
-        secondary_quality = [r for r in self.quality_records if secondary and r.circuit_id == secondary.circuit_id]
-        primary_status = [r for r in self.status_records if primary and r.circuit_id == primary.circuit_id]
-        secondary_status = [r for r in self.status_records if secondary and r.circuit_id == secondary.circuit_id]
-        
+        primary_util = [
+            r for r in self.utilization_records if primary and r.circuit_id == primary.circuit_id
+        ]
+        secondary_util = [
+            r
+            for r in self.utilization_records
+            if secondary and r.circuit_id == secondary.circuit_id
+        ]
+        primary_quality = [
+            r for r in self.quality_records if primary and r.circuit_id == primary.circuit_id
+        ]
+        secondary_quality = [
+            r for r in self.quality_records if secondary and r.circuit_id == secondary.circuit_id
+        ]
+        primary_status = [
+            r for r in self.status_records if primary and r.circuit_id == primary.circuit_id
+        ]
+        secondary_status = [
+            r for r in self.status_records if secondary and r.circuit_id == secondary.circuit_id
+        ]
+
         return self.current_state_views.get_primary_vs_secondary_comparison(
             site_id=site_id,
             primary_utilization=sorted(primary_util, key=lambda r: r.hour_key),
@@ -1218,88 +1244,88 @@ class DashboardDataProvider:
             secondary_quality=sorted(secondary_quality, key=lambda r: r.hour_key),
             primary_status=sorted(primary_status, key=lambda r: r.hour_key),
             secondary_status=sorted(secondary_status, key=lambda r: r.hour_key),
-            failover_records=self.failover_records
+            failover_records=self.failover_records,
         )
 
     def get_gateway_health_summary(self) -> Dict[str, Any]:
         """
         Get gateway device health summary.
-        
+
         OPTIMIZED: Returns pre-computed data from Redis if available.
-        
+
         Returns:
             Dictionary with gateway health counts
         """
         # Try precomputed data first
-        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+        if hasattr(self, "dashboard_precomputer") and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("gateway_health")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached gateway_health")
                 return precomputed
             else:
                 logger.info("[LIVE] Computing gateway_health live")
-        
+
         return {
             "total": self.gateways_total,
             "connected": self.gateways_connected,
-            "disconnected": self.gateways_disconnected
+            "disconnected": self.gateways_disconnected,
         }
 
     # ==================== VPN Peer Path Methods ====================
-    
+
     def get_vpn_peer_summary(self) -> Dict[str, Any]:
         """
         Get org-level VPN peer path summary statistics.
-        
+
         OPTIMIZED: Returns pre-computed data from Redis if available.
-        
+
         Returns:
             Dictionary with total_peers, paths_up, paths_down, health_percentage
         """
         # Try precomputed data first
-        if hasattr(self, 'dashboard_precomputer') and self.dashboard_precomputer:
+        if hasattr(self, "dashboard_precomputer") and self.dashboard_precomputer:
             precomputed = self.dashboard_precomputer.get_precomputed("vpn_summary")
             if precomputed:
                 logger.info("[PRECOMPUTED] Using cached vpn_summary")
                 return precomputed
             else:
                 logger.info("[LIVE] Computing vpn_summary live")
-        
+
         try:
-            if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            if hasattr(self, "redis_cache") and self.redis_cache is not None:
                 summary = self.redis_cache.get_vpn_peer_summary()
-                
+
                 total = summary.get("total_peers", 0)
                 up = summary.get("paths_up", 0)
                 down = summary.get("paths_down", 0)
-                
+
                 health_pct = (up / total * 100) if total > 0 else 0.0
-                
+
                 return {
                     "total_peers": total,
                     "paths_up": up,
                     "paths_down": down,
                     "health_percentage": round(health_pct, 1),
-                    "timestamp": summary.get("timestamp", 0)
+                    "timestamp": summary.get("timestamp", 0),
                 }
         except Exception as error:
             logger.error(f"Error getting VPN peer summary: {error}")
-        
+
         return {
             "total_peers": 0,
             "paths_up": 0,
             "paths_down": 0,
             "health_percentage": 0.0,
-            "timestamp": 0
+            "timestamp": 0,
         }
-    
+
     def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
         """
         Get VPN peer paths for a specific site.
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             List of peer path records with:
             - vpn_name: VPN tunnel name
@@ -1313,22 +1339,22 @@ class DashboardDataProvider:
             - mos: MOS score (1-5)
         """
         try:
-            if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            if hasattr(self, "redis_cache") and self.redis_cache is not None:
                 return self.redis_cache.get_site_vpn_peers(site_id)
         except Exception as error:
             logger.error(f"Error getting VPN peers for site {site_id}: {error}")
-        
+
         return []
-    
+
     def get_vpn_peer_table_data(self, site_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get VPN peer data formatted for dashboard table display.
-        
+
         OPTIMIZED: Returns pre-computed data if available for per-site requests.
-        
+
         Args:
             site_id: Optional site UUID to filter by
-        
+
         Returns:
             List of records formatted for dash_table with columns:
             - vpn_name, peer_router_name, port_id, peer_port_id
@@ -1336,20 +1362,20 @@ class DashboardDataProvider:
         """
         # Try precomputed data first for per-site requests (fast path)
         with PerformanceTimer("vpn_precomputed_lookup", log_threshold_ms=10):
-            if site_id and hasattr(self, 'site_vpn_precomputer') and self.site_vpn_precomputer:
+            if site_id and hasattr(self, "site_vpn_precomputer") and self.site_vpn_precomputer:
                 precomputed = self.site_vpn_precomputer.get_precomputed(site_id)
                 if precomputed and precomputed.get("available", False):
                     logger.info(f"[PRECOMPUTED] Using cached VPN for site {site_id[:8]}")
                     return precomputed.get("peers", [])
-        
+
         # Log if computing live
         if site_id:
             logger.info(f"[LIVE] Computing VPN for site {site_id[:8]}")
-        
+
         try:
             if site_id:
                 peers = self.get_site_vpn_peers(site_id)
-            elif hasattr(self, 'redis_cache') and self.redis_cache is not None:
+            elif hasattr(self, "redis_cache") and self.redis_cache is not None:
                 all_data = self.redis_cache.get_all_vpn_peers()
                 peers = []
                 for cache_key, data in all_data.items():
@@ -1361,30 +1387,32 @@ class DashboardDataProvider:
                             peers.append(peer_copy)
             else:
                 peers = []
-            
+
             # Format for table display
             table_data = []
             for peer in peers:
                 site_name = self.site_lookup.get(peer.get("site_id", ""), "Unknown")
-                
-                table_data.append({
-                    "site_name": site_name,
-                    "vpn_name": peer.get("vpn_name", ""),
-                    "peer_router_name": peer.get("peer_router_name", ""),
-                    "port_id": peer.get("port_id", ""),
-                    "peer_port_id": peer.get("peer_port_id", ""),
-                    "status": "Up" if peer.get("up", False) else "Down",
-                    "latency_ms": round(peer.get("latency", 0), 1),
-                    "loss_pct": round(peer.get("loss", 0), 2),
-                    "jitter_ms": round(peer.get("jitter", 0), 1),
-                    "mos": round(peer.get("mos", 0), 2)
-                })
-            
+
+                table_data.append(
+                    {
+                        "site_name": site_name,
+                        "vpn_name": peer.get("vpn_name", ""),
+                        "peer_router_name": peer.get("peer_router_name", ""),
+                        "port_id": peer.get("port_id", ""),
+                        "peer_port_id": peer.get("peer_port_id", ""),
+                        "status": "Up" if peer.get("up", False) else "Down",
+                        "latency_ms": round(peer.get("latency", 0), 1),
+                        "loss_pct": round(peer.get("loss", 0), 2),
+                        "jitter_ms": round(peer.get("jitter", 0), 1),
+                        "mos": round(peer.get("mos", 0), 2),
+                    }
+                )
+
             # Sort by site name, then VPN name
             table_data.sort(key=lambda r: (r.get("site_name", ""), r.get("vpn_name", "")))
-            
+
             return table_data
-            
+
         except Exception as error:
             logger.error(f"Error getting VPN peer table data: {error}")
             return []
@@ -1392,7 +1420,7 @@ class DashboardDataProvider:
     # =========================================================================
     # Time-Series Data Methods (New Insights APIs)
     # =========================================================================
-    
+
     def get_gateway_port_timeseries(
         self,
         site_id: str,
@@ -1400,16 +1428,16 @@ class DashboardDataProvider:
         port_id: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        interval: int = 3600
+        interval: int = 3600,
     ) -> List[Dict[str, Any]]:
         """
         Get gateway port bandwidth time-series (rx_bps, tx_bps).
-        
+
         Prioritizes missing data over stale data:
         1. Check Redis cache for existing data
         2. If missing or stale, fetch from API
         3. Store fetched data in Redis
-        
+
         Args:
             site_id: Site UUID
             device_mac: Gateway MAC address
@@ -1417,26 +1445,26 @@ class DashboardDataProvider:
             start_time: Start epoch (default: 24 hours ago)
             end_time: End epoch (default: now)
             interval: Aggregation interval in seconds (default: 3600)
-        
+
         Returns:
             List of time-series data points with rx_bps, tx_bps
         """
         import time as time_module
-        
+
         end_time = end_time or int(time_module.time())
         start_time = start_time or (end_time - 24 * 3600)  # Default 24 hours
-        
+
         # Try Redis cache first
-        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+        if hasattr(self, "redis_cache") and self.redis_cache is not None:
             cached = self.redis_cache.get_gateway_port_timeseries(
                 site_id, device_mac, port_id, start_time, end_time
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} gateway port time-series points")
                 return cached
-        
+
         # Fetch from API if cache miss
-        if hasattr(self, 'api_client') and self.api_client is not None:
+        if hasattr(self, "api_client") and self.api_client is not None:
             try:
                 result = self.api_client.get_gateway_port_stats_timeseries(
                     site_id=site_id,
@@ -1444,21 +1472,21 @@ class DashboardDataProvider:
                     port_id=port_id,
                     start_time=start_time,
                     end_time=end_time,
-                    interval=interval
+                    interval=interval,
                 )
-                
+
                 # Store in cache
-                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                if hasattr(self, "redis_cache") and self.redis_cache is not None:
                     self.redis_cache.save_gateway_port_timeseries(
                         site_id, device_mac, port_id, result
                     )
-                
+
                 return result.get("results", [])
             except Exception as error:
                 logger.error(f"Error fetching gateway port time-series: {error}")
-        
+
         return []
-    
+
     def get_vpn_peer_timeseries(
         self,
         site_id: str,
@@ -1466,11 +1494,11 @@ class DashboardDataProvider:
         peer_mac: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        interval: int = 3600
+        interval: int = 3600,
     ) -> List[Dict[str, Any]]:
         """
         Get VPN peer metrics time-series (loss, latency, jitter, mos).
-        
+
         Args:
             site_id: Site UUID
             device_mac: Local gateway MAC
@@ -1478,26 +1506,26 @@ class DashboardDataProvider:
             start_time: Start epoch (default: 24 hours ago)
             end_time: End epoch (default: now)
             interval: Aggregation interval in seconds
-        
+
         Returns:
             List of time-series data points with loss, latency, jitter, mos
         """
         import time as time_module
-        
+
         end_time = end_time or int(time_module.time())
         start_time = start_time or (end_time - 24 * 3600)
-        
+
         # Try Redis cache first
-        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+        if hasattr(self, "redis_cache") and self.redis_cache is not None:
             cached = self.redis_cache.get_vpn_peer_timeseries(
                 site_id, device_mac, peer_mac, start_time, end_time
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} VPN peer time-series points")
                 return cached
-        
+
         # Fetch from API if cache miss
-        if hasattr(self, 'api_client') and self.api_client is not None:
+        if hasattr(self, "api_client") and self.api_client is not None:
             try:
                 result = self.api_client.get_vpn_peer_metrics_timeseries(
                     site_id=site_id,
@@ -1505,21 +1533,19 @@ class DashboardDataProvider:
                     peer_mac=peer_mac,
                     start_time=start_time,
                     end_time=end_time,
-                    interval=interval
+                    interval=interval,
                 )
-                
+
                 # Store in cache
-                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
-                    self.redis_cache.save_vpn_peer_timeseries(
-                        site_id, device_mac, peer_mac, result
-                    )
-                
+                if hasattr(self, "redis_cache") and self.redis_cache is not None:
+                    self.redis_cache.save_vpn_peer_timeseries(site_id, device_mac, peer_mac, result)
+
                 return result.get("results", [])
             except Exception as error:
                 logger.error(f"Error fetching VPN peer time-series: {error}")
-        
+
         return []
-    
+
     def get_device_metrics_timeseries(
         self,
         site_id: str,
@@ -1527,11 +1553,11 @@ class DashboardDataProvider:
         metric: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        interval: int = 600
+        interval: int = 600,
     ) -> List[Dict[str, Any]]:
         """
         Get device insight metrics time-series (tx_bytes, rx_bytes, cpu, etc.).
-        
+
         Args:
             site_id: Site UUID
             device_mac: Device MAC address
@@ -1539,26 +1565,26 @@ class DashboardDataProvider:
             start_time: Start epoch (default: 24 hours ago)
             end_time: End epoch (default: now)
             interval: Aggregation interval in seconds (default: 600 = 10 min)
-        
+
         Returns:
             List of time-series data points
         """
         import time as time_module
-        
+
         end_time = end_time or int(time_module.time())
         start_time = start_time or (end_time - 24 * 3600)
-        
+
         # Try Redis cache first
-        if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+        if hasattr(self, "redis_cache") and self.redis_cache is not None:
             cached = self.redis_cache.get_device_metrics_timeseries(
                 site_id, device_mac, metric, start_time, end_time
             )
             if cached:
                 logger.debug(f"[CACHE] Returning {len(cached)} device {metric} time-series points")
                 return cached
-        
+
         # Fetch from API if cache miss
-        if hasattr(self, 'api_client') and self.api_client is not None:
+        if hasattr(self, "api_client") and self.api_client is not None:
             try:
                 result = self.api_client.get_device_insight_metrics(
                     site_id=site_id,
@@ -1566,59 +1592,57 @@ class DashboardDataProvider:
                     metric=metric,
                     start_time=start_time,
                     end_time=end_time,
-                    interval=interval
+                    interval=interval,
                 )
-                
+
                 # Store in cache
-                if hasattr(self, 'redis_cache') and self.redis_cache is not None:
+                if hasattr(self, "redis_cache") and self.redis_cache is not None:
                     self.redis_cache.save_device_metrics_timeseries(
                         site_id, device_mac, metric, result
                     )
-                
+
                 return result.get("results", [])
             except Exception as error:
                 logger.error(f"Error fetching device metrics time-series: {error}")
-        
+
         return []
-    
+
     def get_sites_needing_timeseries_refresh(
-        self,
-        timeseries_type: str = "gateway_ts",
-        max_age_seconds: int = 3600
+        self, timeseries_type: str = "gateway_ts", max_age_seconds: int = 3600
     ) -> Dict[str, List[str]]:
         """
         Get sites that need time-series data refresh.
-        
+
         Prioritizes MISSING data over STALE data per project requirements.
-        
+
         Args:
             timeseries_type: Type of time-series (gateway_ts, vpn_ts, device_ts)
             max_age_seconds: Max age before considered stale
-        
+
         Returns:
             Dict with 'missing' and 'stale' site ID lists
         """
         result = {"missing": [], "stale": []}
-        
-        if not hasattr(self, 'redis_cache') or self.redis_cache is None:
+
+        if not hasattr(self, "redis_cache") or self.redis_cache is None:
             return result
-        
+
         # Get all site IDs
         site_ids = list(self.site_lookup.keys())
-        
+
         # First get missing (priority)
         result["missing"] = self.redis_cache.get_missing_timeseries_sites(
             site_ids, prefix=timeseries_type
         )
-        
+
         # Then get stale (lower priority)
         result["stale"] = self.redis_cache.get_stale_timeseries_sites(
             site_ids, prefix=timeseries_type, max_age_seconds=max_age_seconds
         )
-        
+
         logger.info(
             f"[REFRESH] {timeseries_type}: {len(result['missing'])} missing, "
             f"{len(result['stale'])} stale sites need refresh"
         )
-        
+
         return result

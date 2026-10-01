@@ -29,6 +29,7 @@ REDIS_AVAILABLE = False
 
 try:
     import redis
+
     REDIS_AVAILABLE = True
 except ImportError:
     redis = None  # type: ignore[assignment]
@@ -60,7 +61,7 @@ class RedisCache:
            -v redis-data:/data \\
            redis:alpine redis-server --appendonly yes
     """
-    
+
     # Cache key prefixes
     PREFIX_ORG = "mistwan:org"
     PREFIX_SITES = "mistwan:sites"
@@ -72,34 +73,34 @@ class RedisCache:
     PREFIX_SLE = "mistwan:sle"
     PREFIX_ALARMS = "mistwan:alarms"
     PREFIX_GATEWAY = "mistwan:gateway"
-    
+
     # Minimum TTL: 31 days for ALL cached data
     # Per user requirement: data should not be dumped until at least a month old
     MIN_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
-    
+
     # Default TTL: 31 days (minimum retention for all data)
     DEFAULT_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
-    
+
     # Long TTL: 31 days for reference data (sites, org config)
     LONG_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
-    
+
     # Historical TTL: 31 days for time-series and historical data
     # Supports 13-month rolling analysis per ProjectGoals.md
     HISTORY_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
-    
+
     def __init__(self, redis_url: Optional[str] = None):
         """
         Initialize Redis connection.
-        
+
         Args:
             redis_url: Redis connection URL (default: from environment variables)
-        
+
         Connection priority:
             1. Explicit redis_url parameter
             2. REDIS_URL environment variable
             3. Build from REDIS_HOST and REDIS_PORT (container-friendly)
             4. Default: redis://localhost:6379
-        
+
         Raises:
             ImportError: If redis package is not installed
             ConnectionError: If cannot connect to Redis
@@ -108,7 +109,7 @@ class RedisCache:
             raise ImportError(
                 "redis package is required for caching. Install with: pip install redis"
             )
-        
+
         # Build Redis URL from environment with fallback chain
         if redis_url:
             self.redis_url = redis_url
@@ -119,11 +120,11 @@ class RedisCache:
             redis_host = os.environ.get("REDIS_HOST", "localhost")
             redis_port = os.environ.get("REDIS_PORT", "6379")
             self.redis_url = f"redis://{redis_host}:{redis_port}"
-        
+
         # Create synchronous Redis client with string responses
         # Note: redis-py types are complex due to sync/async support
         self.client: Any = redis.from_url(self.redis_url, decode_responses=True)
-        
+
         # Test connection
         try:
             self.client.ping()
@@ -131,7 +132,7 @@ class RedisCache:
         except redis.ConnectionError as error:
             logger.error(f"[ERROR] Failed to connect to Redis: {error}")
             raise ConnectionError(f"Cannot connect to Redis: {error}")
-    
+
     def _safe_url(self) -> str:
         """Return URL with password masked for logging."""
         if "@" in self.redis_url:
@@ -139,17 +140,17 @@ class RedisCache:
             parts = self.redis_url.split("@")
             return f"***@{parts[-1]}"
         return self.redis_url
-    
+
     def _serialize(self, data: Any) -> str:
         """Serialize data to JSON string."""
         return json.dumps(data, default=str)
-    
+
     def _deserialize(self, data: Optional[str]) -> Any:
         """Deserialize JSON string to Python object."""
         if data is None:
             return None
         return json.loads(data)
-    
+
     def is_connected(self) -> bool:
         """Check if Redis connection is alive."""
         try:
@@ -157,16 +158,16 @@ class RedisCache:
             return True
         except Exception:
             return False
-    
+
     # ==================== Metadata Operations ====================
-    
+
     def set_last_update(self, timestamp: Optional[float] = None) -> bool:
         """
         Store the timestamp of the last successful data update.
-        
+
         Args:
             timestamp: Unix timestamp (default: current time)
-        
+
         Returns:
             True if successful
         """
@@ -177,11 +178,11 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error setting last update: {error}")
             return False
-    
+
     def get_last_update(self) -> Optional[float]:
         """
         Get the timestamp of the last successful data update.
-        
+
         Returns:
             Unix timestamp or None if never updated
         """
@@ -191,35 +192,35 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error getting last update: {error}")
             return None
-    
+
     def is_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         """
         Check if cached data is fresh enough to use.
-        
+
         Args:
             max_age_seconds: Maximum age in seconds (default: 5 minutes)
-        
+
         Returns:
             True if cache is fresh, False if stale or missing
         """
         last_update = self.get_last_update()
         if last_update is None:
             return False
-        
+
         age = time.time() - last_update
         is_fresh = age < max_age_seconds
-        
+
         if is_fresh:
             logger.debug(f"Cache is fresh (age: {age:.0f}s, max: {max_age_seconds}s)")
         else:
             logger.debug(f"Cache is stale (age: {age:.0f}s, max: {max_age_seconds}s)")
-        
+
         return is_fresh
-    
+
     def get_cache_age(self) -> Optional[float]:
         """
         Get the age of the cache in seconds.
-        
+
         Returns:
             Age in seconds or None if no cache exists
         """
@@ -227,22 +228,18 @@ class RedisCache:
         if last_update is None:
             return None
         return time.time() - last_update
-    
+
     # ==================== Organization Data ====================
-    
+
     def set_organization(self, org_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         """Store organization data."""
         try:
-            self.client.setex(
-                self.PREFIX_ORG,
-                ttl or self.LONG_TTL,
-                self._serialize(org_data)
-            )
+            self.client.setex(self.PREFIX_ORG, ttl or self.LONG_TTL, self._serialize(org_data))
             return True
         except Exception as error:
             logger.error(f"Error storing organization data: {error}")
             return False
-    
+
     def get_organization(self) -> Optional[Dict[str, Any]]:
         """Retrieve organization data."""
         try:
@@ -251,23 +248,19 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving organization data: {error}")
             return None
-    
+
     # ==================== Sites Data ====================
-    
+
     def set_sites(self, sites: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
         """Store sites list."""
         try:
-            self.client.setex(
-                self.PREFIX_SITES,
-                ttl or self.LONG_TTL,
-                self._serialize(sites)
-            )
+            self.client.setex(self.PREFIX_SITES, ttl or self.LONG_TTL, self._serialize(sites))
             logger.debug(f"Cached {len(sites)} sites")
             return True
         except Exception as error:
             logger.error(f"Error storing sites data: {error}")
             return False
-    
+
     def get_sites(self) -> Optional[List[Dict[str, Any]]]:
         """Retrieve sites list."""
         try:
@@ -276,23 +269,21 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving sites data: {error}")
             return None
-    
+
     # ==================== Site Groups Data ====================
-    
+
     def set_site_groups(self, sitegroups: Dict[str, str], ttl: Optional[int] = None) -> bool:
         """Store site groups mapping (id -> name)."""
         try:
             self.client.setex(
-                self.PREFIX_SITEGROUPS,
-                ttl or self.LONG_TTL,
-                self._serialize(sitegroups)
+                self.PREFIX_SITEGROUPS, ttl or self.LONG_TTL, self._serialize(sitegroups)
             )
             logger.debug(f"Cached {len(sitegroups)} site groups")
             return True
         except Exception as error:
             logger.error(f"Error storing site groups: {error}")
             return False
-    
+
     def get_site_groups(self) -> Optional[Dict[str, str]]:
         """Retrieve site groups mapping."""
         try:
@@ -301,36 +292,34 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site groups: {error}")
             return None
-    
+
     # ==================== Port Statistics ====================
-    
+
     def set_port_stats(self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
         """
         Store gateway port statistics.
-        
+
         Args:
             port_stats: List of port statistics dictionaries
             ttl: Time-to-live in seconds (default: 5 minutes)
-        
+
         Returns:
             True if successful
         """
         try:
             self.client.setex(
-                self.PREFIX_PORT_STATS,
-                ttl or self.DEFAULT_TTL,
-                self._serialize(port_stats)
+                self.PREFIX_PORT_STATS, ttl or self.DEFAULT_TTL, self._serialize(port_stats)
             )
             logger.info(f"[OK] Cached {len(port_stats)} port stats records")
             return True
         except Exception as error:
             logger.error(f"Error storing port stats: {error}")
             return False
-    
+
     def get_port_stats(self) -> Optional[List[Dict[str, Any]]]:
         """
         Retrieve gateway port statistics.
-        
+
         Returns:
             List of port statistics or None if not cached
         """
@@ -343,49 +332,39 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving port stats: {error}")
             return None
-    
+
     # ==================== Per-Site Port Statistics (Incremental Cache) ====================
-    
+
     def set_site_port_stats(
-        self,
-        site_id: str,
-        port_stats: List[Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, site_id: str, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         """
         Store port statistics for a specific site with timestamp.
-        
+
         Enables incremental caching - only refresh stale sites.
         Uses 31-day retention by default to support historical analysis.
-        
+
         Args:
             site_id: The site ID
             port_stats: List of port statistics for this site
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_PORT_STATS}:site:{site_id}"
-            data = {
-                "timestamp": time.time(),
-                "port_stats": port_stats
-            }
-            self.client.setex(
-                key,
-                ttl or self.HISTORY_TTL,
-                self._serialize(data)
-            )
+            data = {"timestamp": time.time(), "port_stats": port_stats}
+            self.client.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
             return True
         except Exception as error:
             logger.error(f"Error storing site port stats for {site_id}: {error}")
             return False
-    
+
     def get_site_port_stats(self, site_id: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve port statistics for a specific site.
-        
+
         Returns:
             Dictionary with 'timestamp' and 'port_stats', or None if not cached
         """
@@ -396,150 +375,137 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site port stats for {site_id}: {error}")
             return None
-    
+
     def is_site_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         """
         Check if cached data for a specific site is fresh.
-        
+
         Args:
             site_id: The site ID to check
             max_age_seconds: Maximum age in seconds (default: 1 hour)
-        
+
         Returns:
             True if site cache is fresh, False if stale or missing
         """
         cached = self.get_site_port_stats(site_id)
         if cached is None:
             return False
-        
+
         timestamp = cached.get("timestamp", 0)
         age = time.time() - timestamp
         return age < max_age_seconds
-    
-    def get_stale_site_ids(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
-    ) -> List[str]:
+
+    def get_stale_site_ids(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
         """
         Identify which sites have stale or missing cache data.
-        
+
         Args:
             site_ids: List of site IDs to check
             max_age_seconds: Maximum cache age in seconds (default: 1 hour)
-        
+
         Returns:
             List of site IDs that need refreshing
         """
         stale_sites = []
         fresh_sites = 0
-        
+
         for site_id in site_ids:
             if self.is_site_cache_fresh(site_id, max_age_seconds):
                 fresh_sites += 1
             else:
                 stale_sites.append(site_id)
-        
+
         logger.info(
             f"[INFO] Site cache status: {fresh_sites} fresh, "
             f"{len(stale_sites)} stale/missing (max age: {max_age_seconds}s)"
         )
         return stale_sites
-    
-    def get_sites_sorted_by_cache_age(
-        self,
-        site_ids: List[str]
-    ) -> List[tuple]:
+
+    def get_sites_sorted_by_cache_age(self, site_ids: List[str]) -> List[tuple]:
         """
         Get all sites sorted by cache age (oldest first).
-        
+
         Sites with no cache data are returned first (infinite age).
-        
+
         Args:
             site_ids: List of site IDs to check
-        
+
         Returns:
             List of (site_id, age_seconds) tuples sorted by age descending
         """
         site_ages = []
         current_time = time.time()
-        
+
         for site_id in site_ids:
             cached = self.get_site_port_stats(site_id)
             if cached is None:
                 # No cache - treat as infinitely old
-                site_ages.append((site_id, float('inf')))
+                site_ages.append((site_id, float("inf")))
             else:
                 timestamp = cached.get("timestamp", 0)
                 age = current_time - timestamp
                 site_ages.append((site_id, age))
-        
+
         # Sort by age descending (oldest first)
         site_ages.sort(key=lambda item: item[1], reverse=True)
         return site_ages
-    
+
     def get_oldest_stale_sites(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600,
-        limit: int = 50
+        self, site_ids: List[str], max_age_seconds: int = 3600, limit: int = 50
     ) -> List[str]:
         """
         Get the oldest stale sites for priority refresh.
-        
+
         Args:
             site_ids: List of all site IDs
             max_age_seconds: Maximum cache age before considered stale
             limit: Maximum number of sites to return
-        
+
         Returns:
             List of site IDs sorted by age (oldest first), limited to specified count
         """
         sorted_sites = self.get_sites_sorted_by_cache_age(site_ids)
-        
+
         # Filter to only stale sites
-        stale_sites = [
-            site_id for site_id, age in sorted_sites
-            if age >= max_age_seconds
-        ]
-        
+        stale_sites = [site_id for site_id, age in sorted_sites if age >= max_age_seconds]
+
         # Return limited list
         return stale_sites[:limit]
-    
+
     def get_all_site_port_stats(self, site_ids: List[str]) -> List[Dict[str, Any]]:
         """
         Retrieve port statistics for all sites from per-site cache.
-        
+
         Uses Redis pipeline for efficient bulk retrieval (5-10x faster than sequential).
-        
+
         Args:
             site_ids: List of site IDs to retrieve
-        
+
         Returns:
             Combined list of all port statistics from cached sites
         """
         if not site_ids:
             return []
-        
+
         # Use pipeline for bulk fetch (much faster than sequential gets)
         try:
             pipe = self.client.pipeline(transaction=False)
             keys = [f"{self.PREFIX_PORT_STATS}:site:{site_id}" for site_id in site_ids]
-            
+
             for key in keys:
                 pipe.get(key)
-            
+
             results = pipe.execute()
-            
+
             all_port_stats = []
             for raw_data in results:
                 if raw_data is not None:
                     cached = self._deserialize(raw_data)
                     if cached and "port_stats" in cached:
                         all_port_stats.extend(cached["port_stats"])
-            
+
             return all_port_stats
-            
+
         except Exception as error:
             logger.warning(f"[WARN] Pipeline fetch failed, falling back to sequential: {error}")
             # Fallback to sequential fetch
@@ -549,44 +515,42 @@ class RedisCache:
                 if cached and "port_stats" in cached:
                     all_port_stats.extend(cached["port_stats"])
             return all_port_stats
-    
+
     def get_stale_site_ids_pipelined(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> tuple:
         """
         Identify stale sites using Redis pipeline for efficient bulk checking.
-        
+
         Much faster than sequential checks for large site counts (5-10x improvement).
-        
+
         Args:
             site_ids: List of site IDs to check
             max_age_seconds: Maximum cache age in seconds (default: 1 hour)
-        
+
         Returns:
             Tuple of (stale_site_ids, fresh_count, missing_count, stale_count)
         """
         if not site_ids:
             return ([], 0, 0, 0)
-        
+
         current_time = time.time()
-        
+
         try:
             # Batch fetch all site cache entries
             pipe = self.client.pipeline(transaction=False)
             keys = [f"{self.PREFIX_PORT_STATS}:site:{site_id}" for site_id in site_ids]
-            
+
             for key in keys:
                 pipe.get(key)
-            
+
             results = pipe.execute()
-            
+
             stale_sites = []
             fresh_count = 0
             missing_count = 0
             stale_count = 0
-            
+
             for site_id, raw_data in zip(site_ids, results):
                 if raw_data is None:
                     # No cache data - missing
@@ -596,86 +560,83 @@ class RedisCache:
                     cached = self._deserialize(raw_data)
                     timestamp = cached.get("timestamp", 0) if cached else 0
                     age = current_time - timestamp
-                    
+
                     if age >= max_age_seconds:
                         stale_count += 1
                         stale_sites.append(site_id)
                     else:
                         fresh_count += 1
-            
+
             logger.info(
                 f"[INFO] Site cache status: {fresh_count} fresh, "
                 f"{stale_count} stale, {missing_count} missing (max age: {max_age_seconds}s)"
             )
             return (stale_sites, fresh_count, missing_count, stale_count)
-            
+
         except Exception as error:
-            logger.warning(f"[WARN] Pipeline stale check failed, falling back to sequential: {error}")
+            logger.warning(
+                f"[WARN] Pipeline stale check failed, falling back to sequential: {error}"
+            )
             # Fallback to original method
             stale_sites = self.get_stale_site_ids(site_ids, max_age_seconds)
             return (stale_sites, len(site_ids) - len(stale_sites), 0, len(stale_sites))
-    
-    def get_sites_sorted_by_cache_age_pipelined(
-        self,
-        site_ids: List[str]
-    ) -> List[tuple]:
+
+    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: List[str]) -> List[tuple]:
         """
         Get all sites sorted by cache age using Redis pipeline.
-        
+
         Much faster than sequential fetches for large site counts.
         Sites with no cache data are returned first (infinite age).
-        
+
         Args:
             site_ids: List of site IDs to check
-        
+
         Returns:
             List of (site_id, age_seconds) tuples sorted by age descending
         """
         if not site_ids:
             return []
-        
+
         current_time = time.time()
-        
+
         try:
             # Batch fetch all timestamps
             pipe = self.client.pipeline(transaction=False)
             keys = [f"{self.PREFIX_PORT_STATS}:site:{site_id}" for site_id in site_ids]
-            
+
             for key in keys:
                 pipe.get(key)
-            
+
             results = pipe.execute()
-            
+
             site_ages = []
             for site_id, raw_data in zip(site_ids, results):
                 if raw_data is None:
-                    site_ages.append((site_id, float('inf')))
+                    site_ages.append((site_id, float("inf")))
                 else:
                     cached = self._deserialize(raw_data)
                     timestamp = cached.get("timestamp", 0) if cached else 0
                     age = current_time - timestamp
                     site_ages.append((site_id, age))
-            
+
             # Sort by age descending (oldest first)
             site_ages.sort(key=lambda item: item[1], reverse=True)
             return site_ages
-            
+
         except Exception as error:
             logger.warning(f"[WARN] Pipeline age sort failed, falling back to sequential: {error}")
             return self.get_sites_sorted_by_cache_age(site_ids)
-    
+
     def set_bulk_site_port_stats(
-        self,
-        port_stats: List[Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> int:
         """
         Store port statistics organized by site for incremental caching.
-        
+
         Args:
             port_stats: List of port statistics (must contain 'site_id' field)
             ttl: Time-to-live in seconds
-        
+
         Returns:
             Number of sites cached
         """
@@ -687,45 +648,41 @@ class RedisCache:
                 if site_id not in by_site:
                     by_site[site_id] = []
                 by_site[site_id].append(port)
-        
+
         # Store each site's data
         cached_count = 0
         for site_id, site_ports in by_site.items():
             if self.set_site_port_stats(site_id, site_ports, ttl):
                 cached_count += 1
-        
+
         logger.info(f"[OK] Cached port stats for {cached_count} sites")
         return cached_count
-    
+
     # ==================== Utilization Records ====================
-    
+
     def set_utilization_records(
-        self,
-        records: List[Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, records: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         """
         Store calculated utilization records.
-        
+
         Args:
             records: List of utilization record dictionaries
             ttl: Time-to-live in seconds
-        
+
         Returns:
             True if successful
         """
         try:
             self.client.setex(
-                self.PREFIX_UTILIZATION,
-                ttl or self.DEFAULT_TTL,
-                self._serialize(records)
+                self.PREFIX_UTILIZATION, ttl or self.DEFAULT_TTL, self._serialize(records)
             )
             logger.debug(f"Cached {len(records)} utilization records")
             return True
         except Exception as error:
             logger.error(f"Error storing utilization records: {error}")
             return False
-    
+
     def get_utilization_records(self) -> Optional[List[Dict[str, Any]]]:
         """Retrieve calculated utilization records."""
         try:
@@ -734,94 +691,90 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving utilization records: {error}")
             return None
-    
+
     # ==================== Historical Time-Series Data ====================
-    
+
     def append_historical_record(
-        self,
-        site_id: str,
-        circuit_id: str,
-        record: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, circuit_id: str, record: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Append a utilization record to historical time-series.
-        
+
         Uses Redis Sorted Set with timestamp as score for efficient
         time-range queries. Data retained for 31 days by default.
-        
+
         Args:
             site_id: Site identifier
             circuit_id: Circuit/port identifier
             record: Record containing timestamp and metrics
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_HISTORY}:{site_id}:{circuit_id}"
             timestamp = record.get("timestamp", time.time())
-            
+
             # Add to sorted set with timestamp as score
             self.client.zadd(key, {self._serialize(record): timestamp})
-            
+
             # Set/refresh expiry on the key
             self.client.expire(key, ttl or self.HISTORY_TTL)
-            
+
             return True
         except Exception as error:
             logger.error(f"Error appending historical record: {error}")
             return False
-    
+
     def get_historical_records(
         self,
         site_id: str,
         circuit_id: str,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """
         Retrieve historical records for a circuit within a time range.
-        
+
         Args:
             site_id: Site identifier
             circuit_id: Circuit/port identifier
             start_time: Start timestamp (default: 31 days ago)
             end_time: End timestamp (default: now)
             limit: Maximum records to return
-        
+
         Returns:
             List of historical records sorted by timestamp
         """
         try:
             key = f"{self.PREFIX_HISTORY}:{site_id}:{circuit_id}"
-            
+
             # Default to last 31 days
             end_time = end_time or time.time()
             start_time = start_time or (end_time - self.HISTORY_TTL)
-            
+
             # Get records in time range
-            raw_records = self.client.zrangebyscore(
-                key, start_time, end_time, start=0, num=limit
-            )
-            
+            raw_records = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
+
             records = [self._deserialize(record) for record in raw_records]
             return records
         except Exception as error:
             logger.error(f"Error retrieving historical records: {error}")
             return []
-    
-    def prune_old_history(self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None) -> int:
+
+    def prune_old_history(
+        self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None
+    ) -> int:
         """
         Remove historical records older than max age.
-        
+
         Args:
             site_id: Site identifier
             circuit_id: Circuit/port identifier
             max_age_seconds: Maximum age in seconds (default: 31 days)
-        
+
         Returns:
             Number of records removed
         """
@@ -829,7 +782,7 @@ class RedisCache:
             key = f"{self.PREFIX_HISTORY}:{site_id}:{circuit_id}"
             max_age = max_age_seconds or self.HISTORY_TTL
             cutoff = time.time() - max_age
-            
+
             removed = self.client.zremrangebyscore(key, "-inf", cutoff)
             if removed > 0:
                 logger.debug(f"Pruned {removed} old records from {key}")
@@ -837,57 +790,65 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error pruning history: {error}")
             return 0
-    
+
     def get_history_stats(self) -> Dict[str, Any]:
         """
         Get statistics about historical data storage.
-        
+
         Returns:
             Dictionary with history statistics
         """
         try:
             pattern = f"{self.PREFIX_HISTORY}:*"
             keys = self.client.keys(pattern)
-            
+
             total_records = 0
             oldest_record = None
             newest_record = None
-            
+
             for key in keys[:100]:  # Sample first 100 keys for stats
                 count = self.client.zcard(key)
                 total_records += count
-                
+
                 # Get oldest and newest timestamps
                 oldest = self.client.zrange(key, 0, 0, withscores=True)
                 newest = self.client.zrange(key, -1, -1, withscores=True)
-                
+
                 if oldest:
                     timestamp = oldest[0][1]
                     if oldest_record is None or timestamp < oldest_record:
                         oldest_record = timestamp
-                
+
                 if newest:
                     timestamp = newest[0][1]
                     if newest_record is None or timestamp > newest_record:
                         newest_record = timestamp
-            
+
             return {
                 "circuit_count": len(keys),
                 "total_records_sampled": total_records,
-                "oldest_record": datetime.fromtimestamp(oldest_record, tz=timezone.utc).isoformat() if oldest_record else None,
-                "newest_record": datetime.fromtimestamp(newest_record, tz=timezone.utc).isoformat() if newest_record else None,
-                "retention_days": self.HISTORY_TTL // 86400
+                "oldest_record": (
+                    datetime.fromtimestamp(oldest_record, tz=timezone.utc).isoformat()
+                    if oldest_record
+                    else None
+                ),
+                "newest_record": (
+                    datetime.fromtimestamp(newest_record, tz=timezone.utc).isoformat()
+                    if newest_record
+                    else None
+                ),
+                "retention_days": self.HISTORY_TTL // 86400,
             }
         except Exception as error:
             logger.error(f"Error getting history stats: {error}")
             return {"error": str(error)}
-    
+
     # ==================== Utilization Trends Storage ====================
-    
+
     # Key for storing periodic utilization snapshots for trends chart
     PREFIX_TRENDS = "mistwan:trends"
     TRENDS_TTL = 31 * 24 * 3600  # 31 days minimum retention
-    
+
     def store_utilization_snapshot(
         self,
         avg_utilization: float,
@@ -895,14 +856,14 @@ class RedisCache:
         circuit_count: int,
         total_rx_bytes: int = 0,
         total_tx_bytes: int = 0,
-        timestamp: Optional[float] = None
+        timestamp: Optional[float] = None,
     ) -> bool:
         """
         Store a periodic snapshot of utilization metrics for trends.
-        
+
         Called during each data refresh to build historical trends.
         Uses Redis Sorted Set for efficient time-range queries.
-        
+
         Args:
             avg_utilization: Average utilization across all circuits
             max_utilization: Maximum utilization seen
@@ -910,7 +871,7 @@ class RedisCache:
             total_rx_bytes: Total received bytes (cumulative)
             total_tx_bytes: Total transmitted bytes (cumulative)
             timestamp: Snapshot timestamp (default: now)
-        
+
         Returns:
             True if successful
         """
@@ -922,34 +883,32 @@ class RedisCache:
                 "max_utilization": round(max_utilization, 2),
                 "circuit_count": circuit_count,
                 "total_rx_bytes": total_rx_bytes,
-                "total_tx_bytes": total_tx_bytes
+                "total_tx_bytes": total_tx_bytes,
             }
-            
+
             key = f"{self.PREFIX_TRENDS}:snapshots"
             self.client.zadd(key, {self._serialize(snapshot): timestamp})
             self.client.expire(key, self.TRENDS_TTL)
-            
+
             # Prune old snapshots beyond retention period
             cutoff = time.time() - self.TRENDS_TTL
             self.client.zremrangebyscore(key, "-inf", cutoff)
-            
+
             return True
         except Exception as error:
             logger.error(f"Error storing utilization snapshot: {error}")
             return False
-    
+
     def get_utilization_trends(
-        self,
-        hours: int = 24,
-        interval_minutes: int = 5
+        self, hours: int = 24, interval_minutes: int = 5
     ) -> List[Dict[str, Any]]:
         """
         Retrieve utilization trends for the specified time range.
-        
+
         Args:
             hours: Number of hours of history to retrieve
             interval_minutes: Target interval between points (for downsampling)
-        
+
         Returns:
             List of trend data points sorted by timestamp
         """
@@ -957,15 +916,13 @@ class RedisCache:
             key = f"{self.PREFIX_TRENDS}:snapshots"
             end_time = time.time()
             start_time = end_time - (hours * 3600)
-            
+
             # Get all snapshots in time range
-            raw_snapshots = self.client.zrangebyscore(
-                key, start_time, end_time, withscores=True
-            )
-            
+            raw_snapshots = self.client.zrangebyscore(key, start_time, end_time, withscores=True)
+
             if not raw_snapshots:
                 return []
-            
+
             # Parse snapshots
             snapshots = []
             for data, score in raw_snapshots:
@@ -975,43 +932,45 @@ class RedisCache:
                     snapshots.append(snapshot)
                 except Exception:
                     continue
-            
+
             # Downsample if too many points (target ~100-200 points max)
             max_points = max(1, (hours * 60) // interval_minutes)
             if len(snapshots) > max_points * 2:
                 # Keep every Nth point
                 step = len(snapshots) // max_points
                 snapshots = snapshots[::step]
-            
+
             # Format for chart display
             trends = []
             for snapshot in snapshots:
                 ts = snapshot.get("timestamp", snapshot.get("_score", 0))
                 dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-                trends.append({
-                    "timestamp": dt.strftime("%H:%M"),
-                    "datetime": dt.isoformat(),
-                    "avg_utilization": snapshot.get("avg_utilization", 0),
-                    "max_utilization": snapshot.get("max_utilization", 0),
-                    "circuit_count": snapshot.get("circuit_count", 0),
-                    "total_rx_bytes": snapshot.get("total_rx_bytes", 0),
-                    "total_tx_bytes": snapshot.get("total_tx_bytes", 0)
-                })
-            
+                trends.append(
+                    {
+                        "timestamp": dt.strftime("%H:%M"),
+                        "datetime": dt.isoformat(),
+                        "avg_utilization": snapshot.get("avg_utilization", 0),
+                        "max_utilization": snapshot.get("max_utilization", 0),
+                        "circuit_count": snapshot.get("circuit_count", 0),
+                        "total_rx_bytes": snapshot.get("total_rx_bytes", 0),
+                        "total_tx_bytes": snapshot.get("total_tx_bytes", 0),
+                    }
+                )
+
             return trends
         except Exception as error:
             logger.error(f"Error retrieving utilization trends: {error}")
             return []
-    
+
     def get_throughput_history(self, hours: int = 24) -> List[Dict[str, Any]]:
         """
         Get cumulative throughput history for throughput chart.
-        
+
         Returns delta bytes between snapshots (actual throughput).
-        
+
         Args:
             hours: Number of hours of history
-        
+
         Returns:
             List of throughput data points with rx/tx rates
         """
@@ -1019,58 +978,60 @@ class RedisCache:
             trends = self.get_utilization_trends(hours=hours, interval_minutes=5)
             if len(trends) < 2:
                 return trends
-            
+
             # Calculate deltas between consecutive snapshots
             throughput = []
             for i in range(1, len(trends)):
                 prev = trends[i - 1]
                 curr = trends[i]
-                
+
                 # Calculate time delta in seconds
                 prev_ts = datetime.fromisoformat(prev["datetime"])
                 curr_ts = datetime.fromisoformat(curr["datetime"])
                 delta_seconds = max(1, (curr_ts - prev_ts).total_seconds())
-                
+
                 # Calculate byte deltas (handle counter resets)
                 rx_delta = curr["total_rx_bytes"] - prev["total_rx_bytes"]
                 tx_delta = curr["total_tx_bytes"] - prev["total_tx_bytes"]
-                
+
                 # Handle counter resets (negative deltas)
                 if rx_delta < 0:
                     rx_delta = curr["total_rx_bytes"]
                 if tx_delta < 0:
                     tx_delta = curr["total_tx_bytes"]
-                
+
                 # Convert to Mbps
                 rx_mbps = (rx_delta * 8) / (delta_seconds * 1_000_000)
                 tx_mbps = (tx_delta * 8) / (delta_seconds * 1_000_000)
-                
-                throughput.append({
-                    "timestamp": curr["timestamp"],
-                    "datetime": curr["datetime"],
-                    "rx_mbps": round(rx_mbps, 2),
-                    "tx_mbps": round(tx_mbps, 2),
-                    "rx_bytes": rx_delta,
-                    "tx_bytes": tx_delta
-                })
-            
+
+                throughput.append(
+                    {
+                        "timestamp": curr["timestamp"],
+                        "datetime": curr["datetime"],
+                        "rx_mbps": round(rx_mbps, 2),
+                        "tx_mbps": round(tx_mbps, 2),
+                        "rx_bytes": rx_delta,
+                        "tx_bytes": tx_delta,
+                    }
+                )
+
             return throughput
         except Exception as error:
             logger.error(f"Error calculating throughput history: {error}")
             return []
-    
+
     # ==================== Incremental Fetch Progress ====================
-    
+
     # Key prefix for tracking fetch progress
     PREFIX_FETCH_PROGRESS = "mistwan:fetch_progress"
-    
+
     def start_fetch_session(self, session_id: Optional[str] = None) -> str:
         """
         Start a new fetch session for tracking incremental progress.
-        
+
         Args:
             session_id: Optional session ID (default: timestamp-based)
-        
+
         Returns:
             Session ID string
         """
@@ -1083,99 +1044,97 @@ class RedisCache:
                 "records_saved": 0,
                 "sites_saved": [],
                 "status": "in_progress",
-                "last_cursor": None
+                "last_cursor": None,
             }
-            
+
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             self.client.setex(
-                key,
-                self.DEFAULT_TTL,  # 31 days minimum
-                self._serialize(progress_data)
+                key, self.DEFAULT_TTL, self._serialize(progress_data)  # 31 days minimum
             )
-            
+
             # Mark this as the current active session
             self.client.set(f"{self.PREFIX_FETCH_PROGRESS}:current", session_id)
-            
+
             logger.info(f"[INFO] Started fetch session: {session_id}")
             return session_id
         except Exception as error:
             logger.error(f"Error starting fetch session: {error}")
             return f"fetch_{int(time.time())}"
-    
+
     def update_fetch_progress(
         self,
         session_id: str,
         batch_number: int,
         records_in_batch: int,
         sites_in_batch: List[str],
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
     ) -> bool:
         """
         Update fetch progress after saving a batch.
-        
+
         Args:
             session_id: Fetch session ID
             batch_number: Current batch number
             records_in_batch: Number of records in this batch
             sites_in_batch: List of site IDs in this batch
             cursor: Pagination cursor for resuming
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             data = self.client.get(key)
-            
+
             if not data:
                 logger.warning(f"Fetch session {session_id} not found")
                 return False
-            
+
             progress = self._deserialize(data)
             progress["batches_completed"] = batch_number
             progress["records_saved"] = progress.get("records_saved", 0) + records_in_batch
             progress["last_cursor"] = cursor
             progress["last_updated"] = time.time()
-            
+
             # Track unique sites saved
             existing_sites = set(progress.get("sites_saved", []))
             existing_sites.update(sites_in_batch)
             progress["sites_saved"] = list(existing_sites)
-            
+
             self.client.setex(key, self.DEFAULT_TTL, self._serialize(progress))
             return True
         except Exception as error:
             logger.error(f"Error updating fetch progress: {error}")
             return False
-    
+
     def complete_fetch_session(self, session_id: str, status: str = "completed") -> bool:
         """
         Mark a fetch session as complete.
-        
+
         Args:
             session_id: Fetch session ID
             status: Final status ("completed", "failed", "interrupted")
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             data = self.client.get(key)
-            
+
             if not data:
                 return False
-            
+
             progress = self._deserialize(data)
             progress["status"] = status
             progress["completed_at"] = time.time()
-            
+
             # Keep completed sessions for 31 days
             self.client.setex(key, self.DEFAULT_TTL, self._serialize(progress))
-            
+
             # Clear current session marker
             self.client.delete(f"{self.PREFIX_FETCH_PROGRESS}:current")
-            
+
             logger.info(
                 f"[OK] Fetch session {status}: {progress.get('batches_completed', 0)} batches, "
                 f"{progress.get('records_saved', 0)} records, "
@@ -1185,14 +1144,14 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error completing fetch session: {error}")
             return False
-    
+
     def get_fetch_progress(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Get progress of a fetch session.
-        
+
         Args:
             session_id: Session ID (default: current active session)
-        
+
         Returns:
             Progress dictionary or None if not found
         """
@@ -1201,28 +1160,28 @@ class RedisCache:
                 session_id = self.client.get(f"{self.PREFIX_FETCH_PROGRESS}:current")
                 if not session_id:
                     return None
-            
+
             key = f"{self.PREFIX_FETCH_PROGRESS}:{session_id}"
             data = self.client.get(key)
             return self._deserialize(data) if data else None
         except Exception as error:
             logger.error(f"Error getting fetch progress: {error}")
             return None
-    
+
     def get_incomplete_fetch_session(self) -> Optional[Dict[str, Any]]:
         """
         Check if there's an incomplete fetch session that can be resumed.
-        
+
         Returns:
             Progress dictionary if resumable session exists, None otherwise
         """
         progress = self.get_fetch_progress()
-        
+
         if progress and progress.get("status") == "in_progress":
             # Check if it's not too old (max 1 hour)
             started_at = progress.get("started_at", 0)
             age = time.time() - started_at
-            
+
             if age < 3600:
                 logger.info(
                     f"[INFO] Found incomplete fetch session: "
@@ -1232,34 +1191,34 @@ class RedisCache:
                 return progress
             else:
                 logger.info("[INFO] Previous fetch session too old to resume")
-        
+
         return None
-    
+
     def save_batch_incrementally(
         self,
         port_stats: List[Dict[str, Any]],
         session_id: str,
         batch_number: int,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
     ) -> int:
         """
         Save a batch of port stats immediately and update progress.
-        
+
         This is the key method for incremental saves - each batch is
         persisted to Redis as it arrives from the API.
-        
+
         Args:
             port_stats: List of port statistics from this batch
             session_id: Fetch session ID
             batch_number: Current batch number
             cursor: Pagination cursor for next batch
-        
+
         Returns:
             Number of sites saved in this batch
         """
         if not port_stats:
             return 0
-        
+
         # Group by site_id
         by_site: Dict[str, List[Dict[str, Any]]] = {}
         for port in port_stats:
@@ -1268,130 +1227,112 @@ class RedisCache:
                 if site_id not in by_site:
                     by_site[site_id] = []
                 by_site[site_id].append(port)
-        
+
         # Save each site's data incrementally (append to existing if present)
         sites_saved = []
         for site_id, site_ports in by_site.items():
             if self._append_site_port_stats(site_id, site_ports):
                 sites_saved.append(site_id)
-        
+
         # Update progress tracker
         self.update_fetch_progress(
             session_id=session_id,
             batch_number=batch_number,
             records_in_batch=len(port_stats),
             sites_in_batch=sites_saved,
-            cursor=cursor
+            cursor=cursor,
         )
-        
+
         logger.debug(
             f"[...] Batch {batch_number}: saved {len(port_stats)} records "
             f"for {len(sites_saved)} sites"
         )
-        
+
         return len(sites_saved)
-    
-    def _append_site_port_stats(
-        self,
-        site_id: str,
-        new_port_stats: List[Dict[str, Any]]
-    ) -> bool:
+
+    def _append_site_port_stats(self, site_id: str, new_port_stats: List[Dict[str, Any]]) -> bool:
         """
         Append port stats to a site's existing cache (or create new).
-        
+
         This handles the case where a site's data arrives across multiple
         batches - we merge rather than replace.
-        
+
         Args:
             site_id: The site ID
             new_port_stats: New port statistics to add
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_PORT_STATS}:site:{site_id}"
             existing = self.get_site_port_stats(site_id)
-            
+
             if existing and "port_stats" in existing:
                 # Merge: keep existing ports, add/update new ones
                 existing_ports = {
-                    (p.get("mac", ""), p.get("port_id", "")): p
-                    for p in existing["port_stats"]
+                    (p.get("mac", ""), p.get("port_id", "")): p for p in existing["port_stats"]
                 }
-                
+
                 for port in new_port_stats:
                     port_key = (port.get("mac", ""), port.get("port_id", ""))
                     existing_ports[port_key] = port
-                
+
                 merged_stats = list(existing_ports.values())
             else:
                 merged_stats = new_port_stats
-            
-            data = {
-                "timestamp": time.time(),
-                "port_stats": merged_stats
-            }
-            
-            self.client.setex(
-                key,
-                self.HISTORY_TTL,
-                self._serialize(data)
-            )
+
+            data = {"timestamp": time.time(), "port_stats": merged_stats}
+
+            self.client.setex(key, self.HISTORY_TTL, self._serialize(data))
             return True
         except Exception as error:
             logger.error(f"Error appending site port stats for {site_id}: {error}")
             return False
 
     # ==================== SLE (Service Level Experience) Data ====================
-    
-    def save_sle_snapshot(
-        self,
-        sle_data: Dict[str, Any],
-        ttl: Optional[int] = None
-    ) -> bool:
+
+    def save_sle_snapshot(self, sle_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         """
         Save SLE snapshot for all sites.
-        
+
         Stores both the current snapshot and appends to time-series history.
-        
+
         Args:
             sle_data: SLE response from get_org_sites_sle()
                      Contains: start, end, total, results[]
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
         try:
             timestamp = sle_data.get("end", int(time.time()))
-            
+
             # Save current snapshot (quick lookup)
             current_key = f"{self.PREFIX_SLE}:current"
             self.client.setex(
-                current_key,
-                ttl or self.DEFAULT_TTL,  # 31 days default
-                self._serialize(sle_data)
+                current_key, ttl or self.DEFAULT_TTL, self._serialize(sle_data)  # 31 days default
             )
-            
+
             # Also store in time-series sorted set for historical queries
             history_key = f"{self.PREFIX_SLE}:history"
             self.client.zadd(history_key, {self._serialize(sle_data): timestamp})
             self.client.expire(history_key, ttl or (7 * 24 * 3600))
-            
+
             # Update last SLE fetch timestamp
             self.client.set(f"{self.PREFIX_METADATA}:last_sle_fetch", str(timestamp))
-            
+
             logger.debug(f"Saved SLE snapshot with {sle_data.get('total', 0)} sites")
             return True
         except Exception as error:
             logger.error(f"Error saving SLE snapshot: {error}")
             return False
-    
+
     def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
         """
         Get the most recent SLE snapshot.
-        
+
         Returns:
             SLE data dictionary or None if not cached
         """
@@ -1401,13 +1342,13 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving SLE snapshot: {error}")
             return None
-    
+
     def get_last_sle_timestamp(self) -> Optional[int]:
         """
         Get the timestamp of the last SLE fetch.
-        
+
         Used for incremental fetching - only fetch data newer than this.
-        
+
         Returns:
             Unix timestamp or None if never fetched
         """
@@ -1417,43 +1358,38 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error getting last SLE timestamp: {error}")
             return None
-    
+
     def save_worst_sites_sle(
-        self,
-        metric: str,
-        data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save worst sites by SLE metric.
-        
+
         Args:
             metric: SLE metric name (gateway-health, wan-link-health, etc.)
             data: Response from get_org_worst_sites_by_sle()
             ttl: Time-to-live in seconds (default: 1 hour)
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_SLE}:worst:{metric}"
             self.client.setex(
-                key,
-                ttl or 3600,  # 1 hour default (changes frequently)
-                self._serialize(data)
+                key, ttl or 3600, self._serialize(data)  # 1 hour default (changes frequently)
             )
             return True
         except Exception as error:
             logger.error(f"Error saving worst sites for {metric}: {error}")
             return False
-    
+
     def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
         """
         Get cached worst sites by SLE metric.
-        
+
         Args:
             metric: SLE metric name
-        
+
         Returns:
             Worst sites data or None if not cached
         """
@@ -1464,39 +1400,31 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving worst sites for {metric}: {error}")
             return None
-    
+
     # ==================== Alarms Data ====================
-    
-    def save_alarms(
-        self,
-        alarms_data: Dict[str, Any],
-        ttl: Optional[int] = None
-    ) -> bool:
+
+    def save_alarms(self, alarms_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         """
         Save alarms snapshot.
-        
+
         Stores current alarms and individual alarm records for deduplication.
-        
+
         Args:
             alarms_data: Response from search_org_alarms()
                         Contains: total, results[]
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
         try:
             timestamp = int(time.time())
             ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
-            
+
             # Save current alarms snapshot
             current_key = f"{self.PREFIX_ALARMS}:current"
-            self.client.setex(
-                current_key,
-                ttl_seconds,
-                self._serialize(alarms_data)
-            )
-            
+            self.client.setex(current_key, ttl_seconds, self._serialize(alarms_data))
+
             # Store individual alarms by ID for deduplication
             results = alarms_data.get("results", [])
             pipe = self.client.pipeline()
@@ -1506,20 +1434,20 @@ class RedisCache:
                     alarm_key = f"{self.PREFIX_ALARMS}:id:{alarm_id}"
                     pipe.setex(alarm_key, ttl_seconds, self._serialize(alarm))
             pipe.execute()
-            
+
             # Update last alarms fetch timestamp
             self.client.set(f"{self.PREFIX_METADATA}:last_alarms_fetch", str(timestamp))
-            
+
             logger.debug(f"Saved {len(results)} alarms")
             return True
         except Exception as error:
             logger.error(f"Error saving alarms: {error}")
             return False
-    
+
     def get_alarms(self) -> Optional[Dict[str, Any]]:
         """
         Get the most recent alarms snapshot.
-        
+
         Returns:
             Alarms data dictionary or None if not cached
         """
@@ -1529,13 +1457,13 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving alarms: {error}")
             return None
-    
+
     def get_last_alarms_timestamp(self) -> Optional[int]:
         """
         Get the timestamp of the last alarms fetch.
-        
+
         Used for incremental fetching - only fetch alarms newer than this.
-        
+
         Returns:
             Unix timestamp or None if never fetched
         """
@@ -1545,14 +1473,14 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error getting last alarms timestamp: {error}")
             return None
-    
+
     def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
         """
         Get a specific alarm by ID.
-        
+
         Args:
             alarm_id: Alarm UUID
-        
+
         Returns:
             Alarm data or None if not found
         """
@@ -1563,14 +1491,14 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving alarm {alarm_id}: {error}")
             return None
-    
+
     def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
         """
         Get all cached alarms of a specific type.
-        
+
         Args:
             alarm_type: Alarm type (e.g., "infra_dhcp_failure")
-        
+
         Returns:
             List of matching alarms
         """
@@ -1578,20 +1506,20 @@ class RedisCache:
             alarms_data = self.get_alarms()
             if not alarms_data:
                 return []
-            
+
             results = alarms_data.get("results", [])
             return [a for a in results if a.get("type") == alarm_type]
         except Exception as error:
             logger.error(f"Error filtering alarms by type {alarm_type}: {error}")
             return []
-    
+
     def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
         """
         Get all cached alarms for a specific site.
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             List of matching alarms
         """
@@ -1599,7 +1527,7 @@ class RedisCache:
             alarms_data = self.get_alarms()
             if not alarms_data:
                 return []
-            
+
             results = alarms_data.get("results", [])
             return [a for a in results if a.get("site_id") == site_id]
         except Exception as error:
@@ -1607,37 +1535,31 @@ class RedisCache:
             return []
 
     # ==================== Gateway Inventory Data ====================
-    
+
     def save_gateway_inventory(
-        self,
-        inventory_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, inventory_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save gateway inventory snapshot.
-        
+
         Stores the complete gateway inventory including connected/disconnected status.
-        
+
         Args:
             inventory_data: Response from get_gateway_inventory()
                            Contains: total, connected, disconnected, gateways[]
             ttl: Time-to-live in seconds (default: 5 minutes)
-        
+
         Returns:
             True if successful
         """
         try:
             timestamp = int(time.time())
             ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum retention
-            
+
             # Save current inventory snapshot
             current_key = f"{self.PREFIX_GATEWAY}:inventory"
-            self.client.setex(
-                current_key,
-                ttl_seconds,
-                self._serialize(inventory_data)
-            )
-            
+            self.client.setex(current_key, ttl_seconds, self._serialize(inventory_data))
+
             # Build and save disconnected site IDs set for quick lookup
             disconnected_sites = []
             for gw in inventory_data.get("gateways", []):
@@ -1645,17 +1567,13 @@ class RedisCache:
                     site_id = gw.get("site_id")
                     if site_id:
                         disconnected_sites.append(site_id)
-            
+
             disconnected_key = f"{self.PREFIX_GATEWAY}:disconnected_sites"
-            self.client.setex(
-                disconnected_key,
-                ttl_seconds,
-                self._serialize(disconnected_sites)
-            )
-            
+            self.client.setex(disconnected_key, ttl_seconds, self._serialize(disconnected_sites))
+
             # Update last gateway fetch timestamp
             self.client.set(f"{self.PREFIX_METADATA}:last_gateway_fetch", str(timestamp))
-            
+
             logger.debug(
                 f"Saved gateway inventory: {inventory_data.get('total', 0)} total, "
                 f"{len(disconnected_sites)} disconnected sites"
@@ -1664,11 +1582,11 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error saving gateway inventory: {error}")
             return False
-    
+
     def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
         """
         Get the most recent gateway inventory snapshot.
-        
+
         Returns:
             Gateway inventory data or None if not cached
         """
@@ -1678,11 +1596,11 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving gateway inventory: {error}")
             return None
-    
+
     def get_disconnected_site_ids(self) -> set:
         """
         Get set of site IDs with disconnected gateways.
-        
+
         Returns:
             Set of site IDs (empty set if not cached or error)
         """
@@ -1693,11 +1611,11 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving disconnected site IDs: {error}")
             return set()
-    
+
     def get_last_gateway_timestamp(self) -> Optional[int]:
         """
         Get the timestamp of the last gateway inventory fetch.
-        
+
         Returns:
             Unix timestamp or None if never fetched
         """
@@ -1707,14 +1625,14 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error getting last gateway timestamp: {error}")
             return None
-    
+
     def is_gateway_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         """
         Check if gateway inventory cache is fresh enough.
-        
+
         Args:
             max_age_seconds: Maximum acceptable age (default: 5 minutes)
-        
+
         Returns:
             True if cache is fresh, False if stale or missing
         """
@@ -1728,52 +1646,41 @@ class RedisCache:
             return False
 
     # ==================== VPN Peer Path Data ====================
-    
+
     PREFIX_VPN_PEERS = "mistwan:vpn_peers"
-    
+
     def save_vpn_peers(
-        self,
-        gateway_id: str,
-        mac: str,
-        peers_by_port: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, gateway_id: str, mac: str, peers_by_port: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Store VPN peer paths for a gateway.
-        
+
         Args:
             gateway_id: Gateway device ID
             mac: Gateway MAC address
             peers_by_port: Dictionary of port_id -> list of peer path data
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
         try:
             key = f"{self.PREFIX_VPN_PEERS}:{gateway_id}:{mac}"
-            data = {
-                "timestamp": time.time(),
-                "peers_by_port": peers_by_port
-            }
-            self.client.setex(
-                key,
-                ttl or self.HISTORY_TTL,
-                self._serialize(data)
-            )
+            data = {"timestamp": time.time(), "peers_by_port": peers_by_port}
+            self.client.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
             return True
         except Exception as error:
             logger.error(f"Error storing VPN peers for {gateway_id}: {error}")
             return False
-    
+
     def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
         """
         Retrieve VPN peer paths for a gateway.
-        
+
         Args:
             gateway_id: Gateway device ID
             mac: Gateway MAC address
-        
+
         Returns:
             Dictionary with 'timestamp' and 'peers_by_port', or None if not cached
         """
@@ -1784,45 +1691,40 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving VPN peers for {gateway_id}: {error}")
             return None
-    
+
     def save_all_vpn_peers(
-        self,
-        all_peers: Dict[str, Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, all_peers: Dict[str, Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         """
         Store all VPN peer paths in a single pipeline operation.
-        
+
         Args:
             all_peers: Dict mapping cache_key (gateway_id-mac) to peers_by_port data
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
         try:
             pipe = self.client.pipeline()
             timestamp = time.time()
-            
+
             for cache_key, peers_by_port in all_peers.items():
                 key = f"{self.PREFIX_VPN_PEERS}:{cache_key}"
-                data = {
-                    "timestamp": timestamp,
-                    "peers_by_port": peers_by_port
-                }
+                data = {"timestamp": timestamp, "peers_by_port": peers_by_port}
                 pipe.setex(key, ttl or self.HISTORY_TTL, self._serialize(data))
-            
+
             pipe.execute()
             logger.info(f"[OK] Stored VPN peers for {len(all_peers)} gateways")
             return True
         except Exception as error:
             logger.error(f"Error storing all VPN peers: {error}")
             return False
-    
+
     def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
         """
         Retrieve all VPN peer paths from cache.
-        
+
         Returns:
             Dictionary mapping cache_key to peers data (with timestamp and peers_by_port)
         """
@@ -1831,59 +1733,61 @@ class RedisCache:
                 with PerformanceTimer("redis_keys_scan_vpn", log_threshold_ms=50):
                     pattern = f"{self.PREFIX_VPN_PEERS}:*"
                     keys = self.client.keys(pattern)
-                
+
                 if not keys:
                     return {}
-                
+
                 result = {}
                 with PerformanceTimer("redis_pipeline_get_vpn", log_threshold_ms=50):
                     pipe = self.client.pipeline()
                     for key in keys:
                         pipe.get(key)
-                    
+
                     values = pipe.execute()
-                
+
                 with PerformanceTimer("redis_deserialize_vpn", log_threshold_ms=50):
                     for key, value in zip(keys, values):
                         # Extract cache_key from redis key (remove prefix)
                         cache_key = key.replace(f"{self.PREFIX_VPN_PEERS}:", "")
                         if value:
                             result[cache_key] = self._deserialize(value)
-                
-                logger.debug(f"[PERF] get_all_vpn_peers: {len(keys)} keys, {timer.elapsed_ms:.1f}ms")
+
+                logger.debug(
+                    f"[PERF] get_all_vpn_peers: {len(keys)} keys, {timer.elapsed_ms:.1f}ms"
+                )
                 return result
             except Exception as error:
                 logger.error(f"Error retrieving all VPN peers: {error}")
                 return {}
-    
+
     def get_vpn_peer_summary(self) -> Dict[str, Any]:
         """
         Get org-level VPN peer path summary statistics.
-        
+
         Returns:
             Dictionary with total_peers, paths_up, paths_down, and site_breakdown
         """
         try:
             all_peers = self.get_all_vpn_peers()
-            
+
             total_peers = 0
             paths_up = 0
             paths_down = 0
             site_stats = {}  # site_id -> {total, up, down}
-            
+
             for cache_key, data in all_peers.items():
                 peers_by_port = data.get("peers_by_port", {})
-                
+
                 for port_id, peers_list in peers_by_port.items():
                     for peer in peers_list:
                         total_peers += 1
                         is_up = peer.get("up", False)
-                        
+
                         if is_up:
                             paths_up += 1
                         else:
                             paths_down += 1
-                        
+
                         # Track by site if site_id is available
                         site_id = peer.get("site_id", "unknown")
                         if site_id not in site_stats:
@@ -1893,13 +1797,13 @@ class RedisCache:
                             site_stats[site_id]["up"] += 1
                         else:
                             site_stats[site_id]["down"] += 1
-            
+
             return {
                 "total_peers": total_peers,
                 "paths_up": paths_up,
                 "paths_down": paths_down,
                 "site_breakdown": site_stats,
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
         except Exception as error:
             logger.error(f"Error getting VPN peer summary: {error}")
@@ -1908,19 +1812,19 @@ class RedisCache:
                 "paths_up": 0,
                 "paths_down": 0,
                 "site_breakdown": {},
-                "timestamp": time.time()
+                "timestamp": time.time(),
             }
-    
+
     def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
         """
         Get VPN peer paths for a specific site.
-        
+
         OPTIMIZED: Uses site_id pattern to avoid loading all VPN data.
         Keys are stored as: mistwan:vpn_peers:{site_id}:{mac}
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             List of peer path records with loss, latency, jitter, MOS
         """
@@ -1930,91 +1834,82 @@ class RedisCache:
                 with PerformanceTimer("redis_keys_scan_site_vpn", log_threshold_ms=50):
                     pattern = f"{self.PREFIX_VPN_PEERS}:{site_id}:*"
                     keys = self.client.keys(pattern)
-                
+
                 if not keys:
                     logger.debug(f"[PERF] get_site_vpn_peers: 0 keys for site {site_id[:8]}")
                     return []
-                
+
                 site_peers = []
                 with PerformanceTimer("redis_pipeline_get_site_vpn", log_threshold_ms=50):
                     pipe = self.client.pipeline()
                     for key in keys:
                         pipe.get(key)
                     values = pipe.execute()
-                
+
                 with PerformanceTimer("redis_deserialize_site_vpn", log_threshold_ms=20):
                     for key, value in zip(keys, values):
                         if value:
                             data = self._deserialize(value)
                             peers_by_port = data.get("peers_by_port", {})
-                            
+
                             for port_id, peers_list in peers_by_port.items():
                                 for peer in peers_list:
                                     # Include port_id in the peer record
                                     peer_record = dict(peer)
                                     peer_record["port_id"] = port_id
                                     site_peers.append(peer_record)
-                
-                logger.debug(f"[PERF] get_site_vpn_peers: {len(keys)} keys, {len(site_peers)} peers, {timer.elapsed_ms:.1f}ms")
+
+                logger.debug(
+                    f"[PERF] get_site_vpn_peers: {len(keys)} keys, {len(site_peers)} peers, {timer.elapsed_ms:.1f}ms"
+                )
                 return site_peers
             except Exception as error:
                 logger.error(f"Error getting VPN peers for site {site_id}: {error}")
                 return []
 
     # ==================== Site-Level SLE Data ====================
-    
+
     PREFIX_SITE_SLE = "mistwan:site_sle"
-    
+
     def save_site_sle_summary(
-        self,
-        site_id: str,
-        metric: str,
-        summary_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, summary_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save site-level SLE summary with time-series and classifiers.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric (wan-link-health, gateway-health, application-health)
             summary_data: Response from get_site_sle_summary()
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
         try:
             timestamp = int(time.time())
             ttl_seconds = ttl or self.DEFAULT_TTL  # 31 days minimum
-            
+
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:summary:{metric}"
             self.client.setex(key, ttl_seconds, self._serialize(summary_data))
-            
+
             # Update last fetch timestamp for this site
-            self.client.set(
-                f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}",
-                str(timestamp)
-            )
-            
+            self.client.set(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}", str(timestamp))
+
             logger.debug(f"Saved SLE summary for site {site_id} metric {metric}")
             return True
         except Exception as error:
             logger.error(f"Error saving site SLE summary: {error}")
             return False
-    
-    def get_site_sle_summary(
-        self,
-        site_id: str,
-        metric: str
-    ) -> Optional[Dict[str, Any]]:
+
+    def get_site_sle_summary(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         """
         Get cached site-level SLE summary.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric
-        
+
         Returns:
             Summary data or None if not cached
         """
@@ -2025,23 +1920,19 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site SLE summary: {error}")
             return None
-    
+
     def save_site_sle_histogram(
-        self,
-        site_id: str,
-        metric: str,
-        histogram_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, histogram_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save site-level SLE histogram data.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric
             histogram_data: Response from get_site_sle_histogram()
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
@@ -2053,12 +1944,8 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error saving site SLE histogram: {error}")
             return False
-    
-    def get_site_sle_histogram(
-        self,
-        site_id: str,
-        metric: str
-    ) -> Optional[Dict[str, Any]]:
+
+    def get_site_sle_histogram(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         """Get cached site-level SLE histogram."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
@@ -2067,23 +1954,19 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site SLE histogram: {error}")
             return None
-    
+
     def save_site_sle_impacted_gateways(
-        self,
-        site_id: str,
-        metric: str,
-        gateways_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, gateways_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save list of impacted gateways for a site.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric
             gateways_data: Response from get_site_sle_impacted_gateways()
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
@@ -2095,12 +1978,8 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error saving site impacted gateways: {error}")
             return False
-    
-    def get_site_sle_impacted_gateways(
-        self,
-        site_id: str,
-        metric: str
-    ) -> Optional[Dict[str, Any]]:
+
+    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         """Get cached impacted gateways for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
@@ -2109,23 +1988,19 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site impacted gateways: {error}")
             return None
-    
+
     def save_site_sle_impacted_interfaces(
-        self,
-        site_id: str,
-        metric: str,
-        interfaces_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, interfaces_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save list of impacted interfaces for a site.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric
             interfaces_data: Response from get_site_sle_impacted_interfaces()
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
@@ -2137,11 +2012,9 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error saving site impacted interfaces: {error}")
             return False
-    
+
     def get_site_sle_impacted_interfaces(
-        self,
-        site_id: str,
-        metric: str
+        self, site_id: str, metric: str
     ) -> Optional[Dict[str, Any]]:
         """Get cached impacted interfaces for a site."""
         try:
@@ -2151,23 +2024,19 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site impacted interfaces: {error}")
             return None
-    
+
     def save_site_sle_threshold(
-        self,
-        site_id: str,
-        metric: str,
-        threshold_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, threshold_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         """
         Save SLE threshold configuration for a site.
-        
+
         Args:
             site_id: Site UUID
             metric: SLE metric
             threshold_data: Response from get_site_sle_threshold()
             ttl: Time-to-live in seconds (default: 7 days)
-        
+
         Returns:
             True if successful
         """
@@ -2179,12 +2048,8 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error saving site SLE threshold: {error}")
             return False
-    
-    def get_site_sle_threshold(
-        self,
-        site_id: str,
-        metric: str
-    ) -> Optional[Dict[str, Any]]:
+
+    def get_site_sle_threshold(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         """Get cached SLE threshold for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
@@ -2193,16 +2058,16 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error retrieving site SLE threshold: {error}")
             return None
-    
+
     def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
         """
         Get the timestamp of the last SLE fetch for a site.
-        
+
         Used for incremental fetching - only fetch data newer than this.
-        
+
         Args:
             site_id: Site UUID
-        
+
         Returns:
             Unix timestamp or None if never fetched
         """
@@ -2212,19 +2077,15 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error getting last site SLE timestamp: {error}")
             return None
-    
-    def is_site_sle_cache_fresh(
-        self,
-        site_id: str,
-        max_age_seconds: int = 3600
-    ) -> bool:
+
+    def is_site_sle_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         """
         Check if site SLE cache is fresh enough.
-        
+
         Args:
             site_id: Site UUID
             max_age_seconds: Maximum acceptable age (default: 1 hour)
-        
+
         Returns:
             True if cache is fresh, False if stale or missing
         """
@@ -2236,22 +2097,20 @@ class RedisCache:
             return age < max_age_seconds
         except Exception:
             return False
-    
+
     def get_sites_needing_sle_refresh(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> List[str]:
         """
         Get list of sites that need SLE data refresh.
-        
+
         Missing sites (never cached) are returned FIRST to prioritize
         initial population over refreshing stale data.
-        
+
         Args:
             site_ids: List of site UUIDs to check
             max_age_seconds: Maximum acceptable cache age (default: 1 hour)
-        
+
         Returns:
             List of site IDs that need refresh (missing sites first, then stale)
         """
@@ -2259,14 +2118,14 @@ class RedisCache:
             missing_sites = []
             stale_sites = []
             current_time = int(time.time())
-            
+
             # Use pipeline for efficient bulk check
             pipe = self.client.pipeline()
             for site_id in site_ids:
                 pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
-            
+
             results = pipe.execute()
-            
+
             for site_id, last_fetch_data in zip(site_ids, results):
                 if last_fetch_data is None:
                     missing_sites.append(site_id)
@@ -2274,93 +2133,87 @@ class RedisCache:
                     last_fetch = int(float(last_fetch_data))
                     if current_time - last_fetch >= max_age_seconds:
                         stale_sites.append(site_id)
-            
+
             # Missing sites get priority - they've never been cached
             return missing_sites + stale_sites
         except Exception as error:
             logger.error(f"Error checking site SLE freshness: {error}")
             return site_ids  # Assume all need refresh on error
-    
-    def get_stale_sle_sites(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
-    ) -> List[str]:
+
+    def get_stale_sle_sites(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
         """
         Get list of sites with stale SLE data (previously collected but old).
-        
+
         Args:
             site_ids: List of site UUIDs to check
             max_age_seconds: Maximum acceptable cache age (default: 1 hour)
-        
+
         Returns:
             List of site IDs with stale data (oldest first)
         """
         try:
             stale_sites = []
             current_time = int(time.time())
-            
+
             # Use pipeline for efficient bulk check
             pipe = self.client.pipeline()
             for site_id in site_ids:
                 pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
-            
+
             results = pipe.execute()
-            
+
             for site_id, last_fetch_data in zip(site_ids, results):
                 if last_fetch_data is not None:
                     last_fetch = int(float(last_fetch_data))
                     if current_time - last_fetch >= max_age_seconds:
                         stale_sites.append((site_id, last_fetch))
-            
+
             # Sort by oldest first
             stale_sites.sort(key=lambda x: x[1])
             return [s[0] for s in stale_sites]
         except Exception as error:
             logger.error(f"Error getting stale SLE sites: {error}")
             return []
-    
+
     def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
         """
         Get list of sites that have never had SLE data collected.
-        
+
         Args:
             site_ids: List of site UUIDs to check
-        
+
         Returns:
             List of site IDs that have never been cached
         """
         try:
             missing_sites = []
-            
+
             # Use pipeline for efficient bulk check
             pipe = self.client.pipeline()
             for site_id in site_ids:
                 pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
-            
+
             results = pipe.execute()
-            
+
             for site_id, last_fetch_data in zip(site_ids, results):
                 if last_fetch_data is None:
                     missing_sites.append(site_id)
-            
+
             return missing_sites
         except Exception as error:
             logger.error(f"Error getting missing SLE sites: {error}")
             return []
-    
+
     def get_site_sle_cache_status(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> Dict[str, int]:
         """
         Get cache status counts for SLE data (fresh/stale/missing).
-        
+
         Args:
             site_ids: List of site UUIDs to check
             max_age_seconds: Maximum acceptable cache age (default: 1 hour)
-        
+
         Returns:
             Dictionary with 'fresh', 'stale', 'missing' counts
         """
@@ -2369,14 +2222,14 @@ class RedisCache:
             stale_count = 0
             missing_count = 0
             current_time = int(time.time())
-            
+
             # Use pipeline for efficient bulk check
             pipe = self.client.pipeline()
             for site_id in site_ids:
                 pipe.get(f"{self.PREFIX_SITE_SLE}:last_fetch:{site_id}")
-            
+
             results = pipe.execute()
-            
+
             for last_fetch_data in results:
                 if last_fetch_data is None:
                     missing_count += 1
@@ -2386,44 +2239,44 @@ class RedisCache:
                         stale_count += 1
                     else:
                         fresh_count += 1
-            
+
             return {
                 "fresh": fresh_count,
                 "stale": stale_count,
                 "missing": missing_count,
-                "total": len(site_ids)
+                "total": len(site_ids),
             }
         except Exception as error:
             logger.error(f"Error getting SLE cache status: {error}")
             return {"fresh": 0, "stale": 0, "missing": len(site_ids), "total": len(site_ids)}
 
     # ==================== Time-Series Insights Storage ====================
-    
+
     PREFIX_GATEWAY_TIMESERIES = "mistwan:gateway_ts"
     PREFIX_VPN_TIMESERIES = "mistwan:vpn_ts"
     PREFIX_DEVICE_TIMESERIES = "mistwan:device_ts"
-    
+
     def save_gateway_port_timeseries(
         self,
         site_id: str,
         device_mac: str,
         port_id: str,
         timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        ttl: Optional[int] = None,
     ) -> bool:
         """
         Save gateway port time-series data (rx_bps, tx_bps).
-        
+
         Uses sorted set for efficient time-range queries.
         Prioritizes missing data over stale data.
-        
+
         Args:
             site_id: Site UUID
             device_mac: Gateway MAC address (no colons)
             port_id: Interface name (e.g., "ge-0/0/4")
             timeseries_data: Dict with 'results' array of time-series points
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
@@ -2432,28 +2285,28 @@ class RedisCache:
             clean_port = port_id.replace("/", "_")
             key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
             ttl_seconds = ttl or self.HISTORY_TTL
-            
+
             results = timeseries_data.get("results", [])
             if not results:
                 logger.debug(f"No time-series data to save for {clean_mac}:{port_id}")
                 return True
-            
+
             # Use sorted set with timestamp as score for efficient range queries
             pipe = self.client.pipeline()
             for point in results:
                 timestamp = point.get("timestamp", time.time())
                 pipe.zadd(key, {self._serialize(point): timestamp})
-            
+
             # Set TTL on the key
             pipe.expire(key, ttl_seconds)
             pipe.execute()
-            
+
             logger.debug(f"Saved {len(results)} time-series points for {clean_mac}:{port_id}")
             return True
         except Exception as error:
             logger.error(f"Error saving gateway port time-series: {error}")
             return False
-    
+
     def get_gateway_port_timeseries(
         self,
         site_id: str,
@@ -2461,11 +2314,11 @@ class RedisCache:
         port_id: str,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """
         Get gateway port time-series data for a time range.
-        
+
         Args:
             site_id: Site UUID
             device_mac: Gateway MAC address
@@ -2473,7 +2326,7 @@ class RedisCache:
             start_time: Start epoch (default: 7 days ago)
             end_time: End epoch (default: now)
             limit: Max points to return
-        
+
         Returns:
             List of time-series points sorted by timestamp
         """
@@ -2481,30 +2334,25 @@ class RedisCache:
             clean_mac = device_mac.lower().replace(":", "")
             clean_port = port_id.replace("/", "_")
             key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
-            
+
             end_time = end_time or time.time()
             start_time = start_time or (end_time - 7 * 24 * 3600)  # Default 7 days
-            
-            raw_data = self.client.zrangebyscore(
-                key, start_time, end_time, start=0, num=limit
-            )
-            
+
+            raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
+
             return [self._deserialize(item) for item in raw_data if item]
         except Exception as error:
             logger.error(f"Error getting gateway port time-series: {error}")
             return []
-    
+
     def get_gateway_timeseries_coverage(
-        self,
-        site_id: str,
-        device_mac: str,
-        port_id: str
+        self, site_id: str, device_mac: str, port_id: str
     ) -> Dict[str, Any]:
         """
         Get time coverage info for cached gateway time-series.
-        
+
         Used to identify missing data ranges for priority fetching.
-        
+
         Returns:
             Dict with oldest_timestamp, newest_timestamp, point_count
         """
@@ -2512,44 +2360,44 @@ class RedisCache:
             clean_mac = device_mac.lower().replace(":", "")
             clean_port = port_id.replace("/", "_")
             key = f"{self.PREFIX_GATEWAY_TIMESERIES}:{site_id}:{clean_mac}:{clean_port}"
-            
+
             # Get count
             count = self.client.zcard(key)
             if count == 0:
                 return {"has_data": False, "point_count": 0}
-            
+
             # Get oldest and newest
             oldest = self.client.zrange(key, 0, 0, withscores=True)
             newest = self.client.zrange(key, -1, -1, withscores=True)
-            
+
             return {
                 "has_data": True,
                 "point_count": count,
                 "oldest_timestamp": oldest[0][1] if oldest else None,
-                "newest_timestamp": newest[0][1] if newest else None
+                "newest_timestamp": newest[0][1] if newest else None,
             }
         except Exception as error:
             logger.error(f"Error getting gateway time-series coverage: {error}")
             return {"has_data": False, "error": str(error)}
-    
+
     def save_vpn_peer_timeseries(
         self,
         site_id: str,
         device_mac: str,
         peer_mac: str,
         timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        ttl: Optional[int] = None,
     ) -> bool:
         """
         Save VPN peer metrics time-series (loss, latency, jitter, mos).
-        
+
         Args:
             site_id: Site UUID
             device_mac: Local gateway MAC
             peer_mac: Remote peer MAC
             timeseries_data: Dict with 'results' array
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
@@ -2558,24 +2406,24 @@ class RedisCache:
             clean_peer = peer_mac.lower().replace(":", "")
             key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
             ttl_seconds = ttl or self.HISTORY_TTL
-            
+
             results = timeseries_data.get("results", [])
             if not results:
                 return True
-            
+
             pipe = self.client.pipeline()
             for point in results:
                 timestamp = point.get("timestamp", time.time())
                 pipe.zadd(key, {self._serialize(point): timestamp})
             pipe.expire(key, ttl_seconds)
             pipe.execute()
-            
+
             logger.debug(f"Saved {len(results)} VPN peer time-series points")
             return True
         except Exception as error:
             logger.error(f"Error saving VPN peer time-series: {error}")
             return False
-    
+
     def get_vpn_peer_timeseries(
         self,
         site_id: str,
@@ -2583,11 +2431,11 @@ class RedisCache:
         peer_mac: str,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """
         Get VPN peer metrics time-series for a time range.
-        
+
         Args:
             site_id: Site UUID
             device_mac: Local gateway MAC
@@ -2595,7 +2443,7 @@ class RedisCache:
             start_time: Start epoch (default: 7 days ago)
             end_time: End epoch (default: now)
             limit: Max points to return
-        
+
         Returns:
             List of time-series points sorted by timestamp
         """
@@ -2603,28 +2451,23 @@ class RedisCache:
             clean_local = device_mac.lower().replace(":", "")
             clean_peer = peer_mac.lower().replace(":", "")
             key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
-            
+
             end_time = end_time or time.time()
             start_time = start_time or (end_time - 7 * 24 * 3600)
-            
-            raw_data = self.client.zrangebyscore(
-                key, start_time, end_time, start=0, num=limit
-            )
-            
+
+            raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
+
             return [self._deserialize(item) for item in raw_data if item]
         except Exception as error:
             logger.error(f"Error getting VPN peer time-series: {error}")
             return []
-    
+
     def get_vpn_timeseries_coverage(
-        self,
-        site_id: str,
-        device_mac: str,
-        peer_mac: str
+        self, site_id: str, device_mac: str, peer_mac: str
     ) -> Dict[str, Any]:
         """
         Get time coverage info for cached VPN peer time-series.
-        
+
         Returns:
             Dict with has_data, oldest_timestamp, newest_timestamp, point_count
         """
@@ -2632,42 +2475,42 @@ class RedisCache:
             clean_local = device_mac.lower().replace(":", "")
             clean_peer = peer_mac.lower().replace(":", "")
             key = f"{self.PREFIX_VPN_TIMESERIES}:{site_id}:{clean_local}:{clean_peer}"
-            
+
             count = self.client.zcard(key)
             if count == 0:
                 return {"has_data": False, "point_count": 0}
-            
+
             oldest = self.client.zrange(key, 0, 0, withscores=True)
             newest = self.client.zrange(key, -1, -1, withscores=True)
-            
+
             return {
                 "has_data": True,
                 "point_count": count,
                 "oldest_timestamp": oldest[0][1] if oldest else None,
-                "newest_timestamp": newest[0][1] if newest else None
+                "newest_timestamp": newest[0][1] if newest else None,
             }
         except Exception as error:
             logger.error(f"Error getting VPN time-series coverage: {error}")
             return {"has_data": False, "error": str(error)}
-    
+
     def save_device_metrics_timeseries(
         self,
         site_id: str,
         device_mac: str,
         metric: str,
         timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        ttl: Optional[int] = None,
     ) -> bool:
         """
         Save device metrics time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
-        
+
         Args:
             site_id: Site UUID
             device_mac: Device MAC address
             metric: Metric name (tx_bytes, rx_bytes, cpu, memory, disk)
             timeseries_data: Dict with 'results' array
             ttl: Time-to-live in seconds (default: 31 days)
-        
+
         Returns:
             True if successful
         """
@@ -2675,24 +2518,24 @@ class RedisCache:
             clean_mac = device_mac.lower().replace(":", "")
             key = f"{self.PREFIX_DEVICE_TIMESERIES}:{site_id}:{clean_mac}:{metric}"
             ttl_seconds = ttl or self.HISTORY_TTL
-            
+
             results = timeseries_data.get("results", [])
             if not results:
                 return True
-            
+
             pipe = self.client.pipeline()
             for point in results:
                 timestamp = point.get("timestamp", time.time())
                 pipe.zadd(key, {self._serialize(point): timestamp})
             pipe.expire(key, ttl_seconds)
             pipe.execute()
-            
+
             logger.debug(f"Saved {len(results)} device {metric} time-series points")
             return True
         except Exception as error:
             logger.error(f"Error saving device metrics time-series: {error}")
             return False
-    
+
     def get_device_metrics_timeseries(
         self,
         site_id: str,
@@ -2700,11 +2543,11 @@ class RedisCache:
         metric: str,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         """
         Get device metrics time-series for a time range.
-        
+
         Args:
             site_id: Site UUID
             device_mac: Device MAC
@@ -2712,71 +2555,64 @@ class RedisCache:
             start_time: Start epoch (default: 7 days ago)
             end_time: End epoch (default: now)
             limit: Max points to return
-        
+
         Returns:
             List of time-series points sorted by timestamp
         """
         try:
             clean_mac = device_mac.lower().replace(":", "")
             key = f"{self.PREFIX_DEVICE_TIMESERIES}:{site_id}:{clean_mac}:{metric}"
-            
+
             end_time = end_time or time.time()
             start_time = start_time or (end_time - 7 * 24 * 3600)
-            
-            raw_data = self.client.zrangebyscore(
-                key, start_time, end_time, start=0, num=limit
-            )
-            
+
+            raw_data = self.client.zrangebyscore(key, start_time, end_time, start=0, num=limit)
+
             return [self._deserialize(item) for item in raw_data if item]
         except Exception as error:
             logger.error(f"Error getting device metrics time-series: {error}")
             return []
-    
+
     def get_missing_timeseries_sites(
-        self,
-        site_ids: List[str],
-        prefix: str = "gateway_ts"
+        self, site_ids: List[str], prefix: str = "gateway_ts"
     ) -> List[str]:
         """
         Identify sites with NO time-series data (prioritize missing over stale).
-        
+
         Args:
             site_ids: List of site IDs to check
             prefix: Time-series type prefix (gateway_ts, vpn_ts, device_ts)
-        
+
         Returns:
             List of site IDs with no cached time-series data
         """
         try:
             missing = []
             prefix_key = f"mistwan:{prefix}"
-            
+
             for site_id in site_ids:
                 pattern = f"{prefix_key}:{site_id}:*"
                 keys = self.client.keys(pattern)
                 if not keys:
                     missing.append(site_id)
-            
+
             logger.debug(f"Found {len(missing)} sites with no {prefix} data")
             return missing
         except Exception as error:
             logger.error(f"Error checking missing time-series sites: {error}")
             return []
-    
+
     def get_stale_timeseries_sites(
-        self,
-        site_ids: List[str],
-        prefix: str = "gateway_ts",
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
     ) -> List[str]:
         """
         Identify sites with STALE time-series data (checked after missing).
-        
+
         Args:
             site_ids: List of site IDs to check
             prefix: Time-series type prefix
             max_age_seconds: Max age before considered stale (default: 1 hour)
-        
+
         Returns:
             List of site IDs with stale time-series data
         """
@@ -2784,26 +2620,26 @@ class RedisCache:
             stale = []
             prefix_key = f"mistwan:{prefix}"
             current_time = time.time()
-            
+
             for site_id in site_ids:
                 pattern = f"{prefix_key}:{site_id}:*"
                 keys = self.client.keys(pattern)
-                
+
                 if not keys:
                     continue  # Missing, not stale - handled separately
-                
+
                 # Check newest data point across all keys for this site
                 newest_timestamp = 0
                 for key in keys[:10]:  # Sample up to 10 keys
                     newest = self.client.zrange(key, -1, -1, withscores=True)
                     if newest and newest[0][1] > newest_timestamp:
                         newest_timestamp = newest[0][1]
-                
+
                 if newest_timestamp > 0:
                     age = current_time - newest_timestamp
                     if age > max_age_seconds:
                         stale.append(site_id)
-            
+
             logger.debug(f"Found {len(stale)} sites with stale {prefix} data (>{max_age_seconds}s)")
             return stale
         except Exception as error:
@@ -2811,11 +2647,11 @@ class RedisCache:
             return []
 
     # ==================== Cache Management ====================
-    
+
     def clear_all(self) -> bool:
         """
         Clear all MistWAN cache keys.
-        
+
         Returns:
             True if successful
         """
@@ -2829,11 +2665,11 @@ class RedisCache:
         except Exception as error:
             logger.error(f"Error clearing cache: {error}")
             return False
-    
+
     def get_cache_stats(self) -> Dict[str, Any]:
         """
         Get statistics about cached data.
-        
+
         Returns:
             Dictionary with cache statistics
         """
@@ -2844,90 +2680,94 @@ class RedisCache:
                 "cache_age_seconds": None,
                 "keys": {},
                 "persistence": {},
-                "history": {}
+                "history": {},
             }
-            
+
             last_update = self.get_last_update()
             if last_update:
                 stats["last_update"] = datetime.fromtimestamp(
                     last_update, tz=timezone.utc
                 ).isoformat()
                 stats["cache_age_seconds"] = round(time.time() - last_update, 1)
-            
+
             # Count keys by prefix
             for prefix_name in ["org", "sites", "sitegroups", "port_stats", "utilization"]:
                 key = f"mistwan:{prefix_name}"
                 stats["keys"][prefix_name] = self.client.exists(key)
-            
+
             # Count per-site port stats and history keys
             site_keys = self.client.keys(f"{self.PREFIX_PORT_STATS}:site:*")
             stats["keys"]["per_site_port_stats"] = len(site_keys)
-            
+
             history_keys = self.client.keys(f"{self.PREFIX_HISTORY}:*")
             stats["keys"]["history_series"] = len(history_keys)
-            
+
             # Count SLE and Alarms keys
             sle_keys = self.client.keys(f"{self.PREFIX_SLE}:*")
             stats["keys"]["sle_keys"] = len(sle_keys)
-            
+
             alarms_keys = self.client.keys(f"{self.PREFIX_ALARMS}:*")
             stats["keys"]["alarms_keys"] = len(alarms_keys)
-            
+
             # Get persistence configuration
             stats["persistence"] = self.get_persistence_config()
-            
+
             # Get history stats
             stats["history"] = self.get_history_stats()
-            
+
             return stats
         except Exception as error:
             logger.error(f"Error getting cache stats: {error}")
             return {"connected": False, "error": str(error)}
-    
+
     def get_persistence_config(self) -> Dict[str, Any]:
         """
         Check Redis persistence configuration.
-        
+
         Returns:
             Dictionary with persistence status and recommendations
         """
         try:
             info = self.client.info("persistence")
-            
+
             rdb_enabled = info.get("rdb_bgsave_in_progress", 0) >= 0
             aof_enabled = info.get("aof_enabled", 0) == 1
-            
+
             # Check last save time
             last_rdb_save = info.get("rdb_last_save_time", 0)
             last_save_ago = time.time() - last_rdb_save if last_rdb_save else None
-            
+
             config = {
                 "rdb_enabled": rdb_enabled,
                 "aof_enabled": aof_enabled,
-                "last_rdb_save": datetime.fromtimestamp(last_rdb_save, tz=timezone.utc).isoformat() if last_rdb_save else None,
+                "last_rdb_save": (
+                    datetime.fromtimestamp(last_rdb_save, tz=timezone.utc).isoformat()
+                    if last_rdb_save
+                    else None
+                ),
                 "last_save_ago_seconds": round(last_save_ago, 0) if last_save_ago else None,
                 "aof_rewrite_in_progress": info.get("aof_rewrite_in_progress", 0) == 1,
-                "data_is_persisted": aof_enabled or (rdb_enabled and last_rdb_save > 0)
+                "data_is_persisted": aof_enabled or (rdb_enabled and last_rdb_save > 0),
             }
-            
+
             # Add warning if no persistence
             if not config["data_is_persisted"]:
                 config["warning"] = (
                     "Redis persistence is NOT configured! Data will be lost on restart. "
                     "Enable AOF with: redis-server --appendonly yes"
                 )
-            
+
             return config
         except Exception as error:
             logger.error(f"Error checking persistence config: {error}")
             return {"error": str(error)}
-    
+
     def force_save(self) -> bool:
         """
         Force Redis to save data to disk immediately.
-        
+
         Uses BGSAVE for RDB snapshot (non-blocking).
-        
+
         Returns:
             True if save initiated successfully
         """
@@ -2942,7 +2782,7 @@ class RedisCache:
                 return True
             logger.error(f"Error forcing save: {error}")
             return False
-    
+
     def close(self) -> None:
         """Close the Redis connection."""
         try:
@@ -2955,145 +2795,128 @@ class RedisCache:
 class NullCache:
     """
     Null cache implementation for when Redis is unavailable.
-    
+
     All operations are no-ops, so the application can run
     without caching (always fetches from API).
     """
-    
+
     def __init__(self):
         logger.warning("[WARN] Redis not available - caching disabled")
         # In-memory storage for precomputed dashboard data (fallback)
         self._precomputed: Dict[str, Any] = {}
-    
+
     def is_connected(self) -> bool:
         return False
-    
+
     def is_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         return False
-    
+
     def get_cache_age(self) -> Optional[float]:
         return None
-    
+
     def set_last_update(self, timestamp: Optional[float] = None) -> bool:
         return False
-    
+
     def get_last_update(self) -> Optional[float]:
         return None
-    
+
     def set_organization(self, org_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_organization(self) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def set_sites(self, sites: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_sites(self) -> Optional[List[Dict[str, Any]]]:
         return None
-    
+
     def set_site_groups(self, sitegroups: Dict[str, str], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_site_groups(self) -> Optional[Dict[str, str]]:
         return None
-    
+
     def set_port_stats(self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_port_stats(self) -> Optional[List[Dict[str, Any]]]:
         return None
-    
+
     def set_site_port_stats(
-        self,
-        site_id: str,
-        port_stats: List[Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, site_id: str, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_site_port_stats(self, site_id: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def is_site_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         return False
-    
-    def get_stale_site_ids(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
-    ) -> List[str]:
+
+    def get_stale_site_ids(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
         return list(site_ids)
-    
-    def get_sites_sorted_by_cache_age(
-        self,
-        site_ids: List[str]
-    ) -> List[tuple]:
+
+    def get_sites_sorted_by_cache_age(self, site_ids: List[str]) -> List[tuple]:
         """Return all sites as missing (infinite age)."""
-        return [(site_id, float('inf')) for site_id in site_ids]
-    
+        return [(site_id, float("inf")) for site_id in site_ids]
+
     def get_all_site_port_stats(self, site_ids: List[str]) -> List[Dict[str, Any]]:
         return []
-    
+
     def get_stale_site_ids_pipelined(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> tuple:
         """Return all sites as stale (NullCache has no data)."""
         return (list(site_ids), 0, len(site_ids), 0)
-    
-    def get_sites_sorted_by_cache_age_pipelined(
-        self,
-        site_ids: List[str]
-    ) -> List[tuple]:
+
+    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: List[str]) -> List[tuple]:
         """Return all sites as missing (infinite age)."""
-        return [(site_id, float('inf')) for site_id in site_ids]
-    
+        return [(site_id, float("inf")) for site_id in site_ids]
+
     def set_bulk_site_port_stats(
-        self,
-        port_stats: List[Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> int:
         return 0
-    
-    def set_utilization_records(self, records: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
-        return False
-    
-    def get_utilization_records(self) -> Optional[List[Dict[str, Any]]]:
-        return None
-    
-    def append_historical_record(
-        self,
-        site_id: str,
-        circuit_id: str,
-        record: Dict[str, Any],
-        ttl: Optional[int] = None
+
+    def set_utilization_records(
+        self, records: List[Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
+    def get_utilization_records(self) -> Optional[List[Dict[str, Any]]]:
+        return None
+
+    def append_historical_record(
+        self, site_id: str, circuit_id: str, record: Dict[str, Any], ttl: Optional[int] = None
+    ) -> bool:
+        return False
+
     def get_historical_records(
         self,
         site_id: str,
         circuit_id: str,
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
-        limit: int = 1000
+        limit: int = 1000,
     ) -> List[Dict[str, Any]]:
         return []
-    
-    def prune_old_history(self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None) -> int:
+
+    def prune_old_history(
+        self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None
+    ) -> int:
         return 0
-    
+
     def get_history_stats(self) -> Dict[str, Any]:
         return {"error": "Redis not available"}
-    
+
     def get_persistence_config(self) -> Dict[str, Any]:
         return {"error": "Redis not available"}
-    
+
     def force_save(self) -> bool:
         return False
-    
+
     # Utilization trends stubs
     def store_utilization_snapshot(
         self,
@@ -3102,263 +2925,237 @@ class NullCache:
         circuit_count: int,
         total_rx_bytes: int = 0,
         total_tx_bytes: int = 0,
-        timestamp: Optional[float] = None
+        timestamp: Optional[float] = None,
     ) -> bool:
         return False
-    
+
     def get_utilization_trends(
-        self,
-        hours: int = 24,
-        interval_minutes: int = 5
+        self, hours: int = 24, interval_minutes: int = 5
     ) -> List[Dict[str, Any]]:
         return []
-    
+
     def get_throughput_history(self, hours: int = 24) -> List[Dict[str, Any]]:
         return []
-    
+
     # Incremental fetch progress stubs
     def start_fetch_session(self, session_id: Optional[str] = None) -> str:
         return f"null_fetch_{int(time.time())}"
-    
+
     def update_fetch_progress(
         self,
         session_id: str,
         batch_number: int,
         records_in_batch: int,
         sites_in_batch: List[str],
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
     ) -> bool:
         return False
-    
+
     def complete_fetch_session(self, session_id: str, status: str = "completed") -> bool:
         return False
-    
+
     def get_fetch_progress(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_incomplete_fetch_session(self) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_batch_incrementally(
         self,
         port_stats: List[Dict[str, Any]],
         session_id: str,
         batch_number: int,
-        cursor: Optional[str] = None
+        cursor: Optional[str] = None,
     ) -> int:
         return 0
-    
+
     # SLE stubs
     def save_sle_snapshot(self, sle_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_last_sle_timestamp(self) -> Optional[int]:
         return None
-    
-    def save_worst_sites_sle(self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+
+    def save_worst_sites_sle(
+        self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None
+    ) -> bool:
         return False
-    
+
     def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     # Alarms stubs
     def save_alarms(self, alarms_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
         return False
-    
+
     def get_alarms(self) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_last_alarms_timestamp(self) -> Optional[int]:
         return None
-    
+
     def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
         return []
-    
+
     def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
         return []
-    
+
     # Gateway inventory stubs
-    def save_gateway_inventory(self, inventory_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def save_gateway_inventory(
+        self, inventory_data: Dict[str, Any], ttl: Optional[int] = None
+    ) -> bool:
         return False
-    
+
     def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_disconnected_site_ids(self) -> set:
         return set()
-    
+
     def is_gateway_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         return False
-    
+
     # VPN peer path stubs
     def save_vpn_peers(
-        self,
-        gateway_id: str,
-        mac: str,
-        peers_by_port: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, gateway_id: str, mac: str, peers_by_port: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_all_vpn_peers(
-        self,
-        all_peers: Dict[str, Dict[str, Any]],
-        ttl: Optional[int] = None
+        self, all_peers: Dict[str, Dict[str, Any]], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
         return {}
-    
+
     def get_vpn_peer_summary(self) -> Dict[str, Any]:
         return {
             "total_peers": 0,
             "paths_up": 0,
             "paths_down": 0,
             "site_breakdown": {},
-            "timestamp": time.time()
+            "timestamp": time.time(),
         }
-    
+
     def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
         return []
-    
+
     # Site-level SLE stubs
     def save_site_sle_summary(
-        self,
-        site_id: str,
-        metric: str,
-        summary_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, summary_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_site_sle_summary(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_site_sle_histogram(
-        self,
-        site_id: str,
-        metric: str,
-        histogram_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, histogram_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_site_sle_histogram(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_site_sle_impacted_gateways(
-        self,
-        site_id: str,
-        metric: str,
-        gateways_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, gateways_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_site_sle_impacted_interfaces(
-        self,
-        site_id: str,
-        metric: str,
-        interfaces_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, interfaces_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
-    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+
+    def get_site_sle_impacted_interfaces(
+        self, site_id: str, metric: str
+    ) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def save_site_sle_threshold(
-        self,
-        site_id: str,
-        metric: str,
-        threshold_data: Dict[str, Any],
-        ttl: Optional[int] = None
+        self, site_id: str, metric: str, threshold_data: Dict[str, Any], ttl: Optional[int] = None
     ) -> bool:
         return False
-    
+
     def get_site_sle_threshold(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
         return None
-    
+
     def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
         return None
-    
+
     def is_site_sle_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         return False
-    
+
     def get_sites_needing_sle_refresh(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> List[str]:
         return list(site_ids)
-    
-    def get_stale_sle_sites(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
-    ) -> List[str]:
+
+    def get_stale_sle_sites(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
         return []
-    
+
     def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
         return list(site_ids)
-    
+
     def get_site_sle_cache_status(
-        self,
-        site_ids: List[str],
-        max_age_seconds: int = 3600
+        self, site_ids: List[str], max_age_seconds: int = 3600
     ) -> Dict[str, int]:
         return {"fresh": 0, "stale": 0, "missing": len(site_ids)}
-    
+
     # Time-series stubs (always return empty/missing)
     def save_gateway_port_timeseries(self, *args, **kwargs) -> bool:
         return False
-    
+
     def get_gateway_port_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
         return []
-    
+
     def get_gateway_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
         return {"has_data": False, "point_count": 0}
-    
+
     def save_vpn_peer_timeseries(self, *args, **kwargs) -> bool:
         return False
-    
+
     def get_vpn_peer_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
         return []
-    
+
     def get_vpn_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
         return {"has_data": False, "point_count": 0}
-    
+
     def save_device_metrics_timeseries(self, *args, **kwargs) -> bool:
         return False
-    
+
     def get_device_metrics_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
         return []
-    
-    def get_missing_timeseries_sites(self, site_ids: List[str], prefix: str = "gateway_ts") -> List[str]:
+
+    def get_missing_timeseries_sites(
+        self, site_ids: List[str], prefix: str = "gateway_ts"
+    ) -> List[str]:
         return list(site_ids)
-    
-    def get_stale_timeseries_sites(self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600) -> List[str]:
+
+    def get_stale_timeseries_sites(
+        self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
+    ) -> List[str]:
         return []
-    
+
     def clear_all(self) -> bool:
         return True
-    
+
     def get_cache_stats(self) -> Dict[str, Any]:
         return {"connected": False, "reason": "Redis not available"}
-    
+
     def close(self) -> None:
         pass
 
@@ -3366,19 +3163,19 @@ class NullCache:
 def get_cache(redis_url: Optional[str] = None) -> "RedisCache | NullCache":
     """
     Factory function to get a cache instance.
-    
+
     Returns RedisCache if available and connectable,
     otherwise returns NullCache (no-op implementation).
-    
+
     Args:
         redis_url: Optional Redis URL override
-    
+
     Returns:
         Cache instance (RedisCache or NullCache)
     """
     if not REDIS_AVAILABLE:
         return NullCache()
-    
+
     try:
         return RedisCache(redis_url)
     except Exception as error:

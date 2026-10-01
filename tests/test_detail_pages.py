@@ -8,7 +8,6 @@ from src.dashboard.pages.detail_data import (
     shape_vpn_peer_detail,
 )
 
-
 SITE_ID = "11111111-1111-1111-1111-111111111111"
 GATEWAY_ID = "gw-1"
 GATEWAY_MAC = "aa:bb:cc:dd:ee:ff"
@@ -164,21 +163,23 @@ class StubRedisCache:
 def _real_provider(peer_id=PEER_ID):
     provider = DashboardDataProvider(sites=[], circuits=[])
     provider.site_lookup = {SITE_ID: "Store 100"}
-    provider.update_gateway_inventory({
-        "total": 1,
-        "connected": 1,
-        "disconnected": 0,
-        "gateways": [
-            {
-                "id": GATEWAY_ID,
-                "mac": GATEWAY_MAC,
-                "name": "Store 100 Gateway",
-                "site_id": SITE_ID,
-                "connected": True,
-                "last_seen": 1_700_000_000,
-            }
-        ],
-    })
+    provider.update_gateway_inventory(
+        {
+            "total": 1,
+            "connected": 1,
+            "disconnected": 0,
+            "gateways": [
+                {
+                    "id": GATEWAY_ID,
+                    "mac": GATEWAY_MAC,
+                    "name": "Store 100 Gateway",
+                    "site_id": SITE_ID,
+                    "connected": True,
+                    "last_seen": 1_700_000_000,
+                }
+            ],
+        }
+    )
     provider.redis_cache = StubRedisCache(
         ports=[
             {
@@ -212,9 +213,7 @@ def _figure_trace_count(figure):
 
 
 def test_gateway_detail_populated_data():
-    detail = shape_gateway_detail(
-        FakeProvider(), {"gateway_id": GATEWAY_ID, "site_id": SITE_ID}
-    )
+    detail = shape_gateway_detail(FakeProvider(), {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
 
     assert detail["gateway_name"] == "Store 100 Gateway"
     assert detail["site_name"] == "Store 100"
@@ -229,7 +228,9 @@ def test_gateway_detail_populated_data():
 
 def test_gateway_detail_missing_and_raising_data():
     missing = shape_gateway_detail(FakeProvider(), {"gateway_id": "unknown", "site_id": SITE_ID})
-    failing = shape_gateway_detail(RaisingProvider(), {"gateway_id": GATEWAY_ID, "site_id": SITE_ID})
+    failing = shape_gateway_detail(
+        RaisingProvider(), {"gateway_id": GATEWAY_ID, "site_id": SITE_ID}
+    )
 
     assert missing["status"] == "Unknown"
     assert missing["wan_ports"] == []
@@ -265,9 +266,7 @@ def test_port_detail_missing_and_raising_data():
 
 
 def test_vpn_peer_detail_populated_data():
-    detail = shape_vpn_peer_detail(
-        FakeProvider(), {"site_id": SITE_ID, "peer_id": PEER_ID}
-    )
+    detail = shape_vpn_peer_detail(FakeProvider(), {"site_id": SITE_ID, "peer_id": PEER_ID})
 
     assert detail["peer_name"] == "Remote Peer"
     assert detail["local_site"] == "Store 100"

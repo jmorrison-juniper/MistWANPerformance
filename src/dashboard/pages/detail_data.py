@@ -19,7 +19,6 @@ from src.dashboard.pages.port import PortPage
 from src.dashboard.pages.shared import COLORS, ChartBuilders
 from src.dashboard.pages.vpn_peer import VPNPeerPage
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -140,7 +139,9 @@ def _gateway_matches(gateway: Dict[str, Any], gateway_id: str) -> bool:
         str(_first(gateway, "mac", "device_mac", default="")),
     }
     normalized = gateway_id.lower().replace(":", "")
-    return any(candidate and candidate.lower().replace(":", "") == normalized for candidate in candidates)
+    return any(
+        candidate and candidate.lower().replace(":", "") == normalized for candidate in candidates
+    )
 
 
 def _find_gateway(provider: Any, gateway_id: str) -> Optional[Dict[str, Any]]:
@@ -167,7 +168,9 @@ def _site_port_records(provider: Any, site_id: Optional[str]) -> List[Dict[str, 
         records.extend(cache.get_all_site_port_stats([site_id]) or [])
 
     if site_id:
-        records = [port for port in records if not port.get("site_id") or port.get("site_id") == site_id]
+        records = [
+            port for port in records if not port.get("site_id") or port.get("site_id") == site_id
+        ]
 
     unique: Dict[tuple, Dict[str, Any]] = {}
     for port in records:
@@ -187,7 +190,9 @@ def _port_matches(port: Dict[str, Any], port_id: str, gateway_id: Optional[str] 
         return True
     candidates = {str(gateway_hint)}
     normalized = gateway_id.lower().replace(":", "")
-    return any(candidate and candidate.lower().replace(":", "") == normalized for candidate in candidates)
+    return any(
+        candidate and candidate.lower().replace(":", "") == normalized for candidate in candidates
+    )
 
 
 def _find_port(
@@ -211,7 +216,10 @@ def _gateway_ports(
     gateway_mac = _first(gateway, "mac", "device_mac", default=gateway_id)
     ports = []
     for port in _site_port_records(provider, site_id):
-        if _first(port, "mac", "device_mac", "gateway_id", "device_id", default="") in {gateway_id, gateway_mac}:
+        if _first(port, "mac", "device_mac", "gateway_id", "device_id", default="") in {
+            gateway_id,
+            gateway_mac,
+        }:
             ports.append(port)
     return ports
 
@@ -231,7 +239,9 @@ def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any
         peers.extend(provider.get_vpn_peer_table_data(site_id) or [])
 
     if site_id:
-        peers = [peer for peer in peers if not peer.get("site_id") or peer.get("site_id") == site_id]
+        peers = [
+            peer for peer in peers if not peer.get("site_id") or peer.get("site_id") == site_id
+        ]
 
     unique: Dict[tuple, Dict[str, Any]] = {}
     for peer in peers:
@@ -245,7 +255,9 @@ def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any
 
 
 def _peer_id(peer: Dict[str, Any]) -> str:
-    return str(_first(peer, "peer_id", "peer_mac", "mac", "peer_router_name", "peer_name", default=""))
+    return str(
+        _first(peer, "peer_id", "peer_mac", "mac", "peer_router_name", "peer_name", default="")
+    )
 
 
 def _find_peer(provider: Any, site_id: Optional[str], peer_id: str) -> Optional[Dict[str, Any]]:
@@ -255,7 +267,10 @@ def _find_peer(provider: Any, site_id: Optional[str], peer_id: str) -> Optional[
             _peer_id(peer),
             str(_first(peer, "peer_port_id", "vpn_name", default="")),
         }
-        if any(candidate and candidate.lower().replace(":", "") == normalized for candidate in candidates):
+        if any(
+            candidate and candidate.lower().replace(":", "") == normalized
+            for candidate in candidates
+        ):
             return peer
     return None
 
@@ -264,7 +279,11 @@ def _call_timeseries(method: Any, **kwargs: Any) -> List[Dict[str, Any]]:
     try:
         return method(**kwargs) or []
     except TypeError:
-        compact = {key: value for key, value in kwargs.items() if key not in {"start_time", "end_time", "interval"}}
+        compact = {
+            key: value
+            for key, value in kwargs.items()
+            if key not in {"start_time", "end_time", "interval"}
+        }
         return method(**compact) or []
 
 
@@ -273,7 +292,9 @@ def _time_bounds(hours: int) -> Dict[str, int]:
     return {"start_time": end_time - int(hours or 24) * 3600, "end_time": end_time}
 
 
-def _gateway_bandwidth(provider: Any, site_id: Optional[str], gateway_id: str, ports: List[Dict[str, Any]]) -> go.Figure:
+def _gateway_bandwidth(
+    provider: Any, site_id: Optional[str], gateway_id: str, ports: List[Dict[str, Any]]
+) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_gateway_port_timeseries"):
         return ChartBuilders.build_empty_chart("No gateway bandwidth data available")
 
@@ -296,7 +317,9 @@ def _gateway_bandwidth(provider: Any, site_id: Optional[str], gateway_id: str, p
     return ChartBuilders.build_bandwidth_timeseries(list(totals.values()), "Gateway Bandwidth")
 
 
-def _device_metrics(provider: Any, site_id: Optional[str], gateway_id: str, gateway: Optional[Dict[str, Any]]) -> go.Figure:
+def _device_metrics(
+    provider: Any, site_id: Optional[str], gateway_id: str, gateway: Optional[Dict[str, Any]]
+) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_device_metrics_timeseries"):
         return ChartBuilders.build_empty_chart("No device metrics data available")
 
@@ -318,13 +341,21 @@ def _device_metrics(provider: Any, site_id: Optional[str], gateway_id: str, gate
     fig = make_subplots(specs=[[{"secondary_y": False}]])
     for metric, color in (("cpu", COLORS["warning"]), ("memory", COLORS["info"])):
         points = series[metric]
-        fig.add_trace(go.Scatter(
-            x=[datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=timezone.utc) for p in points],
-            y=[_as_float(_first(p, metric, "value", f"{metric}_pct", default=0)) for p in points],
-            mode="lines",
-            name=metric.upper(),
-            line=dict(color=color, width=2),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[
+                    datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=timezone.utc)
+                    for p in points
+                ],
+                y=[
+                    _as_float(_first(p, metric, "value", f"{metric}_pct", default=0))
+                    for p in points
+                ],
+                mode="lines",
+                name=metric.upper(),
+                line=dict(color=color, width=2),
+            )
+        )
     fig.update_layout(
         template="plotly_dark",
         margin=dict(l=50, r=20, t=40, b=40),
@@ -349,8 +380,10 @@ def shape_gateway_detail(provider: Any, context: Optional[Dict[str, Any]]) -> Di
         if gateway and peers:
             gateway_mac = _first(gateway, "mac", "device_mac", default=gateway_id)
             peers = [
-                peer for peer in peers
-                if _first(peer, "mac", "device_mac", "gateway_id", default=gateway_mac) in {gateway_id, gateway_mac}
+                peer
+                for peer in peers
+                if _first(peer, "mac", "device_mac", "gateway_id", default=gateway_mac)
+                in {gateway_id, gateway_mac}
             ] or peers
         if not gateway and not ports and not peers:
             return _gateway_empty(gateway_id, site_id, "No data for this gateway yet")
@@ -363,12 +396,16 @@ def shape_gateway_detail(provider: Any, context: Optional[Dict[str, Any]]) -> Di
         badge = _badge(str(status))
         ports_up = sum(1 for port in ports if _first(port, "up", "connected", default=True))
         ports_down = sum(1 for port in ports if not _first(port, "up", "connected", default=True))
-        wan_rows = [GatewayPage.format_wan_port_row(site_id or "", port, gateway_id) for port in ports]
+        wan_rows = [
+            GatewayPage.format_wan_port_row(site_id or "", port, gateway_id) for port in ports
+        ]
         peer_rows = [_format_gateway_peer_row(site_id or "", peer) for peer in peers]
 
         return {
             "message": "",
-            "gateway_name": _first(gateway, "name", "hostname", "mac", default=gateway_id[:8] + "..."),
+            "gateway_name": _first(
+                gateway, "name", "hostname", "mac", default=gateway_id[:8] + "..."
+            ),
             "site_name": _site_name(provider, site_id),
             "status": badge["text"],
             "status_class": badge["className"],
@@ -412,11 +449,15 @@ def _gateway_empty(gateway_id: str, site_id: Optional[str], message: str) -> Dic
 
 def _format_gateway_peer_row(site_id: str, peer: Dict[str, Any]) -> Dict[str, Any]:
     peer_id = _peer_id(peer) or "unknown"
-    peer_name = _first(peer, "peer_name", "peer_site_name", "peer_router_name", "vpn_name", default=peer_id)
+    peer_name = _first(
+        peer, "peer_name", "peer_site_name", "peer_router_name", "vpn_name", default=peer_id
+    )
     encoded_peer_id = quote(peer_id, safe="")
     return {
         "peer_name": f"[{peer_name}](/vpn/{site_id}/{encoded_peer_id})",
-        "path_status": _first(peer, "path_status", "status", default="Up" if peer.get("up") else "Down"),
+        "path_status": _first(
+            peer, "path_status", "status", default="Up" if peer.get("up") else "Down"
+        ),
         "loss_pct": _fmt_num(_first(peer, "loss", "loss_pct"), 2, "0.00"),
         "latency_ms": _fmt_num(_first(peer, "latency", "latency_ms"), 1, "0.0"),
         "jitter_ms": _fmt_num(_first(peer, "jitter", "jitter_ms"), 1, "0.0"),
@@ -424,7 +465,9 @@ def _format_gateway_peer_row(site_id: str, peer: Dict[str, Any]) -> Dict[str, An
     }
 
 
-def shape_port_detail(provider: Any, context: Optional[Dict[str, Any]], hours: int = 24) -> Dict[str, Any]:
+def shape_port_detail(
+    provider: Any, context: Optional[Dict[str, Any]], hours: int = 24
+) -> Dict[str, Any]:
     site_id = (context or {}).get("site_id")
     port_id = unquote((context or {}).get("port_id", ""))
     gateway_id = (context or {}).get("gateway_id")
@@ -447,7 +490,11 @@ def shape_port_detail(provider: Any, context: Optional[Dict[str, Any]], hours: i
             "message": "",
             "port_name": _first(port, "name", "port_id", default=port_id),
             "site_name": _site_name(provider, site_id),
-            "gateway_link": dcc.Link(str(gateway_id), href=f"/gateway/{gateway_id}?site_id={site_id}") if gateway_id else EMPTY,
+            "gateway_link": (
+                dcc.Link(str(gateway_id), href=f"/gateway/{gateway_id}?site_id={site_id}")
+                if gateway_id
+                else EMPTY
+            ),
             "status": badge["text"],
             "status_class": badge["className"],
             "last_updated": f"Last updated: {_fmt_timestamp(_first(port, 'last_updated', 'timestamp'))}",
@@ -487,7 +534,9 @@ def shape_port_detail(provider: Any, context: Optional[Dict[str, Any]], hours: i
         return _port_empty(site_id, port_id, gateway_id, "Unable to load port data")
 
 
-def _port_empty(site_id: Optional[str], port_id: str, gateway_id: Optional[str], message: str) -> Dict[str, Any]:
+def _port_empty(
+    site_id: Optional[str], port_id: str, gateway_id: Optional[str], message: str
+) -> Dict[str, Any]:
     return {
         "message": message,
         "port_name": port_id or EMPTY,
@@ -529,7 +578,9 @@ def _port_empty(site_id: Optional[str], port_id: str, gateway_id: Optional[str],
     }
 
 
-def _port_bandwidth(provider: Any, site_id: Optional[str], port: Dict[str, Any], hours: int) -> go.Figure:
+def _port_bandwidth(
+    provider: Any, site_id: Optional[str], port: Dict[str, Any], hours: int
+) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_gateway_port_timeseries"):
         return ChartBuilders.build_empty_chart("No bandwidth data available")
     points = _call_timeseries(
@@ -542,7 +593,9 @@ def _port_bandwidth(provider: Any, site_id: Optional[str], port: Dict[str, Any],
     return ChartBuilders.build_bandwidth_timeseries(points, "Port Bandwidth")
 
 
-def shape_vpn_peer_detail(provider: Any, context: Optional[Dict[str, Any]], hours: int = 24) -> Dict[str, Any]:
+def shape_vpn_peer_detail(
+    provider: Any, context: Optional[Dict[str, Any]], hours: int = 24
+) -> Dict[str, Any]:
     site_id = (context or {}).get("site_id")
     peer_id = unquote((context or {}).get("peer_id", ""))
     if not provider:
@@ -563,7 +616,9 @@ def shape_vpn_peer_detail(provider: Any, context: Optional[Dict[str, Any]], hour
             "message": "",
             "peer_name": _first(peer, "peer_name", "peer_router_name", "vpn_name", default=peer_id),
             "local_site": _site_name(provider, site_id),
-            "remote_site": _first(peer, "peer_site_name", "remote_site_name", "peer_router_name", default=EMPTY),
+            "remote_site": _first(
+                peer, "peer_site_name", "remote_site_name", "peer_router_name", default=EMPTY
+            ),
             "status": badge["text"],
             "status_class": badge["className"],
             "last_updated": f"Last updated: {_fmt_timestamp(_first(peer, 'last_updated', 'timestamp'))}",
@@ -627,7 +682,9 @@ def _vpn_empty(site_id: Optional[str], peer_id: str, message: str) -> Dict[str, 
     }
 
 
-def _vpn_quality(provider: Any, site_id: Optional[str], peer: Dict[str, Any], hours: int) -> go.Figure:
+def _vpn_quality(
+    provider: Any, site_id: Optional[str], peer: Dict[str, Any], hours: int
+) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_vpn_peer_timeseries"):
         return ChartBuilders.build_empty_chart("No VPN quality data available")
     points = _call_timeseries(
