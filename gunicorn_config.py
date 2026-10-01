@@ -17,7 +17,7 @@ backlog = 2048
 # Each worker loads ~1GB of cached data, so multiple workers exceed memory limits
 # Single worker with 8 threads handles concurrent requests without duplicating memory
 workers = 1
-worker_class = 'gthread'  # Threaded workers for better concurrency
+worker_class = "gthread"  # Threaded workers for better concurrency
 threads = 8  # More threads per worker for concurrent request handling
 
 # Worker timeout
@@ -26,13 +26,13 @@ graceful_timeout = 30
 keepalive = 5
 
 # Logging
-accesslog = '-'  # Log to stdout
-errorlog = '-'   # Log to stderr
-loglevel = 'info'
+accesslog = "-"  # Log to stdout
+errorlog = "-"  # Log to stderr
+loglevel = "info"
 access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
 
 # Process naming
-proc_name = 'mistwan-dashboard'
+proc_name = "mistwan-dashboard"
 
 # Server mechanics
 daemon = False

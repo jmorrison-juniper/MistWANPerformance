@@ -13,10 +13,4 @@ from src.dashboard.pages.gateway import GatewayPage
 from src.dashboard.pages.port import PortPage
 from src.dashboard.pages.vpn_peer import VPNPeerPage
 
-
-__all__ = [
-    "OverviewPage",
-    "GatewayPage",
-    "PortPage",
-    "VPNPeerPage"
-]
+__all__ = ["OverviewPage", "GatewayPage", "PortPage", "VPNPeerPage"]

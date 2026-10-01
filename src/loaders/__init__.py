@@ -8,12 +8,12 @@ from src.loaders.snowflake_loader import (
     SnowflakeConnection,
     SnowflakeSchemaManager,
     SnowflakeFactLoader,
-    SnowflakeLoader
+    SnowflakeLoader,
 )
 
 __all__ = [
     "SnowflakeConnection",
     "SnowflakeSchemaManager",
     "SnowflakeFactLoader",
-    "SnowflakeLoader"
+    "SnowflakeLoader",
 ]

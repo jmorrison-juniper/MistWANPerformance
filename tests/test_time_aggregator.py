@@ -12,23 +12,21 @@ from src.models.facts import (
     CircuitUtilizationRecord,
     CircuitStatusRecord,
     CircuitQualityRecord,
-    RollingWindowMetrics
+    RollingWindowMetrics,
 )
 
 
 class TestTimeAggregatorRollingWindows(unittest.TestCase):
     """Test cases for rolling window calculations."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         self.aggregator = TimeAggregator()
         self.test_site_id = "test-site-001"
         self.test_circuit_id = "test-device:wan0"
-    
+
     def _create_utilization_record(
-        self,
-        hour_key: str,
-        utilization_pct: float
+        self, hour_key: str, utilization_pct: float
     ) -> CircuitUtilizationRecord:
         """Helper to create test utilization record."""
         return CircuitUtilizationRecord(
@@ -39,15 +37,11 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             rx_bytes=1000000,
             tx_bytes=500000,
             bandwidth_mbps=100,
-            collected_at=datetime.now(timezone.utc)
+            collected_at=datetime.now(timezone.utc),
         )
-    
+
     def _create_status_record(
-        self,
-        hour_key: str,
-        up_minutes: int,
-        down_minutes: int,
-        flap_count: int
+        self, hour_key: str, up_minutes: int, down_minutes: int, flap_count: int
     ) -> CircuitStatusRecord:
         """Helper to create test status record."""
         return CircuitStatusRecord(
@@ -58,15 +52,11 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             up_minutes=up_minutes,
             down_minutes=down_minutes,
             flap_count=flap_count,
-            collected_at=datetime.now(timezone.utc)
+            collected_at=datetime.now(timezone.utc),
         )
-    
+
     def _create_quality_record(
-        self,
-        hour_key: str,
-        loss_avg: float,
-        jitter_avg: float,
-        latency_avg: float
+        self, hour_key: str, loss_avg: float, jitter_avg: float, latency_avg: float
     ) -> CircuitQualityRecord:
         """Helper to create test quality record."""
         return CircuitQualityRecord(
@@ -76,9 +66,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             loss_avg=loss_avg,
             jitter_avg=jitter_avg,
             latency_avg=latency_avg,
-            collected_at=datetime.now(timezone.utc)
+            collected_at=datetime.now(timezone.utc),
         )
-    
+
     def test_rolling_window_3h_utilization_avg(self):
         """Test 3-hour rolling window calculates correct average."""
         # Create 3 hours of data
@@ -87,9 +77,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010111", 70.0),
             self._create_utilization_record("2024010112", 80.0),
         ]
-        
+
         window_end = datetime(2024, 1, 1, 12, 30, tzinfo=timezone.utc)
-        
+
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
@@ -97,14 +87,14 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             status_records=[],
             quality_records=[],
             window_hours=3,
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         # Average of 60, 70, 80 = 70
         self.assertIsNotNone(result.utilization_avg)
         self.assertAlmostEqual(result.utilization_avg or 0.0, 70.0, places=1)
         self.assertEqual(result.window_hours, 3)
-    
+
     def test_rolling_window_continuous_hours_above_threshold(self):
         """Test continuous hours above threshold calculation."""
         # Create pattern: below, above, above, above (3 consecutive)
@@ -114,9 +104,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010111", 78.0),
             self._create_utilization_record("2024010112", 72.0),
         ]
-        
+
         window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-        
+
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
@@ -124,12 +114,12 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             status_records=[],
             quality_records=[],
             window_hours=4,
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         # 3 consecutive hours above 70%
         self.assertEqual(result.continuous_hours_above_70, 3.0)
-    
+
     def test_rolling_window_cumulative_hours_above_threshold(self):
         """Test cumulative hours above threshold calculation."""
         # Create pattern: below, above, below, above
@@ -139,9 +129,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010111", 68.0),
             self._create_utilization_record("2024010112", 85.0),  # Above
         ]
-        
+
         window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-        
+
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
@@ -149,12 +139,12 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             status_records=[],
             quality_records=[],
             window_hours=4,
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         # 2 total hours above 70% (not consecutive)
         self.assertEqual(result.cumulative_hours_above_70, 2.0)
-    
+
     def test_rolling_window_availability_calculation(self):
         """Test availability percentage in rolling window."""
         records = [
@@ -162,9 +152,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_status_record("2024010111", 30, 30, 1),
             self._create_status_record("2024010112", 60, 0, 0),
         ]
-        
+
         window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-        
+
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
@@ -172,14 +162,14 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             status_records=records,
             quality_records=[],
             window_hours=3,
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         # 150 up, 30 down = 150/180 = 83.33%
         self.assertIsNotNone(result.availability_pct)
         self.assertAlmostEqual(result.availability_pct or 0.0, 83.3333, places=2)
         self.assertEqual(result.flap_count, 1)
-    
+
     def test_rolling_window_quality_averages(self):
         """Test quality metric averages in rolling window."""
         records = [
@@ -187,9 +177,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_quality_record("2024010111", 0.2, 15.0, 60.0),
             self._create_quality_record("2024010112", 0.3, 20.0, 70.0),
         ]
-        
+
         window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
-        
+
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
@@ -197,9 +187,9 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             status_records=[],
             quality_records=records,
             window_hours=3,
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         # Averages: loss=0.2, jitter=15, latency=60
         self.assertIsNotNone(result.loss_avg)
         self.assertIsNotNone(result.jitter_avg)
@@ -207,51 +197,48 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
         self.assertAlmostEqual(result.loss_avg or 0.0, 0.2, places=2)
         self.assertAlmostEqual(result.jitter_avg or 0.0, 15.0, places=1)
         self.assertAlmostEqual(result.latency_avg or 0.0, 60.0, places=1)
-    
+
     def test_calculate_rolling_windows_for_circuit_all_windows(self):
         """Test that all window sizes (3h, 12h, 24h) are calculated."""
-        records = [
-            self._create_utilization_record(f"2024010{i:02d}", 50.0 + i)
-            for i in range(24)
-        ]
-        
+        records = [self._create_utilization_record(f"2024010{i:02d}", 50.0 + i) for i in range(24)]
+
         window_end = datetime(2024, 1, 1, 23, 30, tzinfo=timezone.utc)
-        
+
         results = self.aggregator.calculate_rolling_windows_for_circuit(
             site_id=self.test_site_id,
             circuit_id=self.test_circuit_id,
             utilization_records=records,
             status_records=[],
             quality_records=[],
-            window_end=window_end
+            window_end=window_end,
         )
-        
+
         self.assertIn(3, results)
         self.assertIn(12, results)
         self.assertIn(24, results)
         self.assertEqual(results[3].window_hours, 3)
         self.assertEqual(results[12].window_hours, 12)
         self.assertEqual(results[24].window_hours, 24)
-    
+
     def test_percentile_calculation(self):
         """Test percentile calculation helper."""
         values = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0]
-        
+
         # P95 should be close to 95
         p95 = self.aggregator._calculate_percentile(values, 95)
         self.assertIsNotNone(p95)
         self.assertAlmostEqual(p95 or 0.0, 95.5, places=1)
-        
+
         # P50 (median) should be 55
         p50 = self.aggregator._calculate_percentile(values, 50)
         self.assertIsNotNone(p50)
         self.assertAlmostEqual(p50 or 0.0, 55.0, places=1)
-    
+
     def test_percentile_empty_list(self):
         """Test percentile returns None for empty list."""
         result = self.aggregator._calculate_percentile([], 95)
         self.assertIsNone(result)
-    
+
     def test_filter_records_in_window(self):
         """Test record filtering by time window."""
         records = [
@@ -261,14 +248,12 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010112", 80.0),  # In window
             self._create_utilization_record("2024010114", 90.0),  # After window
         ]
-        
+
         window_start = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
         window_end = datetime(2024, 1, 1, 12, 59, tzinfo=timezone.utc)
-        
-        filtered = self.aggregator._filter_records_in_window(
-            records, window_start, window_end
-        )
-        
+
+        filtered = self.aggregator._filter_records_in_window(records, window_start, window_end)
+
         self.assertEqual(len(filtered), 3)
         self.assertEqual(filtered[0].hour_key, "2024010110")
         self.assertEqual(filtered[2].hour_key, "2024010112")
@@ -276,11 +261,11 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
 
 class TestRollingWindowMetricsModel(unittest.TestCase):
     """Test cases for RollingWindowMetrics data model."""
-    
+
     def test_to_dict_contains_all_fields(self):
         """Test that to_dict returns all expected fields."""
         window_end = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
-        
+
         metrics = RollingWindowMetrics(
             site_id="site-001",
             circuit_id="device:wan0",
@@ -291,31 +276,28 @@ class TestRollingWindowMetricsModel(unittest.TestCase):
             continuous_hours_above_70=2.0,
             cumulative_hours_above_80=1.0,
             availability_pct=99.5,
-            flap_count=1
+            flap_count=1,
         )
-        
+
         result = metrics.to_dict()
-        
+
         self.assertEqual(result["site_id"], "site-001")
         self.assertEqual(result["circuit_id"], "device:wan0")
         self.assertEqual(result["window_hours"], 3)
         self.assertEqual(result["utilization_avg"], 75.5)
         self.assertEqual(result["continuous_hours_above_70"], 2.0)
         self.assertEqual(result["availability_pct"], 99.5)
-    
+
     def test_primary_key_format(self):
         """Test primary key generation."""
         window_end = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
-        
+
         metrics = RollingWindowMetrics(
-            site_id="site-001",
-            circuit_id="device:wan0",
-            window_end=window_end,
-            window_hours=3
+            site_id="site-001", circuit_id="device:wan0", window_end=window_end, window_hours=3
         )
-        
+
         pk = metrics.primary_key
-        
+
         self.assertIn("site-001", pk)
         self.assertIn("device:wan0", pk)
         self.assertIn("3h", pk)
@@ -323,18 +305,15 @@ class TestRollingWindowMetricsModel(unittest.TestCase):
 
 class TestParallelAggregation(unittest.TestCase):
     """Test cases for parallel aggregation functions."""
-    
+
     def setUp(self):
         """Set up test fixtures."""
         from src.models.facts import AggregatedMetrics
+
         self.AggregatedMetrics = AggregatedMetrics
-    
+
     def _create_daily_aggregate(
-        self,
-        site_id: str,
-        circuit_id: str,
-        date_key: str,
-        utilization_avg: float = 50.0
+        self, site_id: str, circuit_id: str, date_key: str, utilization_avg: float = 50.0
     ):
         """Helper to create test daily aggregate."""
         return self.AggregatedMetrics(
@@ -357,32 +336,30 @@ class TestParallelAggregation(unittest.TestCase):
             jitter_avg=5.0,
             jitter_max=10.0,
             latency_avg=25.0,
-            latency_max=50.0
+            latency_max=50.0,
         )
-    
+
     def test_weekly_parallel_matches_sequential(self):
         """Test that parallel weekly aggregation matches sequential."""
         from src.aggregators.time_aggregator import aggregate_daily_to_weekly_parallel
-        
+
         # Create 7 days of data for one week (2024-01-01 to 2024-01-07)
         daily_aggregates = [
             self._create_daily_aggregate("site-001", "circuit-A", f"2024010{day}", 50.0 + day)
             for day in range(1, 8)
         ]
-        
+
         # Run parallel (forced sequential with use_parallel=False)
         sequential_results = aggregate_daily_to_weekly_parallel(
             daily_aggregates, use_parallel=False
         )
-        
+
         # Run parallel
-        parallel_results = aggregate_daily_to_weekly_parallel(
-            daily_aggregates, use_parallel=True
-        )
-        
+        parallel_results = aggregate_daily_to_weekly_parallel(daily_aggregates, use_parallel=True)
+
         self.assertEqual(len(sequential_results), len(parallel_results))
         self.assertEqual(len(sequential_results), 1)
-        
+
         # Check values match
         seq = sequential_results[0]
         par = parallel_results[0]
@@ -390,73 +367,67 @@ class TestParallelAggregation(unittest.TestCase):
         self.assertEqual(seq.circuit_id, par.circuit_id)
         self.assertEqual(seq.period_type, "weekly")
         self.assertIsNotNone(seq.utilization_avg)
-    
+
     def test_monthly_parallel_matches_sequential(self):
         """Test that parallel monthly aggregation matches sequential."""
         from src.aggregators.time_aggregator import aggregate_daily_to_monthly_parallel
-        
+
         # Create 30 days of data for January 2024
         daily_aggregates = [
             self._create_daily_aggregate("site-002", "circuit-B", f"202401{day:02d}", 45.0)
             for day in range(1, 31)
         ]
-        
+
         # Run sequential
         sequential_results = aggregate_daily_to_monthly_parallel(
             daily_aggregates, use_parallel=False
         )
-        
+
         # Run parallel
-        parallel_results = aggregate_daily_to_monthly_parallel(
-            daily_aggregates, use_parallel=True
-        )
-        
+        parallel_results = aggregate_daily_to_monthly_parallel(daily_aggregates, use_parallel=True)
+
         self.assertEqual(len(sequential_results), len(parallel_results))
         self.assertEqual(len(sequential_results), 1)
-        
+
         seq = sequential_results[0]
         par = parallel_results[0]
         self.assertEqual(seq.site_id, par.site_id)
         self.assertEqual(seq.period_key, "202401")
         self.assertEqual(seq.period_type, "monthly")
-    
+
     def test_region_parallel_aggregation(self):
         """Test parallel region aggregation."""
         from src.aggregators.time_aggregator import aggregate_to_region_parallel
-        
+
         # Create data for multiple sites in different regions
         daily_aggregates = [
             self._create_daily_aggregate("site-001", "circuit-A", "20240101", 60.0),
             self._create_daily_aggregate("site-002", "circuit-B", "20240101", 70.0),
             self._create_daily_aggregate("site-003", "circuit-C", "20240101", 50.0),
         ]
-        
-        site_region_map = {
-            "site-001": "AMER",
-            "site-002": "AMER",
-            "site-003": "EMEA"
-        }
-        
+
+        site_region_map = {"site-001": "AMER", "site-002": "AMER", "site-003": "EMEA"}
+
         results = aggregate_to_region_parallel(
             daily_aggregates, site_region_map, use_parallel=False
         )
-        
+
         self.assertEqual(len(results), 2)  # AMER and EMEA
-        
+
         # Find AMER aggregate
         amer_agg = next((r for r in results if r.site_id == "AMER"), None)
         self.assertIsNotNone(amer_agg)
         # AMER should have average of 60 and 70 = 65
         self.assertAlmostEqual(amer_agg.utilization_avg, 65.0, places=1)
-    
+
     def test_empty_input_returns_empty(self):
         """Test that empty input returns empty list."""
         from src.aggregators.time_aggregator import (
             aggregate_daily_to_weekly_parallel,
             aggregate_daily_to_monthly_parallel,
-            aggregate_to_region_parallel
+            aggregate_to_region_parallel,
         )
-        
+
         self.assertEqual(aggregate_daily_to_weekly_parallel([]), [])
         self.assertEqual(aggregate_daily_to_monthly_parallel([]), [])
         self.assertEqual(aggregate_to_region_parallel([], {}), [])

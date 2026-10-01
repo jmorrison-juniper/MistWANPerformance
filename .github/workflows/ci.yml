@@ -20,10 +20,9 @@ jobs:
   # Each job installs requirements-dev.txt. Each check name starts with the job
   # ID, for example "gates / pytest (tests)".
   #
-  # The ruff, black, mypy, and vulture gates stay off, because each one fails
-  # on the current code. black reformats 43 files, mypy reports 129 errors,
-  # and ruff and vulture report unused names. Turn a gate on in the pull
-  # request that fixes its findings.
+  # The ruff, mypy, and vulture gates stay off, because each one fails on the
+  # current code. mypy reports 129 errors, and ruff and vulture report unused
+  # names. Turn a gate on in the pull request that fixes its findings.
   gates:
     permissions:
       contents: read
@@ -31,6 +30,18 @@ jobs:
     with:
       python-version: '3.13'
       cache-dependency-path: requirements*.txt
+      black: true
       pytest: true
       bandit: true
       pip-audit: true
+
+  quality_gate_issues:
+    name: "Sync quality-gate issues"
+    needs: gates
+    if: ${{ always() }}
+    permissions:
+      issues: write
+      pull-requests: read
+    uses: jmorrison-juniper/misthelper-devtools/.github/workflows/reusable-quality-gate-issues.yml@b140350ebc40e61b57a3a65731c0df520f143661 # v0.6.0
+    with:
+      results: ${{ needs.gates.outputs.results }}

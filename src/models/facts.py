@@ -14,10 +14,11 @@ from typing import Optional
 class CircuitUtilizationRecord:
     """
     Fact record for circuit utilization metrics.
-    
+
     Primary Key: site_id + circuit_id + hour_key
     Grain: Per circuit, per hour
     """
+
     site_id: str
     circuit_id: str
     hour_key: str  # YYYYMMDDHH format
@@ -26,7 +27,7 @@ class CircuitUtilizationRecord:
     tx_bytes: int
     bandwidth_mbps: int
     collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -37,14 +38,14 @@ class CircuitUtilizationRecord:
             "rx_bytes": self.rx_bytes,
             "tx_bytes": self.tx_bytes,
             "bandwidth_mbps": self.bandwidth_mbps,
-            "collected_at": self.collected_at.isoformat()
+            "collected_at": self.collected_at.isoformat(),
         }
-    
+
     @property
     def primary_key(self) -> str:
         """Return composite primary key."""
         return f"{self.site_id}|{self.circuit_id}|{self.hour_key}"
-    
+
     def is_above_threshold(self, threshold_pct: float) -> bool:
         """Check if utilization exceeds threshold."""
         return self.utilization_pct >= threshold_pct
@@ -54,10 +55,11 @@ class CircuitUtilizationRecord:
 class CircuitStatusRecord:
     """
     Fact record for circuit status metrics.
-    
+
     Primary Key: site_id + circuit_id + hour_key
     Grain: Per circuit, per hour
     """
+
     site_id: str
     circuit_id: str
     hour_key: str  # YYYYMMDDHH format
@@ -66,7 +68,7 @@ class CircuitStatusRecord:
     down_minutes: int  # 0-60
     flap_count: int
     collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -77,14 +79,14 @@ class CircuitStatusRecord:
             "up_minutes": self.up_minutes,
             "down_minutes": self.down_minutes,
             "flap_count": self.flap_count,
-            "collected_at": self.collected_at.isoformat()
+            "collected_at": self.collected_at.isoformat(),
         }
-    
+
     @property
     def primary_key(self) -> str:
         """Return composite primary key."""
         return f"{self.site_id}|{self.circuit_id}|{self.hour_key}"
-    
+
     @property
     def availability_pct(self) -> float:
         """Calculate availability percentage for the hour."""
@@ -92,7 +94,7 @@ class CircuitStatusRecord:
         if total_minutes == 0:
             return 100.0 if self.status_code == 1 else 0.0
         return (self.up_minutes / total_minutes) * 100
-    
+
     @property
     def status_hourly(self) -> str:
         """Return hourly status string."""
@@ -103,34 +105,35 @@ class CircuitStatusRecord:
 class CircuitQualityRecord:
     """
     Fact record for circuit quality metrics.
-    
+
     Primary Key: site_id + circuit_id + hour_key
     Grain: Per circuit, per hour
     """
+
     site_id: str
     circuit_id: str
     hour_key: str  # YYYYMMDDHH format
-    
+
     # Frame loss metrics
     frame_loss_pct: Optional[float] = None
     loss_avg: Optional[float] = None
     loss_max: Optional[float] = None
     loss_p95: Optional[float] = None
-    
+
     # Jitter metrics (milliseconds)
     jitter_ms: Optional[float] = None
     jitter_avg: Optional[float] = None
     jitter_max: Optional[float] = None
     jitter_p95: Optional[float] = None
-    
+
     # Latency metrics (milliseconds)
     latency_ms: Optional[float] = None
     latency_avg: Optional[float] = None
     latency_max: Optional[float] = None
     latency_p95: Optional[float] = None
-    
+
     collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -149,26 +152,26 @@ class CircuitQualityRecord:
             "latency_avg": self.latency_avg,
             "latency_max": self.latency_max,
             "latency_p95": self.latency_p95,
-            "collected_at": self.collected_at.isoformat()
+            "collected_at": self.collected_at.isoformat(),
         }
-    
+
     @property
     def primary_key(self) -> str:
         """Return composite primary key."""
         return f"{self.site_id}|{self.circuit_id}|{self.hour_key}"
-    
+
     def is_loss_above_threshold(self, threshold_pct: float) -> bool:
         """Check if frame loss exceeds threshold."""
         if self.frame_loss_pct is None:
             return False
         return self.frame_loss_pct >= threshold_pct
-    
+
     def is_jitter_above_threshold(self, threshold_ms: float) -> bool:
         """Check if jitter exceeds threshold."""
         if self.jitter_ms is None:
             return False
         return self.jitter_ms >= threshold_ms
-    
+
     def is_latency_above_threshold(self, threshold_ms: float) -> bool:
         """Check if latency exceeds threshold."""
         if self.latency_ms is None:
@@ -180,10 +183,11 @@ class CircuitQualityRecord:
 class FailoverEventRecord:
     """
     Fact record for circuit failover events.
-    
+
     Tracks when traffic fails over from primary to secondary circuit.
     Primary Key: site_id + event_timestamp
     """
+
     site_id: str
     primary_circuit_id: str
     secondary_circuit_id: str
@@ -196,7 +200,7 @@ class FailoverEventRecord:
     failover_duration_seconds: Optional[int] = None  # Set on recovery
     trigger_reason: Optional[str] = None  # link_down, threshold_breach, etc.
     collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -211,9 +215,9 @@ class FailoverEventRecord:
             "secondary_status_after": self.secondary_status_after,
             "failover_duration_seconds": self.failover_duration_seconds,
             "trigger_reason": self.trigger_reason,
-            "collected_at": self.collected_at.isoformat()
+            "collected_at": self.collected_at.isoformat(),
         }
-    
+
     @property
     def primary_key(self) -> str:
         """Return composite primary key."""
@@ -224,20 +228,21 @@ class FailoverEventRecord:
 class RollingWindowMetrics:
     """
     Metrics for rolling time windows (3h, 12h, 24h operational windows).
-    
+
     Different from calendar-based aggregations - these are rolling lookback windows.
     Primary Key: site_id + circuit_id + window_end + window_hours
     """
+
     site_id: str
     circuit_id: str
     window_end: datetime  # End of the rolling window
     window_hours: int  # 3, 12, or 24
-    
+
     # Utilization in window
     utilization_avg: Optional[float] = None
     utilization_max: Optional[float] = None
     utilization_p95: Optional[float] = None
-    
+
     # Time above threshold (continuous and cumulative)
     continuous_hours_above_70: float = 0.0
     continuous_hours_above_80: float = 0.0
@@ -245,18 +250,18 @@ class RollingWindowMetrics:
     cumulative_hours_above_70: float = 0.0
     cumulative_hours_above_80: float = 0.0
     cumulative_hours_above_90: float = 0.0
-    
+
     # Availability in window
     availability_pct: Optional[float] = None
     flap_count: int = 0
-    
+
     # Quality in window
     loss_avg: Optional[float] = None
     jitter_avg: Optional[float] = None
     latency_avg: Optional[float] = None
-    
+
     calculated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -278,27 +283,30 @@ class RollingWindowMetrics:
             "loss_avg": self.loss_avg,
             "jitter_avg": self.jitter_avg,
             "latency_avg": self.latency_avg,
-            "calculated_at": self.calculated_at.isoformat()
+            "calculated_at": self.calculated_at.isoformat(),
         }
-    
+
     @property
     def primary_key(self) -> str:
         """Return composite primary key."""
-        return f"{self.site_id}|{self.circuit_id}|{self.window_end.isoformat()}|{self.window_hours}h"
+        return (
+            f"{self.site_id}|{self.circuit_id}|{self.window_end.isoformat()}|{self.window_hours}h"
+        )
 
 
 @dataclass
 class AggregatedMetrics:
     """
     Aggregated metrics for rollup tables (daily/weekly/monthly).
-    
+
     Used for agg_circuit_* and agg_region_* tables.
     """
+
     site_id: str
     circuit_id: Optional[str]  # None for region-level aggregates
     period_key: str  # YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly
     period_type: str  # "daily", "weekly", "monthly"
-    
+
     # Utilization aggregates
     utilization_avg: Optional[float] = None
     utilization_max: Optional[float] = None
@@ -306,13 +314,13 @@ class AggregatedMetrics:
     hours_above_70: int = 0
     hours_above_80: int = 0
     hours_above_90: int = 0
-    
+
     # Availability aggregates
     total_up_minutes: int = 0
     total_down_minutes: int = 0
     availability_pct: Optional[float] = None
     total_flaps: int = 0
-    
+
     # Quality aggregates
     loss_avg: Optional[float] = None
     loss_max: Optional[float] = None
@@ -320,9 +328,9 @@ class AggregatedMetrics:
     jitter_max: Optional[float] = None
     latency_avg: Optional[float] = None
     latency_max: Optional[float] = None
-    
+
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    
+
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
         return {
@@ -346,5 +354,5 @@ class AggregatedMetrics:
             "jitter_max": self.jitter_max,
             "latency_avg": self.latency_avg,
             "latency_max": self.latency_max,
-            "created_at": self.created_at.isoformat()
+            "created_at": self.created_at.isoformat(),
         }
