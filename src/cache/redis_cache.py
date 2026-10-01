@@ -17,8 +17,8 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from src.utils.performance import PerformanceTimer
 
@@ -88,7 +88,7 @@ class RedisCache:
     # Supports 13-month rolling analysis per ProjectGoals.md
     HISTORY_TTL = 31 * 24 * 3600  # 2,678,400 seconds = 31 days
 
-    def __init__(self, redis_url: Optional[str] = None):
+    def __init__(self, redis_url: str | None = None):
         """
         Initialize Redis connection.
 
@@ -145,7 +145,7 @@ class RedisCache:
         """Serialize data to JSON string."""
         return json.dumps(data, default=str)
 
-    def _deserialize(self, data: Optional[str]) -> Any:
+    def _deserialize(self, data: str | None) -> Any:
         """Deserialize JSON string to Python object."""
         if data is None:
             return None
@@ -156,12 +156,13 @@ class RedisCache:
         try:
             self.client.ping()
             return True
-        except Exception:
+        except Exception as error:
+            logger.debug(f"Cache freshness check failed: {error}")
             return False
 
     # ==================== Metadata Operations ====================
 
-    def set_last_update(self, timestamp: Optional[float] = None) -> bool:
+    def set_last_update(self, timestamp: float | None = None) -> bool:
         """
         Store the timestamp of the last successful data update.
 
@@ -179,7 +180,7 @@ class RedisCache:
             logger.error(f"Error setting last update: {error}")
             return False
 
-    def get_last_update(self) -> Optional[float]:
+    def get_last_update(self) -> float | None:
         """
         Get the timestamp of the last successful data update.
 
@@ -217,7 +218,7 @@ class RedisCache:
 
         return is_fresh
 
-    def get_cache_age(self) -> Optional[float]:
+    def get_cache_age(self) -> float | None:
         """
         Get the age of the cache in seconds.
 
@@ -231,7 +232,7 @@ class RedisCache:
 
     # ==================== Organization Data ====================
 
-    def set_organization(self, org_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def set_organization(self, org_data: dict[str, Any], ttl: int | None = None) -> bool:
         """Store organization data."""
         try:
             self.client.setex(self.PREFIX_ORG, ttl or self.LONG_TTL, self._serialize(org_data))
@@ -240,7 +241,7 @@ class RedisCache:
             logger.error(f"Error storing organization data: {error}")
             return False
 
-    def get_organization(self) -> Optional[Dict[str, Any]]:
+    def get_organization(self) -> dict[str, Any] | None:
         """Retrieve organization data."""
         try:
             data = self.client.get(self.PREFIX_ORG)
@@ -251,7 +252,7 @@ class RedisCache:
 
     # ==================== Sites Data ====================
 
-    def set_sites(self, sites: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
+    def set_sites(self, sites: list[dict[str, Any]], ttl: int | None = None) -> bool:
         """Store sites list."""
         try:
             self.client.setex(self.PREFIX_SITES, ttl or self.LONG_TTL, self._serialize(sites))
@@ -261,7 +262,7 @@ class RedisCache:
             logger.error(f"Error storing sites data: {error}")
             return False
 
-    def get_sites(self) -> Optional[List[Dict[str, Any]]]:
+    def get_sites(self) -> list[dict[str, Any]] | None:
         """Retrieve sites list."""
         try:
             data = self.client.get(self.PREFIX_SITES)
@@ -272,7 +273,7 @@ class RedisCache:
 
     # ==================== Site Groups Data ====================
 
-    def set_site_groups(self, sitegroups: Dict[str, str], ttl: Optional[int] = None) -> bool:
+    def set_site_groups(self, sitegroups: dict[str, str], ttl: int | None = None) -> bool:
         """Store site groups mapping (id -> name)."""
         try:
             self.client.setex(
@@ -284,7 +285,7 @@ class RedisCache:
             logger.error(f"Error storing site groups: {error}")
             return False
 
-    def get_site_groups(self) -> Optional[Dict[str, str]]:
+    def get_site_groups(self) -> dict[str, str] | None:
         """Retrieve site groups mapping."""
         try:
             data = self.client.get(self.PREFIX_SITEGROUPS)
@@ -295,7 +296,7 @@ class RedisCache:
 
     # ==================== Port Statistics ====================
 
-    def set_port_stats(self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
+    def set_port_stats(self, port_stats: list[dict[str, Any]], ttl: int | None = None) -> bool:
         """
         Store gateway port statistics.
 
@@ -316,7 +317,7 @@ class RedisCache:
             logger.error(f"Error storing port stats: {error}")
             return False
 
-    def get_port_stats(self) -> Optional[List[Dict[str, Any]]]:
+    def get_port_stats(self) -> list[dict[str, Any]] | None:
         """
         Retrieve gateway port statistics.
 
@@ -336,7 +337,7 @@ class RedisCache:
     # ==================== Per-Site Port Statistics (Incremental Cache) ====================
 
     def set_site_port_stats(
-        self, site_id: str, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, site_id: str, port_stats: list[dict[str, Any]], ttl: int | None = None
     ) -> bool:
         """
         Store port statistics for a specific site with timestamp.
@@ -361,7 +362,7 @@ class RedisCache:
             logger.error(f"Error storing site port stats for {site_id}: {error}")
             return False
 
-    def get_site_port_stats(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_site_port_stats(self, site_id: str) -> dict[str, Any] | None:
         """
         Retrieve port statistics for a specific site.
 
@@ -395,7 +396,7 @@ class RedisCache:
         age = time.time() - timestamp
         return age < max_age_seconds
 
-    def get_stale_site_ids(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
+    def get_stale_site_ids(self, site_ids: list[str], max_age_seconds: int = 3600) -> list[str]:
         """
         Identify which sites have stale or missing cache data.
 
@@ -421,7 +422,7 @@ class RedisCache:
         )
         return stale_sites
 
-    def get_sites_sorted_by_cache_age(self, site_ids: List[str]) -> List[tuple]:
+    def get_sites_sorted_by_cache_age(self, site_ids: list[str]) -> list[tuple]:
         """
         Get all sites sorted by cache age (oldest first).
 
@@ -451,8 +452,8 @@ class RedisCache:
         return site_ages
 
     def get_oldest_stale_sites(
-        self, site_ids: List[str], max_age_seconds: int = 3600, limit: int = 50
-    ) -> List[str]:
+        self, site_ids: list[str], max_age_seconds: int = 3600, limit: int = 50
+    ) -> list[str]:
         """
         Get the oldest stale sites for priority refresh.
 
@@ -472,7 +473,7 @@ class RedisCache:
         # Return limited list
         return stale_sites[:limit]
 
-    def get_all_site_port_stats(self, site_ids: List[str]) -> List[Dict[str, Any]]:
+    def get_all_site_port_stats(self, site_ids: list[str]) -> list[dict[str, Any]]:
         """
         Retrieve port statistics for all sites from per-site cache.
 
@@ -517,7 +518,7 @@ class RedisCache:
             return all_port_stats
 
     def get_stale_site_ids_pipelined(
-        self, site_ids: List[str], max_age_seconds: int = 3600
+        self, site_ids: list[str], max_age_seconds: int = 3600
     ) -> tuple:
         """
         Identify stale sites using Redis pipeline for efficient bulk checking.
@@ -581,7 +582,7 @@ class RedisCache:
             stale_sites = self.get_stale_site_ids(site_ids, max_age_seconds)
             return (stale_sites, len(site_ids) - len(stale_sites), 0, len(stale_sites))
 
-    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: List[str]) -> List[tuple]:
+    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: list[str]) -> list[tuple]:
         """
         Get all sites sorted by cache age using Redis pipeline.
 
@@ -628,7 +629,7 @@ class RedisCache:
             return self.get_sites_sorted_by_cache_age(site_ids)
 
     def set_bulk_site_port_stats(
-        self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, port_stats: list[dict[str, Any]], ttl: int | None = None
     ) -> int:
         """
         Store port statistics organized by site for incremental caching.
@@ -641,7 +642,7 @@ class RedisCache:
             Number of sites cached
         """
         # Group port stats by site_id
-        by_site: Dict[str, List[Dict[str, Any]]] = {}
+        by_site: dict[str, list[dict[str, Any]]] = {}
         for port in port_stats:
             site_id = port.get("site_id", "")
             if site_id:
@@ -661,7 +662,7 @@ class RedisCache:
     # ==================== Utilization Records ====================
 
     def set_utilization_records(
-        self, records: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, records: list[dict[str, Any]], ttl: int | None = None
     ) -> bool:
         """
         Store calculated utilization records.
@@ -683,7 +684,7 @@ class RedisCache:
             logger.error(f"Error storing utilization records: {error}")
             return False
 
-    def get_utilization_records(self) -> Optional[List[Dict[str, Any]]]:
+    def get_utilization_records(self) -> list[dict[str, Any]] | None:
         """Retrieve calculated utilization records."""
         try:
             data = self.client.get(self.PREFIX_UTILIZATION)
@@ -695,7 +696,7 @@ class RedisCache:
     # ==================== Historical Time-Series Data ====================
 
     def append_historical_record(
-        self, site_id: str, circuit_id: str, record: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, circuit_id: str, record: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Append a utilization record to historical time-series.
@@ -731,10 +732,10 @@ class RedisCache:
         self,
         site_id: str,
         circuit_id: str,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Retrieve historical records for a circuit within a time range.
 
@@ -765,7 +766,7 @@ class RedisCache:
             return []
 
     def prune_old_history(
-        self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None
+        self, site_id: str, circuit_id: str, max_age_seconds: int | None = None
     ) -> int:
         """
         Remove historical records older than max age.
@@ -791,7 +792,7 @@ class RedisCache:
             logger.error(f"Error pruning history: {error}")
             return 0
 
-    def get_history_stats(self) -> Dict[str, Any]:
+    def get_history_stats(self) -> dict[str, Any]:
         """
         Get statistics about historical data storage.
 
@@ -828,12 +829,12 @@ class RedisCache:
                 "circuit_count": len(keys),
                 "total_records_sampled": total_records,
                 "oldest_record": (
-                    datetime.fromtimestamp(oldest_record, tz=timezone.utc).isoformat()
+                    datetime.fromtimestamp(oldest_record, tz=UTC).isoformat()
                     if oldest_record
                     else None
                 ),
                 "newest_record": (
-                    datetime.fromtimestamp(newest_record, tz=timezone.utc).isoformat()
+                    datetime.fromtimestamp(newest_record, tz=UTC).isoformat()
                     if newest_record
                     else None
                 ),
@@ -856,7 +857,7 @@ class RedisCache:
         circuit_count: int,
         total_rx_bytes: int = 0,
         total_tx_bytes: int = 0,
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> bool:
         """
         Store a periodic snapshot of utilization metrics for trends.
@@ -901,7 +902,7 @@ class RedisCache:
 
     def get_utilization_trends(
         self, hours: int = 24, interval_minutes: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Retrieve utilization trends for the specified time range.
 
@@ -930,7 +931,8 @@ class RedisCache:
                     snapshot = self._deserialize(data)
                     snapshot["_score"] = score
                     snapshots.append(snapshot)
-                except Exception:
+                except Exception as error:
+                    logger.debug(f"Skipping invalid cache entry: {error}")
                     continue
 
             # Downsample if too many points (target ~100-200 points max)
@@ -944,7 +946,7 @@ class RedisCache:
             trends = []
             for snapshot in snapshots:
                 ts = snapshot.get("timestamp", snapshot.get("_score", 0))
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                dt = datetime.fromtimestamp(ts, tz=UTC)
                 trends.append(
                     {
                         "timestamp": dt.strftime("%H:%M"),
@@ -962,7 +964,7 @@ class RedisCache:
             logger.error(f"Error retrieving utilization trends: {error}")
             return []
 
-    def get_throughput_history(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_throughput_history(self, hours: int = 24) -> list[dict[str, Any]]:
         """
         Get cumulative throughput history for throughput chart.
 
@@ -1025,7 +1027,7 @@ class RedisCache:
     # Key prefix for tracking fetch progress
     PREFIX_FETCH_PROGRESS = "mistwan:fetch_progress"
 
-    def start_fetch_session(self, session_id: Optional[str] = None) -> str:
+    def start_fetch_session(self, session_id: str | None = None) -> str:
         """
         Start a new fetch session for tracking incremental progress.
 
@@ -1066,8 +1068,8 @@ class RedisCache:
         session_id: str,
         batch_number: int,
         records_in_batch: int,
-        sites_in_batch: List[str],
-        cursor: Optional[str] = None,
+        sites_in_batch: list[str],
+        cursor: str | None = None,
     ) -> bool:
         """
         Update fetch progress after saving a batch.
@@ -1145,7 +1147,7 @@ class RedisCache:
             logger.error(f"Error completing fetch session: {error}")
             return False
 
-    def get_fetch_progress(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_fetch_progress(self, session_id: str | None = None) -> dict[str, Any] | None:
         """
         Get progress of a fetch session.
 
@@ -1168,7 +1170,7 @@ class RedisCache:
             logger.error(f"Error getting fetch progress: {error}")
             return None
 
-    def get_incomplete_fetch_session(self) -> Optional[Dict[str, Any]]:
+    def get_incomplete_fetch_session(self) -> dict[str, Any] | None:
         """
         Check if there's an incomplete fetch session that can be resumed.
 
@@ -1196,10 +1198,10 @@ class RedisCache:
 
     def save_batch_incrementally(
         self,
-        port_stats: List[Dict[str, Any]],
+        port_stats: list[dict[str, Any]],
         session_id: str,
         batch_number: int,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> int:
         """
         Save a batch of port stats immediately and update progress.
@@ -1220,7 +1222,7 @@ class RedisCache:
             return 0
 
         # Group by site_id
-        by_site: Dict[str, List[Dict[str, Any]]] = {}
+        by_site: dict[str, list[dict[str, Any]]] = {}
         for port in port_stats:
             site_id = port.get("site_id", "")
             if site_id:
@@ -1250,7 +1252,7 @@ class RedisCache:
 
         return len(sites_saved)
 
-    def _append_site_port_stats(self, site_id: str, new_port_stats: List[Dict[str, Any]]) -> bool:
+    def _append_site_port_stats(self, site_id: str, new_port_stats: list[dict[str, Any]]) -> bool:
         """
         Append port stats to a site's existing cache (or create new).
 
@@ -1292,7 +1294,7 @@ class RedisCache:
 
     # ==================== SLE (Service Level Experience) Data ====================
 
-    def save_sle_snapshot(self, sle_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def save_sle_snapshot(self, sle_data: dict[str, Any], ttl: int | None = None) -> bool:
         """
         Save SLE snapshot for all sites.
 
@@ -1329,7 +1331,7 @@ class RedisCache:
             logger.error(f"Error saving SLE snapshot: {error}")
             return False
 
-    def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
+    def get_sle_snapshot(self) -> dict[str, Any] | None:
         """
         Get the most recent SLE snapshot.
 
@@ -1343,7 +1345,7 @@ class RedisCache:
             logger.error(f"Error retrieving SLE snapshot: {error}")
             return None
 
-    def get_last_sle_timestamp(self) -> Optional[int]:
+    def get_last_sle_timestamp(self) -> int | None:
         """
         Get the timestamp of the last SLE fetch.
 
@@ -1360,7 +1362,7 @@ class RedisCache:
             return None
 
     def save_worst_sites_sle(
-        self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None
+        self, metric: str, data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save worst sites by SLE metric.
@@ -1383,7 +1385,7 @@ class RedisCache:
             logger.error(f"Error saving worst sites for {metric}: {error}")
             return False
 
-    def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
+    def get_worst_sites_sle(self, metric: str) -> dict[str, Any] | None:
         """
         Get cached worst sites by SLE metric.
 
@@ -1403,7 +1405,7 @@ class RedisCache:
 
     # ==================== Alarms Data ====================
 
-    def save_alarms(self, alarms_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def save_alarms(self, alarms_data: dict[str, Any], ttl: int | None = None) -> bool:
         """
         Save alarms snapshot.
 
@@ -1444,7 +1446,7 @@ class RedisCache:
             logger.error(f"Error saving alarms: {error}")
             return False
 
-    def get_alarms(self) -> Optional[Dict[str, Any]]:
+    def get_alarms(self) -> dict[str, Any] | None:
         """
         Get the most recent alarms snapshot.
 
@@ -1458,7 +1460,7 @@ class RedisCache:
             logger.error(f"Error retrieving alarms: {error}")
             return None
 
-    def get_last_alarms_timestamp(self) -> Optional[int]:
+    def get_last_alarms_timestamp(self) -> int | None:
         """
         Get the timestamp of the last alarms fetch.
 
@@ -1474,7 +1476,7 @@ class RedisCache:
             logger.error(f"Error getting last alarms timestamp: {error}")
             return None
 
-    def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
+    def get_alarm_by_id(self, alarm_id: str) -> dict[str, Any] | None:
         """
         Get a specific alarm by ID.
 
@@ -1492,7 +1494,7 @@ class RedisCache:
             logger.error(f"Error retrieving alarm {alarm_id}: {error}")
             return None
 
-    def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
+    def get_alarms_by_type(self, alarm_type: str) -> list[dict[str, Any]]:
         """
         Get all cached alarms of a specific type.
 
@@ -1513,7 +1515,7 @@ class RedisCache:
             logger.error(f"Error filtering alarms by type {alarm_type}: {error}")
             return []
 
-    def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_alarms_by_site(self, site_id: str) -> list[dict[str, Any]]:
         """
         Get all cached alarms for a specific site.
 
@@ -1537,7 +1539,7 @@ class RedisCache:
     # ==================== Gateway Inventory Data ====================
 
     def save_gateway_inventory(
-        self, inventory_data: Dict[str, Any], ttl: Optional[int] = None
+        self, inventory_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save gateway inventory snapshot.
@@ -1583,7 +1585,7 @@ class RedisCache:
             logger.error(f"Error saving gateway inventory: {error}")
             return False
 
-    def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
+    def get_gateway_inventory(self) -> dict[str, Any] | None:
         """
         Get the most recent gateway inventory snapshot.
 
@@ -1612,7 +1614,7 @@ class RedisCache:
             logger.error(f"Error retrieving disconnected site IDs: {error}")
             return set()
 
-    def get_last_gateway_timestamp(self) -> Optional[int]:
+    def get_last_gateway_timestamp(self) -> int | None:
         """
         Get the timestamp of the last gateway inventory fetch.
 
@@ -1642,7 +1644,8 @@ class RedisCache:
                 return False
             age = int(time.time()) - last_fetch
             return age < max_age_seconds
-        except Exception:
+        except Exception as error:
+            logger.debug(f"Cache freshness check failed: {error}")
             return False
 
     # ==================== VPN Peer Path Data ====================
@@ -1650,7 +1653,7 @@ class RedisCache:
     PREFIX_VPN_PEERS = "mistwan:vpn_peers"
 
     def save_vpn_peers(
-        self, gateway_id: str, mac: str, peers_by_port: Dict[str, Any], ttl: Optional[int] = None
+        self, gateway_id: str, mac: str, peers_by_port: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Store VPN peer paths for a gateway.
@@ -1673,7 +1676,7 @@ class RedisCache:
             logger.error(f"Error storing VPN peers for {gateway_id}: {error}")
             return False
 
-    def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
+    def get_vpn_peers(self, gateway_id: str, mac: str) -> dict[str, Any] | None:
         """
         Retrieve VPN peer paths for a gateway.
 
@@ -1693,7 +1696,7 @@ class RedisCache:
             return None
 
     def save_all_vpn_peers(
-        self, all_peers: Dict[str, Dict[str, Any]], ttl: Optional[int] = None
+        self, all_peers: dict[str, dict[str, Any]], ttl: int | None = None
     ) -> bool:
         """
         Store all VPN peer paths in a single pipeline operation.
@@ -1721,7 +1724,7 @@ class RedisCache:
             logger.error(f"Error storing all VPN peers: {error}")
             return False
 
-    def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_vpn_peers(self) -> dict[str, dict[str, Any]]:
         """
         Retrieve all VPN peer paths from cache.
 
@@ -1760,7 +1763,7 @@ class RedisCache:
                 logger.error(f"Error retrieving all VPN peers: {error}")
                 return {}
 
-    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+    def get_vpn_peer_summary(self) -> dict[str, Any]:
         """
         Get org-level VPN peer path summary statistics.
 
@@ -1775,10 +1778,10 @@ class RedisCache:
             paths_down = 0
             site_stats = {}  # site_id -> {total, up, down}
 
-            for cache_key, data in all_peers.items():
+            for data in all_peers.values():
                 peers_by_port = data.get("peers_by_port", {})
 
-                for port_id, peers_list in peers_by_port.items():
+                for peers_list in peers_by_port.values():
                     for peer in peers_list:
                         total_peers += 1
                         is_up = peer.get("up", False)
@@ -1815,7 +1818,7 @@ class RedisCache:
                 "timestamp": time.time(),
             }
 
-    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_vpn_peers(self, site_id: str) -> list[dict[str, Any]]:
         """
         Get VPN peer paths for a specific site.
 
@@ -1872,7 +1875,7 @@ class RedisCache:
     PREFIX_SITE_SLE = "mistwan:site_sle"
 
     def save_site_sle_summary(
-        self, site_id: str, metric: str, summary_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, summary_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save site-level SLE summary with time-series and classifiers.
@@ -1902,7 +1905,7 @@ class RedisCache:
             logger.error(f"Error saving site SLE summary: {error}")
             return False
 
-    def get_site_sle_summary(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_summary(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """
         Get cached site-level SLE summary.
 
@@ -1922,7 +1925,7 @@ class RedisCache:
             return None
 
     def save_site_sle_histogram(
-        self, site_id: str, metric: str, histogram_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, histogram_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save site-level SLE histogram data.
@@ -1945,7 +1948,7 @@ class RedisCache:
             logger.error(f"Error saving site SLE histogram: {error}")
             return False
 
-    def get_site_sle_histogram(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_histogram(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """Get cached site-level SLE histogram."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:histogram:{metric}"
@@ -1956,7 +1959,7 @@ class RedisCache:
             return None
 
     def save_site_sle_impacted_gateways(
-        self, site_id: str, metric: str, gateways_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, gateways_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save list of impacted gateways for a site.
@@ -1979,7 +1982,7 @@ class RedisCache:
             logger.error(f"Error saving site impacted gateways: {error}")
             return False
 
-    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """Get cached impacted gateways for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_gateways:{metric}"
@@ -1990,7 +1993,7 @@ class RedisCache:
             return None
 
     def save_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str, interfaces_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, interfaces_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save list of impacted interfaces for a site.
@@ -2013,9 +2016,7 @@ class RedisCache:
             logger.error(f"Error saving site impacted interfaces: {error}")
             return False
 
-    def get_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """Get cached impacted interfaces for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:impacted_interfaces:{metric}"
@@ -2026,7 +2027,7 @@ class RedisCache:
             return None
 
     def save_site_sle_threshold(
-        self, site_id: str, metric: str, threshold_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, threshold_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         """
         Save SLE threshold configuration for a site.
@@ -2049,7 +2050,7 @@ class RedisCache:
             logger.error(f"Error saving site SLE threshold: {error}")
             return False
 
-    def get_site_sle_threshold(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_threshold(self, site_id: str, metric: str) -> dict[str, Any] | None:
         """Get cached SLE threshold for a site."""
         try:
             key = f"{self.PREFIX_SITE_SLE}:{site_id}:threshold:{metric}"
@@ -2059,7 +2060,7 @@ class RedisCache:
             logger.error(f"Error retrieving site SLE threshold: {error}")
             return None
 
-    def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
+    def get_last_site_sle_timestamp(self, site_id: str) -> int | None:
         """
         Get the timestamp of the last SLE fetch for a site.
 
@@ -2095,12 +2096,13 @@ class RedisCache:
                 return False
             age = int(time.time()) - last_fetch
             return age < max_age_seconds
-        except Exception:
+        except Exception as error:
+            logger.debug(f"Cache freshness check failed: {error}")
             return False
 
     def get_sites_needing_sle_refresh(
-        self, site_ids: List[str], max_age_seconds: int = 3600
-    ) -> List[str]:
+        self, site_ids: list[str], max_age_seconds: int = 3600
+    ) -> list[str]:
         """
         Get list of sites that need SLE data refresh.
 
@@ -2140,7 +2142,7 @@ class RedisCache:
             logger.error(f"Error checking site SLE freshness: {error}")
             return site_ids  # Assume all need refresh on error
 
-    def get_stale_sle_sites(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
+    def get_stale_sle_sites(self, site_ids: list[str], max_age_seconds: int = 3600) -> list[str]:
         """
         Get list of sites with stale SLE data (previously collected but old).
 
@@ -2175,7 +2177,7 @@ class RedisCache:
             logger.error(f"Error getting stale SLE sites: {error}")
             return []
 
-    def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
+    def get_missing_sle_sites(self, site_ids: list[str]) -> list[str]:
         """
         Get list of sites that have never had SLE data collected.
 
@@ -2205,8 +2207,8 @@ class RedisCache:
             return []
 
     def get_site_sle_cache_status(
-        self, site_ids: List[str], max_age_seconds: int = 3600
-    ) -> Dict[str, int]:
+        self, site_ids: list[str], max_age_seconds: int = 3600
+    ) -> dict[str, int]:
         """
         Get cache status counts for SLE data (fresh/stale/missing).
 
@@ -2261,8 +2263,8 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         port_id: str,
-        timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None,
+        timeseries_data: dict[str, Any],
+        ttl: int | None = None,
     ) -> bool:
         """
         Save gateway port time-series data (rx_bps, tx_bps).
@@ -2312,10 +2314,10 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         port_id: str,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get gateway port time-series data for a time range.
 
@@ -2347,7 +2349,7 @@ class RedisCache:
 
     def get_gateway_timeseries_coverage(
         self, site_id: str, device_mac: str, port_id: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get time coverage info for cached gateway time-series.
 
@@ -2385,8 +2387,8 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         peer_mac: str,
-        timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None,
+        timeseries_data: dict[str, Any],
+        ttl: int | None = None,
     ) -> bool:
         """
         Save VPN peer metrics time-series (loss, latency, jitter, mos).
@@ -2429,10 +2431,10 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         peer_mac: str,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get VPN peer metrics time-series for a time range.
 
@@ -2464,7 +2466,7 @@ class RedisCache:
 
     def get_vpn_timeseries_coverage(
         self, site_id: str, device_mac: str, peer_mac: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get time coverage info for cached VPN peer time-series.
 
@@ -2498,8 +2500,8 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         metric: str,
-        timeseries_data: Dict[str, Any],
-        ttl: Optional[int] = None,
+        timeseries_data: dict[str, Any],
+        ttl: int | None = None,
     ) -> bool:
         """
         Save device metrics time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
@@ -2541,10 +2543,10 @@ class RedisCache:
         site_id: str,
         device_mac: str,
         metric: str,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get device metrics time-series for a time range.
 
@@ -2574,8 +2576,8 @@ class RedisCache:
             return []
 
     def get_missing_timeseries_sites(
-        self, site_ids: List[str], prefix: str = "gateway_ts"
-    ) -> List[str]:
+        self, site_ids: list[str], prefix: str = "gateway_ts"
+    ) -> list[str]:
         """
         Identify sites with NO time-series data (prioritize missing over stale).
 
@@ -2603,8 +2605,8 @@ class RedisCache:
             return []
 
     def get_stale_timeseries_sites(
-        self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
-    ) -> List[str]:
+        self, site_ids: list[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
+    ) -> list[str]:
         """
         Identify sites with STALE time-series data (checked after missing).
 
@@ -2666,7 +2668,7 @@ class RedisCache:
             logger.error(f"Error clearing cache: {error}")
             return False
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """
         Get statistics about cached data.
 
@@ -2685,9 +2687,7 @@ class RedisCache:
 
             last_update = self.get_last_update()
             if last_update:
-                stats["last_update"] = datetime.fromtimestamp(
-                    last_update, tz=timezone.utc
-                ).isoformat()
+                stats["last_update"] = datetime.fromtimestamp(last_update, tz=UTC).isoformat()
                 stats["cache_age_seconds"] = round(time.time() - last_update, 1)
 
             # Count keys by prefix
@@ -2720,7 +2720,7 @@ class RedisCache:
             logger.error(f"Error getting cache stats: {error}")
             return {"connected": False, "error": str(error)}
 
-    def get_persistence_config(self) -> Dict[str, Any]:
+    def get_persistence_config(self) -> dict[str, Any]:
         """
         Check Redis persistence configuration.
 
@@ -2741,7 +2741,7 @@ class RedisCache:
                 "rdb_enabled": rdb_enabled,
                 "aof_enabled": aof_enabled,
                 "last_rdb_save": (
-                    datetime.fromtimestamp(last_rdb_save, tz=timezone.utc).isoformat()
+                    datetime.fromtimestamp(last_rdb_save, tz=UTC).isoformat()
                     if last_rdb_save
                     else None
                 ),
@@ -2788,8 +2788,8 @@ class RedisCache:
         try:
             self.client.close()
             logger.debug("Redis connection closed")
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug(f"Redis close failed: {error}")
 
 
 class NullCache:
@@ -2803,7 +2803,7 @@ class NullCache:
     def __init__(self):
         logger.warning("[WARN] Redis not available - caching disabled")
         # In-memory storage for precomputed dashboard data (fallback)
-        self._precomputed: Dict[str, Any] = {}
+        self._precomputed: dict[str, Any] = {}
 
     def is_connected(self) -> bool:
         return False
@@ -2811,85 +2811,85 @@ class NullCache:
     def is_cache_fresh(self, max_age_seconds: int = 300) -> bool:
         return False
 
-    def get_cache_age(self) -> Optional[float]:
+    def get_cache_age(self) -> float | None:
         return None
 
-    def set_last_update(self, timestamp: Optional[float] = None) -> bool:
+    def set_last_update(self, timestamp: float | None = None) -> bool:
         return False
 
-    def get_last_update(self) -> Optional[float]:
+    def get_last_update(self) -> float | None:
         return None
 
-    def set_organization(self, org_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def set_organization(self, org_data: dict[str, Any], ttl: int | None = None) -> bool:
         return False
 
-    def get_organization(self) -> Optional[Dict[str, Any]]:
+    def get_organization(self) -> dict[str, Any] | None:
         return None
 
-    def set_sites(self, sites: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
+    def set_sites(self, sites: list[dict[str, Any]], ttl: int | None = None) -> bool:
         return False
 
-    def get_sites(self) -> Optional[List[Dict[str, Any]]]:
+    def get_sites(self) -> list[dict[str, Any]] | None:
         return None
 
-    def set_site_groups(self, sitegroups: Dict[str, str], ttl: Optional[int] = None) -> bool:
+    def set_site_groups(self, sitegroups: dict[str, str], ttl: int | None = None) -> bool:
         return False
 
-    def get_site_groups(self) -> Optional[Dict[str, str]]:
+    def get_site_groups(self) -> dict[str, str] | None:
         return None
 
-    def set_port_stats(self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None) -> bool:
+    def set_port_stats(self, port_stats: list[dict[str, Any]], ttl: int | None = None) -> bool:
         return False
 
-    def get_port_stats(self) -> Optional[List[Dict[str, Any]]]:
+    def get_port_stats(self) -> list[dict[str, Any]] | None:
         return None
 
     def set_site_port_stats(
-        self, site_id: str, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, site_id: str, port_stats: list[dict[str, Any]], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_port_stats(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_site_port_stats(self, site_id: str) -> dict[str, Any] | None:
         return None
 
     def is_site_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         return False
 
-    def get_stale_site_ids(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
+    def get_stale_site_ids(self, site_ids: list[str], max_age_seconds: int = 3600) -> list[str]:
         return list(site_ids)
 
-    def get_sites_sorted_by_cache_age(self, site_ids: List[str]) -> List[tuple]:
+    def get_sites_sorted_by_cache_age(self, site_ids: list[str]) -> list[tuple]:
         """Return all sites as missing (infinite age)."""
         return [(site_id, float("inf")) for site_id in site_ids]
 
-    def get_all_site_port_stats(self, site_ids: List[str]) -> List[Dict[str, Any]]:
+    def get_all_site_port_stats(self, site_ids: list[str]) -> list[dict[str, Any]]:
         return []
 
     def get_stale_site_ids_pipelined(
-        self, site_ids: List[str], max_age_seconds: int = 3600
+        self, site_ids: list[str], max_age_seconds: int = 3600
     ) -> tuple:
         """Return all sites as stale (NullCache has no data)."""
         return (list(site_ids), 0, len(site_ids), 0)
 
-    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: List[str]) -> List[tuple]:
+    def get_sites_sorted_by_cache_age_pipelined(self, site_ids: list[str]) -> list[tuple]:
         """Return all sites as missing (infinite age)."""
         return [(site_id, float("inf")) for site_id in site_ids]
 
     def set_bulk_site_port_stats(
-        self, port_stats: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, port_stats: list[dict[str, Any]], ttl: int | None = None
     ) -> int:
         return 0
 
     def set_utilization_records(
-        self, records: List[Dict[str, Any]], ttl: Optional[int] = None
+        self, records: list[dict[str, Any]], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_utilization_records(self) -> Optional[List[Dict[str, Any]]]:
+    def get_utilization_records(self) -> list[dict[str, Any]] | None:
         return None
 
     def append_historical_record(
-        self, site_id: str, circuit_id: str, record: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, circuit_id: str, record: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
@@ -2897,21 +2897,21 @@ class NullCache:
         self,
         site_id: str,
         circuit_id: str,
-        start_time: Optional[float] = None,
-        end_time: Optional[float] = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
         limit: int = 1000,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return []
 
     def prune_old_history(
-        self, site_id: str, circuit_id: str, max_age_seconds: Optional[int] = None
+        self, site_id: str, circuit_id: str, max_age_seconds: int | None = None
     ) -> int:
         return 0
 
-    def get_history_stats(self) -> Dict[str, Any]:
+    def get_history_stats(self) -> dict[str, Any]:
         return {"error": "Redis not available"}
 
-    def get_persistence_config(self) -> Dict[str, Any]:
+    def get_persistence_config(self) -> dict[str, Any]:
         return {"error": "Redis not available"}
 
     def force_save(self) -> bool:
@@ -2925,20 +2925,20 @@ class NullCache:
         circuit_count: int,
         total_rx_bytes: int = 0,
         total_tx_bytes: int = 0,
-        timestamp: Optional[float] = None,
+        timestamp: float | None = None,
     ) -> bool:
         return False
 
     def get_utilization_trends(
         self, hours: int = 24, interval_minutes: int = 5
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return []
 
-    def get_throughput_history(self, hours: int = 24) -> List[Dict[str, Any]]:
+    def get_throughput_history(self, hours: int = 24) -> list[dict[str, Any]]:
         return []
 
     # Incremental fetch progress stubs
-    def start_fetch_session(self, session_id: Optional[str] = None) -> str:
+    def start_fetch_session(self, session_id: str | None = None) -> str:
         return f"null_fetch_{int(time.time())}"
 
     def update_fetch_progress(
@@ -2946,73 +2946,73 @@ class NullCache:
         session_id: str,
         batch_number: int,
         records_in_batch: int,
-        sites_in_batch: List[str],
-        cursor: Optional[str] = None,
+        sites_in_batch: list[str],
+        cursor: str | None = None,
     ) -> bool:
         return False
 
     def complete_fetch_session(self, session_id: str, status: str = "completed") -> bool:
         return False
 
-    def get_fetch_progress(self, session_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def get_fetch_progress(self, session_id: str | None = None) -> dict[str, Any] | None:
         return None
 
-    def get_incomplete_fetch_session(self) -> Optional[Dict[str, Any]]:
+    def get_incomplete_fetch_session(self) -> dict[str, Any] | None:
         return None
 
     def save_batch_incrementally(
         self,
-        port_stats: List[Dict[str, Any]],
+        port_stats: list[dict[str, Any]],
         session_id: str,
         batch_number: int,
-        cursor: Optional[str] = None,
+        cursor: str | None = None,
     ) -> int:
         return 0
 
     # SLE stubs
-    def save_sle_snapshot(self, sle_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def save_sle_snapshot(self, sle_data: dict[str, Any], ttl: int | None = None) -> bool:
         return False
 
-    def get_sle_snapshot(self) -> Optional[Dict[str, Any]]:
+    def get_sle_snapshot(self) -> dict[str, Any] | None:
         return None
 
-    def get_last_sle_timestamp(self) -> Optional[int]:
+    def get_last_sle_timestamp(self) -> int | None:
         return None
 
     def save_worst_sites_sle(
-        self, metric: str, data: Dict[str, Any], ttl: Optional[int] = None
+        self, metric: str, data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_worst_sites_sle(self, metric: str) -> Optional[Dict[str, Any]]:
+    def get_worst_sites_sle(self, metric: str) -> dict[str, Any] | None:
         return None
 
     # Alarms stubs
-    def save_alarms(self, alarms_data: Dict[str, Any], ttl: Optional[int] = None) -> bool:
+    def save_alarms(self, alarms_data: dict[str, Any], ttl: int | None = None) -> bool:
         return False
 
-    def get_alarms(self) -> Optional[Dict[str, Any]]:
+    def get_alarms(self) -> dict[str, Any] | None:
         return None
 
-    def get_last_alarms_timestamp(self) -> Optional[int]:
+    def get_last_alarms_timestamp(self) -> int | None:
         return None
 
-    def get_alarm_by_id(self, alarm_id: str) -> Optional[Dict[str, Any]]:
+    def get_alarm_by_id(self, alarm_id: str) -> dict[str, Any] | None:
         return None
 
-    def get_alarms_by_type(self, alarm_type: str) -> List[Dict[str, Any]]:
+    def get_alarms_by_type(self, alarm_type: str) -> list[dict[str, Any]]:
         return []
 
-    def get_alarms_by_site(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_alarms_by_site(self, site_id: str) -> list[dict[str, Any]]:
         return []
 
     # Gateway inventory stubs
     def save_gateway_inventory(
-        self, inventory_data: Dict[str, Any], ttl: Optional[int] = None
+        self, inventory_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_gateway_inventory(self) -> Optional[Dict[str, Any]]:
+    def get_gateway_inventory(self) -> dict[str, Any] | None:
         return None
 
     def get_disconnected_site_ids(self) -> set:
@@ -3023,22 +3023,22 @@ class NullCache:
 
     # VPN peer path stubs
     def save_vpn_peers(
-        self, gateway_id: str, mac: str, peers_by_port: Dict[str, Any], ttl: Optional[int] = None
+        self, gateway_id: str, mac: str, peers_by_port: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_vpn_peers(self, gateway_id: str, mac: str) -> Optional[Dict[str, Any]]:
+    def get_vpn_peers(self, gateway_id: str, mac: str) -> dict[str, Any] | None:
         return None
 
     def save_all_vpn_peers(
-        self, all_peers: Dict[str, Dict[str, Any]], ttl: Optional[int] = None
+        self, all_peers: dict[str, dict[str, Any]], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_all_vpn_peers(self) -> Dict[str, Dict[str, Any]]:
+    def get_all_vpn_peers(self) -> dict[str, dict[str, Any]]:
         return {}
 
-    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+    def get_vpn_peer_summary(self) -> dict[str, Any]:
         return {
             "total_peers": 0,
             "paths_up": 0,
@@ -3047,120 +3047,118 @@ class NullCache:
             "timestamp": time.time(),
         }
 
-    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_vpn_peers(self, site_id: str) -> list[dict[str, Any]]:
         return []
 
     # Site-level SLE stubs
     def save_site_sle_summary(
-        self, site_id: str, metric: str, summary_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, summary_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_sle_summary(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_summary(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
     def save_site_sle_histogram(
-        self, site_id: str, metric: str, histogram_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, histogram_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_sle_histogram(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_histogram(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
     def save_site_sle_impacted_gateways(
-        self, site_id: str, metric: str, gateways_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, gateways_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_impacted_gateways(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
     def save_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str, interfaces_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, interfaces_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_sle_impacted_interfaces(
-        self, site_id: str, metric: str
-    ) -> Optional[Dict[str, Any]]:
+    def get_site_sle_impacted_interfaces(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
     def save_site_sle_threshold(
-        self, site_id: str, metric: str, threshold_data: Dict[str, Any], ttl: Optional[int] = None
+        self, site_id: str, metric: str, threshold_data: dict[str, Any], ttl: int | None = None
     ) -> bool:
         return False
 
-    def get_site_sle_threshold(self, site_id: str, metric: str) -> Optional[Dict[str, Any]]:
+    def get_site_sle_threshold(self, site_id: str, metric: str) -> dict[str, Any] | None:
         return None
 
-    def get_last_site_sle_timestamp(self, site_id: str) -> Optional[int]:
+    def get_last_site_sle_timestamp(self, site_id: str) -> int | None:
         return None
 
     def is_site_sle_cache_fresh(self, site_id: str, max_age_seconds: int = 3600) -> bool:
         return False
 
     def get_sites_needing_sle_refresh(
-        self, site_ids: List[str], max_age_seconds: int = 3600
-    ) -> List[str]:
+        self, site_ids: list[str], max_age_seconds: int = 3600
+    ) -> list[str]:
         return list(site_ids)
 
-    def get_stale_sle_sites(self, site_ids: List[str], max_age_seconds: int = 3600) -> List[str]:
+    def get_stale_sle_sites(self, site_ids: list[str], max_age_seconds: int = 3600) -> list[str]:
         return []
 
-    def get_missing_sle_sites(self, site_ids: List[str]) -> List[str]:
+    def get_missing_sle_sites(self, site_ids: list[str]) -> list[str]:
         return list(site_ids)
 
     def get_site_sle_cache_status(
-        self, site_ids: List[str], max_age_seconds: int = 3600
-    ) -> Dict[str, int]:
+        self, site_ids: list[str], max_age_seconds: int = 3600
+    ) -> dict[str, int]:
         return {"fresh": 0, "stale": 0, "missing": len(site_ids)}
 
     # Time-series stubs (always return empty/missing)
     def save_gateway_port_timeseries(self, *args, **kwargs) -> bool:
         return False
 
-    def get_gateway_port_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+    def get_gateway_port_timeseries(self, *args, **kwargs) -> list[dict[str, Any]]:
         return []
 
-    def get_gateway_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
+    def get_gateway_timeseries_coverage(self, *args, **kwargs) -> dict[str, Any]:
         return {"has_data": False, "point_count": 0}
 
     def save_vpn_peer_timeseries(self, *args, **kwargs) -> bool:
         return False
 
-    def get_vpn_peer_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+    def get_vpn_peer_timeseries(self, *args, **kwargs) -> list[dict[str, Any]]:
         return []
 
-    def get_vpn_timeseries_coverage(self, *args, **kwargs) -> Dict[str, Any]:
+    def get_vpn_timeseries_coverage(self, *args, **kwargs) -> dict[str, Any]:
         return {"has_data": False, "point_count": 0}
 
     def save_device_metrics_timeseries(self, *args, **kwargs) -> bool:
         return False
 
-    def get_device_metrics_timeseries(self, *args, **kwargs) -> List[Dict[str, Any]]:
+    def get_device_metrics_timeseries(self, *args, **kwargs) -> list[dict[str, Any]]:
         return []
 
     def get_missing_timeseries_sites(
-        self, site_ids: List[str], prefix: str = "gateway_ts"
-    ) -> List[str]:
+        self, site_ids: list[str], prefix: str = "gateway_ts"
+    ) -> list[str]:
         return list(site_ids)
 
     def get_stale_timeseries_sites(
-        self, site_ids: List[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
-    ) -> List[str]:
+        self, site_ids: list[str], prefix: str = "gateway_ts", max_age_seconds: int = 3600
+    ) -> list[str]:
         return []
 
     def clear_all(self) -> bool:
         return True
 
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         return {"connected": False, "reason": "Redis not available"}
 
     def close(self) -> None:
         pass
 
 
-def get_cache(redis_url: Optional[str] = None) -> "RedisCache | NullCache":
+def get_cache(redis_url: str | None = None) -> "RedisCache | NullCache":
     """
     Factory function to get a cache instance.
 

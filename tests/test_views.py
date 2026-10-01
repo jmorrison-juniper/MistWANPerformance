@@ -5,16 +5,16 @@ Unit tests for ranking views and current state views.
 """
 
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 
-from src.views.rankings import RankingViews, RankedCircuit, MetricType
-from src.views.current_state import CurrentStateViews, AlertSeverity
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
     AggregatedMetrics,
+    CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
 )
+from src.views.current_state import AlertSeverity, CurrentStateViews
+from src.views.rankings import RankedCircuit, RankingViews
 
 
 class TestRankingViews(unittest.TestCase):
@@ -42,7 +42,7 @@ class TestRankingViews(unittest.TestCase):
             rx_bytes=1000000,
             tx_bytes=500000,
             bandwidth_mbps=100,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def test_top_n_by_utilization_returns_correct_order(self):

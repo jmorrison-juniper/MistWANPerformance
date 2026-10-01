@@ -6,12 +6,12 @@ Includes navigation, status cards, chart builders, and styling constants.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from dash import dcc, html
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
+from dash import dcc, html
 from plotly.subplots import make_subplots
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class NavigationBar:
 
     @staticmethod
     def build(
-        current_page: str, breadcrumbs: List[Dict[str, str]], show_home: bool = True
+        current_page: str, breadcrumbs: list[dict[str, str]], show_home: bool = True
     ) -> dbc.Navbar:
         """
         Build navigation bar with breadcrumbs.
@@ -115,7 +115,7 @@ class StatusCards:
     """Reusable status card components."""
 
     @staticmethod
-    def build_card(card_id: str, title: str, value: str, status: Optional[str] = None) -> dbc.Card:
+    def build_card(card_id: str, title: str, value: str, status: str | None = None) -> dbc.Card:
         """
         Build a status overview card.
 
@@ -146,9 +146,9 @@ class StatusCards:
     def build_metric_card(
         title: str,
         value: str,
-        subtitle: Optional[str] = None,
-        trend: Optional[str] = None,
-        status: Optional[str] = None,
+        subtitle: str | None = None,
+        trend: str | None = None,
+        status: str | None = None,
     ) -> dbc.Card:
         """
         Build a metric card with optional trend indicator.
@@ -198,14 +198,14 @@ class ChartBuilders:
             x=0.5,
             y=0.5,
             showarrow=False,
-            font=dict(size=14, color=COLORS["text_secondary"]),
+            font={"size": 14, "color": COLORS["text_secondary"]},
         )
-        fig.update_layout(template="plotly_dark", margin=dict(l=40, r=20, t=20, b=40))
+        fig.update_layout(template="plotly_dark", margin={"l": 40, "r": 20, "t": 20, "b": 40})
         return fig
 
     @staticmethod
     def build_bandwidth_timeseries(
-        timeseries_data: List[Dict], title: str = "Bandwidth"
+        timeseries_data: list[dict], title: str = "Bandwidth"
     ) -> go.Figure:
         """
         Build bandwidth time-series chart with rx/tx.
@@ -221,8 +221,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
             tx_mbps = [t.get("tx_bps", 0) / 1_000_000 for t in timeseries_data]
@@ -233,7 +232,7 @@ class ChartBuilders:
                     y=rx_mbps,
                     mode="lines",
                     name="RX (Mbps)",
-                    line=dict(color=COLORS["info"], width=2),
+                    line={"color": COLORS["info"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(23, 162, 184, 0.15)",
                     hovertemplate="Time: %{x}<br>RX: %{y:.2f} Mbps<extra></extra>",
@@ -246,7 +245,7 @@ class ChartBuilders:
                     y=tx_mbps,
                     mode="lines",
                     name="TX (Mbps)",
-                    line=dict(color=COLORS["primary"], width=2),
+                    line={"color": COLORS["primary"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(226, 0, 116, 0.15)",
                     hovertemplate="Time: %{x}<br>TX: %{y:.2f} Mbps<extra></extra>",
@@ -257,11 +256,11 @@ class ChartBuilders:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=20, t=40, b=40),
-            title=dict(text=title, font=dict(size=14)),
+            margin={"l": 50, "r": 20, "t": 40, "b": 40},
+            title={"text": title, "font": {"size": 14}},
             xaxis_title="Time",
             yaxis_title="Bandwidth (Mbps)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
@@ -269,7 +268,7 @@ class ChartBuilders:
 
     @staticmethod
     def build_quality_timeseries(
-        timeseries_data: List[Dict], title: str = "Quality Metrics"
+        timeseries_data: list[dict], title: str = "Quality Metrics"
     ) -> go.Figure:
         """
         Build quality time-series chart with loss/latency/jitter.
@@ -285,8 +284,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             loss_pct = [t.get("loss", 0) for t in timeseries_data]
             latency_ms = [t.get("latency", 0) for t in timeseries_data]
@@ -298,7 +296,7 @@ class ChartBuilders:
                     y=loss_pct,
                     mode="lines",
                     name="Loss (%)",
-                    line=dict(color=COLORS["critical"], width=2),
+                    line={"color": COLORS["critical"], "width": 2},
                     hovertemplate="Loss: %{y:.2f}%<extra></extra>",
                 ),
                 secondary_y=False,
@@ -310,7 +308,7 @@ class ChartBuilders:
                     y=latency_ms,
                     mode="lines",
                     name="Latency (ms)",
-                    line=dict(color=COLORS["warning"], width=2),
+                    line={"color": COLORS["warning"], "width": 2},
                     hovertemplate="Latency: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -322,7 +320,7 @@ class ChartBuilders:
                     y=jitter_ms,
                     mode="lines",
                     name="Jitter (ms)",
-                    line=dict(color=COLORS["info"], width=2, dash="dot"),
+                    line={"color": COLORS["info"], "width": 2, "dash": "dot"},
                     hovertemplate="Jitter: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -332,9 +330,9 @@ class ChartBuilders:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=50, t=40, b=40),
-            title=dict(text=title, font=dict(size=14)),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin={"l": 50, "r": 50, "t": 40, "b": 40},
+            title={"text": title, "font": {"size": 14}},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
@@ -393,7 +391,9 @@ class ChartBuilders:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=50, b=20), height=200)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 50, "b": 20}, height=200
+        )
 
         return fig
 
@@ -402,7 +402,7 @@ class LinkBuilder:
     """Build clickable links for navigation to detail pages."""
 
     @staticmethod
-    def gateway_link(gateway_id: str, gateway_name: str, site_id: Optional[str] = None) -> dcc.Link:
+    def gateway_link(gateway_id: str, gateway_name: str, site_id: str | None = None) -> dcc.Link:
         """
         Build a clickable link to gateway detail page.
 
@@ -427,7 +427,7 @@ class LinkBuilder:
 
     @staticmethod
     def port_link(
-        site_id: str, port_id: str, port_name: str, gateway_id: Optional[str] = None
+        site_id: str, port_id: str, port_name: str, gateway_id: str | None = None
     ) -> dcc.Link:
         """
         Build a clickable link to port detail page.
@@ -480,8 +480,8 @@ class PageLayout:
     def wrap(
         page_id: str,
         title: str,
-        breadcrumbs: List[Dict[str, str]],
-        content: List[Any],
+        breadcrumbs: list[dict[str, str]],
+        content: list[Any],
         refresh_interval: int = REFRESH_INTERVAL_MS,
     ) -> html.Div:
         """

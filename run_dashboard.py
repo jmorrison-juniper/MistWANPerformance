@@ -24,26 +24,24 @@ import os
 import signal
 import sys
 import threading
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import List, Tuple, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
+from typing import Any
 
-from src.utils.logging_config import setup_logging
-from src.utils.config import Config
-from src.dashboard.app import WANPerformanceDashboard
-from src.dashboard.data_provider import DashboardDataProvider
-from src.models.dimensions import DimSite, DimCircuit
-from src.models.facts import CircuitUtilizationRecord
-
-# Import both legacy and async precomputers
-from src.cache.dashboard_precompute import DashboardPrecomputer
-from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 from src.cache.async_precompute import (
     AsyncDashboardPrecomputer,
     AsyncSiteSlePrecomputer,
     AsyncSiteVpnPrecomputer,
     shutdown_process_pool,
 )
+
+# Import both legacy and async precomputers
+from src.dashboard.app import WANPerformanceDashboard
+from src.dashboard.data_provider import DashboardDataProvider
+from src.models.dimensions import DimCircuit, DimSite
+from src.models.facts import CircuitUtilizationRecord
+from src.utils.config import Config
+from src.utils.logging_config import setup_logging
 
 # Global references for background refresh and data loading
 _background_worker = None
@@ -60,8 +58,8 @@ _shutdown_event = threading.Event()
 _dashboard_app = None  # Store dashboard for WSGI access
 
 # Async event loop for precomputers (runs in dedicated thread)
-_async_loop: Optional[asyncio.AbstractEventLoop] = None
-_async_thread: Optional[threading.Thread] = None
+_async_loop: asyncio.AbstractEventLoop | None = None
+_async_thread: threading.Thread | None = None
 
 # CPU count for parallel processing (leave 1 core for system)
 CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
@@ -164,7 +162,9 @@ def create_wsgi_app():
 
                     logger.info(f"[OK] Loaded {len(sites)} sites and SLE data from API")
                 except Exception as site_error:
-                    logger.error(f"[ERROR] Could not load sites: {site_error}", exc_info=True)
+                    logger.exception(
+                        f"[ERROR] Could not load sites: {site_error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                    )
 
             # Fetch gateway inventory if not in cache (quick API call)
             if _data_provider.gateways_total == 0:
@@ -185,7 +185,9 @@ def create_wsgi_app():
             _start_background_workers(config, api_client, _cache, _data_provider)
             logger.info("[OK] Background workers started")
         except Exception as e:
-            logger.error(f"[ERROR] Failed to start background workers: {e}", exc_info=True)
+            logger.exception(
+                f"[ERROR] Failed to start background workers: {e}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+            )
 
     return _dashboard_app.app.server
 
@@ -207,9 +209,9 @@ def _start_background_workers(config, api_client, cache, data_provider):
     try:
         port_stats = cache.get_all_site_port_stats()
         if port_stats:
-            site_ids = list(set(p.get("site_id") for p in port_stats if p.get("site_id")))
-    except Exception:
-        pass
+            site_ids = list({p.get("site_id") for p in port_stats if p.get("site_id")})
+    except Exception as error:
+        logger.debug(f"Could not load site IDs from cached port stats: {error}")
 
     # Start port stats refresh worker
     _background_worker = BackgroundRefreshWorker(
@@ -339,9 +341,6 @@ def start_async_precomputers(cache, data_provider) -> None:
 
 def stop_async_precomputers() -> None:
     """Stop all async precomputers and shutdown the event loop."""
-    global _async_loop, _async_thread
-    global _dashboard_precomputer, _site_sle_precomputer, _site_vpn_precomputer
-
     logger = logging.getLogger(__name__)
 
     # Stop precomputers
@@ -535,8 +534,8 @@ def load_from_cache(cache, config: Config) -> tuple:
 
 
 def _process_port_batch(
-    port_batch: List[Dict[str, Any]], site_lookup_keys: set, current_hour: str
-) -> Tuple[List[dict], List[dict], int]:
+    port_batch: list[dict[str, Any]], site_lookup_keys: set, current_hour: str
+) -> tuple[list[dict], list[dict], int]:
     """
     Process a batch of port stats in parallel.
 
@@ -652,7 +651,7 @@ def process_port_stats_to_utilization(
         Tuple of (circuits list, utilization_records list, wan_down_count, wan_disabled_count)
     """
     logger = logging.getLogger(__name__)
-    current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
     # Log diagnostic info (sample first 500)
     port_usage_counts = {}
@@ -1002,7 +1001,7 @@ def load_live_data(config: Config) -> tuple:
 
             cache = get_cache(config.redis.url)
             if cache.is_connected():
-                logger.info(f"[OK] Redis cache connected")
+                logger.info("[OK] Redis cache connected")
 
                 # Check persistence configuration and warn if data at risk
                 check_redis_persistence(cache, logger)
@@ -1062,9 +1061,6 @@ def load_live_data(config: Config) -> tuple:
     # Cache sites
     if cache:
         cache.set_sites(raw_sites)
-
-    # Build site_id to site mapping for lookups
-    site_id_to_raw = {site.get("id"): site for site in raw_sites}
 
     # Convert to dimension models with human-readable region names
     sites = []
@@ -1277,7 +1273,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
         config: Application configuration
     """
     logger = logging.getLogger(__name__)
-    global _api_client, _cache, _background_worker
+    global _background_worker
 
     try:
         logger.info("[...] Background data load starting")
@@ -1317,14 +1313,14 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
                 """Callback when background refresh completes a cycle."""
                 # Update refresh activity info
                 if hasattr(data_provider, "refresh_activity"):
-                    sites_refreshed = list(set(p.get("site_id", "") for p in fresh_stats))
-                    interfaces_refreshed = list(set(p.get("port_id", "") for p in fresh_stats[:20]))
+                    sites_refreshed = list({p.get("site_id", "") for p in fresh_stats})
+                    interfaces_refreshed = list({p.get("port_id", "") for p in fresh_stats[:20]})
                     data_provider.refresh_activity = {
                         "active": True,
                         "status": "running",
                         "current_sites": sites_refreshed[:10],
                         "current_interfaces": interfaces_refreshed[:10],
-                        "last_refresh_time": datetime.now(timezone.utc).isoformat(),
+                        "last_refresh_time": datetime.now(UTC).isoformat(),
                     }
 
                 # Store trends snapshot after each refresh cycle
@@ -1378,7 +1374,9 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
             start_async_precomputers(_cache, data_provider)
 
     except Exception as error:
-        logger.error(f"[ERROR] Background data load failed: {error}", exc_info=True)
+        logger.exception(
+            f"[ERROR] Background data load failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+        )
 
 
 def main():
@@ -1544,8 +1542,6 @@ def main():
 
         except Exception as sle_error:
             logger.warning(f"[WARN] Could not fetch SLE/alarms data: {sle_error}")
-        except Exception as gateway_error:
-            logger.warning(f"[WARN] Could not fetch gateway inventory: {gateway_error}")
 
         # STEP 2: Start background thread to refresh data (stale or missing)
         logger.info("[INFO] Starting background data refresh...")
@@ -1623,7 +1619,9 @@ def main():
             _vpn_peer_background_worker.stop()
         return 1
     except Exception as error:
-        logger.error(f"[ERROR] Dashboard failed: {error}", exc_info=True)
+        logger.exception(
+            f"[ERROR] Dashboard failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+        )
         stop_async_precomputers()
         if _background_worker:
             _background_worker.stop()

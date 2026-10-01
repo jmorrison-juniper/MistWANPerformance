@@ -5,8 +5,7 @@ Data models for dimension tables in the data warehouse.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -19,17 +18,17 @@ class DimSite:
 
     site_id: str
     site_name: str
-    region: Optional[str] = None
-    store_type: Optional[str] = None
+    region: str | None = None
+    store_type: str | None = None
     timezone: str = "UTC"
-    address: Optional[str] = None
-    city: Optional[str] = None
-    state: Optional[str] = None
-    country: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+    country: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -98,12 +97,12 @@ class DimCircuit:
     bandwidth_mbps: int = 1000
     role: str = "primary"  # primary, secondary, backup
     active_state: bool = True  # True if circuit is currently active/carrying traffic
-    provider: Optional[str] = None
-    circuit_type: Optional[str] = None  # MPLS, Internet, LTE, etc.
-    ip_address: Optional[str] = None
-    gateway: Optional[str] = None
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    provider: str | None = None
+    circuit_type: str | None = None  # MPLS, Internet, LTE, etc.
+    ip_address: str | None = None
+    gateway: str | None = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""

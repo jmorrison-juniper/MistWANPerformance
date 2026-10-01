@@ -12,15 +12,14 @@ Split into focused classes per 5-item rule:
 
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any, Self
 
 import aiohttp
 
 from src.api.mist_client import (
     RateLimitError,
     _rate_limit_state,
-    is_rate_limited,
 )
 from src.utils.config import MistConfig, OperationalConfig
 
@@ -48,7 +47,7 @@ class AsyncMistConnection:
         """
         self.config = mist_config
         self.ops_config = operational_config
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
         self._last_request_time = 0.0
 
         # Build base URL and headers
@@ -88,13 +87,11 @@ class AsyncMistConnection:
         if status == 429:
             return True
         text_lower = text.lower()
-        if "rate limit" in text_lower or "too many requests" in text_lower:
-            return True
-        return False
+        return bool("rate limit" in text_lower or "too many requests" in text_lower)
 
     async def execute_get_async(
-        self, operation: str, endpoint: str, params: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, operation: str, endpoint: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         """
         Execute an async GET request with retry logic and 429 handling.
 
@@ -120,7 +117,7 @@ class AsyncMistConnection:
 
         session = await self._ensure_session()
         url = f"{self.base_url}{endpoint}"
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(1, self.ops_config.max_retries + 1):
             try:
@@ -183,8 +180,8 @@ class AsyncMistStatsOperations:
         self.connection = connection
 
     async def _fetch_port_stats_page(
-        self, page_number: int, search_after: Optional[str] = None, duration: str = "1h"
-    ) -> Tuple[int, List[Dict[str, Any]], Optional[str]]:
+        self, page_number: int, search_after: str | None = None, duration: str = "1h"
+    ) -> tuple[int, list[dict[str, Any]], str | None]:
         """
         Fetch a single page of port statistics.
 
@@ -197,7 +194,7 @@ class AsyncMistStatsOperations:
             Tuple of (page_number, results_list, next_cursor)
         """
         endpoint = f"/api/v1/orgs/{self.connection.config.org_id}/stats/ports/search"
-        params: Dict[str, Any] = {"type": "gateway", "limit": 1000, "duration": duration}
+        params: dict[str, Any] = {"type": "gateway", "limit": 1000, "duration": duration}
         if search_after:
             params["search_after"] = search_after
 
@@ -212,10 +209,10 @@ class AsyncMistStatsOperations:
 
     async def get_org_gateway_port_stats_async(
         self,
-        on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None,
+        on_batch: Callable[[list[dict[str, Any]], int, str | None], None] | None = None,
         parallel_pages: int = 3,
         duration: str = "1h",
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway port statistics with parallel page fetches.
 
@@ -239,11 +236,11 @@ class AsyncMistStatsOperations:
             f"[...] Async retrieving organization gateway port stats (parallel={parallel_pages})"
         )
 
-        all_ports: List[Dict[str, Any]] = []
+        all_ports: list[dict[str, Any]] = []
         batch_count = 0
 
         # First page must be sequential to get initial cursor
-        page_num, first_batch, next_cursor = await self._fetch_port_stats_page(
+        _page_num, first_batch, next_cursor = await self._fetch_port_stats_page(
             page_number=1, search_after=None, duration=duration
         )
 
@@ -266,7 +263,7 @@ class AsyncMistStatsOperations:
             # However, we can still benefit from async I/O (no blocking)
             batch_count += 1
 
-            page_num, batch, next_cursor = await self._fetch_port_stats_page(
+            _page_num, batch, next_cursor = await self._fetch_port_stats_page(
                 page_number=batch_count, search_after=next_cursor, duration=duration
             )
 
@@ -291,7 +288,7 @@ class AsyncMistStatsOperations:
         )
         return all_ports
 
-    async def get_org_device_stats_async(self) -> List[Dict[str, Any]]:
+    async def get_org_device_stats_async(self) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway device statistics asynchronously.
 
@@ -302,7 +299,7 @@ class AsyncMistStatsOperations:
         """
         logger.info("[...] Async retrieving organization gateway device stats")
 
-        all_devices: List[Dict[str, Any]] = []
+        all_devices: list[dict[str, Any]] = []
         page = 1
 
         while True:
@@ -356,7 +353,7 @@ class AsyncMistAPIClient:
 
         logger.info("[OK] AsyncMistAPIClient initialized")
 
-    async def __aenter__(self) -> "AsyncMistAPIClient":
+    async def __aenter__(self) -> Self:
         """Async context manager entry."""
         return self
 
@@ -368,9 +365,9 @@ class AsyncMistAPIClient:
 
     async def get_org_gateway_port_stats_async(
         self,
-        on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None,
+        on_batch: Callable[[list[dict[str, Any]], int, str | None], None] | None = None,
         parallel_pages: int = 3,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway port statistics asynchronously.
 
@@ -380,7 +377,7 @@ class AsyncMistAPIClient:
             on_batch=on_batch, parallel_pages=parallel_pages
         )
 
-    async def get_org_device_stats_async(self) -> List[Dict[str, Any]]:
+    async def get_org_device_stats_async(self) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway device statistics asynchronously.
 

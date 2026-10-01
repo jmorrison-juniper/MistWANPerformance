@@ -10,22 +10,17 @@ Dedicated page for viewing VPN peer path statistics including:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from dash import dcc, html
 
 from src.dashboard.pages.shared import (
     COLORS,
     REFRESH_INTERVAL_MS,
     NavigationBar,
     StatusCards,
-    ChartBuilders,
-    LinkBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +43,7 @@ class VPNPeerPage:
 
     PAGE_ID = "vpn-peer-page"
 
-    def __init__(self, data_provider: Optional[Any] = None):
+    def __init__(self, data_provider: Any | None = None):
         """
         Initialize VPN peer page.
 
@@ -58,7 +53,7 @@ class VPNPeerPage:
         self.data_provider = data_provider
 
     def build_layout(
-        self, site_id: str, peer_id: str, data_provider: Optional[Any] = None
+        self, site_id: str, peer_id: str, data_provider: Any | None = None
     ) -> html.Div:
         """
         Build the VPN peer detail page layout.
@@ -462,7 +457,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -507,7 +504,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -552,7 +551,9 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig
 
@@ -598,6 +599,8 @@ class VPNPeerPage:
             )
         )
 
-        fig.update_layout(template="plotly_dark", margin=dict(l=20, r=20, t=20, b=20), height=150)
+        fig.update_layout(
+            template="plotly_dark", margin={"l": 20, "r": 20, "t": 20, "b": 20}, height=150
+        )
 
         return fig

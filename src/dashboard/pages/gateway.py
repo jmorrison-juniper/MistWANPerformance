@@ -10,23 +10,16 @@ Dedicated page for viewing detailed gateway information including:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs
+from typing import Any
 
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from dash import dash_table, dcc, html
 
 from src.dashboard.pages.shared import (
     COLORS,
     REFRESH_INTERVAL_MS,
     NavigationBar,
     StatusCards,
-    ChartBuilders,
-    LinkBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +41,7 @@ class GatewayPage:
 
     PAGE_ID = "gateway-page"
 
-    def __init__(self, data_provider: Optional[Any] = None):
+    def __init__(self, data_provider: Any | None = None):
         """
         Initialize gateway page.
 
@@ -58,7 +51,7 @@ class GatewayPage:
         self.data_provider = data_provider
 
     def build_layout(
-        self, gateway_id: str, site_id: Optional[str] = None, data_provider: Optional[Any] = None
+        self, gateway_id: str, site_id: str | None = None, data_provider: Any | None = None
     ) -> html.Div:
         """
         Build the gateway detail page layout.
@@ -349,7 +342,7 @@ class GatewayPage:
         )
 
     @staticmethod
-    def format_wan_port_row(site_id: str, port_data: Dict, gateway_id: str) -> Dict[str, Any]:
+    def format_wan_port_row(site_id: str, port_data: dict, gateway_id: str) -> dict[str, Any]:
         """
         Format a WAN port record for table display with clickable link.
 
@@ -377,7 +370,7 @@ class GatewayPage:
         }
 
     @staticmethod
-    def format_vpn_peer_row(site_id: str, peer_data: Dict) -> Dict[str, Any]:
+    def format_vpn_peer_row(site_id: str, peer_data: dict) -> dict[str, Any]:
         """
         Format a VPN peer record for table display with clickable link.
 

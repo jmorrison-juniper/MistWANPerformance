@@ -14,11 +14,9 @@ import asyncio
 import json
 import logging
 import time
-from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
-from datetime import datetime, timezone
-from functools import partial
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +26,7 @@ SITE_SLE_PREFIX = "dashboard:site_sle:"
 SITE_VPN_PREFIX = "dashboard:site_vpn:"
 
 # Process pool for CPU-bound work (module-level for reuse)
-_process_pool: Optional[ProcessPoolExecutor] = None
+_process_pool: ProcessPoolExecutor | None = None
 
 
 def get_process_pool() -> ProcessPoolExecutor:
@@ -58,15 +56,15 @@ def shutdown_process_pool():
 
 
 def compute_site_statuses_cpu(
-    utilization_data: List[Tuple[str, float]], status_data: List[Tuple[str, int]]
-) -> Dict[str, int]:
+    utilization_data: list[tuple[str, float]], status_data: list[tuple[str, int]]
+) -> dict[str, int]:
     """
     Compute site health status counts.
 
     Runs in process pool - must be a standalone function with serializable args.
     """
-    site_max_util: Dict[str, float] = {}
-    site_down_circuits: Dict[str, int] = {}
+    site_max_util: dict[str, float] = {}
+    site_down_circuits: dict[str, int] = {}
 
     # Max utilization per site
     for site_id, util_pct in utilization_data:
@@ -99,8 +97,8 @@ def compute_site_statuses_cpu(
 
 
 def compute_utilization_distribution_cpu(
-    utilization_data: List[Tuple[str, float]],
-) -> Dict[str, int]:
+    utilization_data: list[tuple[str, float]],
+) -> dict[str, int]:
     """
     Compute utilization distribution buckets.
 
@@ -139,8 +137,8 @@ def compute_utilization_distribution_cpu(
 
 
 def compute_region_summary_cpu(
-    utilization_data: List[Tuple[str, str, float]],
-) -> List[Dict[str, Any]]:
+    utilization_data: list[tuple[str, str, float]],
+) -> list[dict[str, Any]]:
     """
     Compute region-level summary statistics.
 
@@ -149,7 +147,7 @@ def compute_region_summary_cpu(
 
     Runs in process pool.
     """
-    region_stats: Dict[str, Dict[str, Any]] = {}
+    region_stats: dict[str, dict[str, Any]] = {}
 
     for site_id, region, util_pct in utilization_data:
         if region not in region_stats:
@@ -179,8 +177,8 @@ def compute_region_summary_cpu(
 
 
 def compute_top_congested_cpu(
-    utilization_data: List[Tuple[str, str, str, float, int, int, int]], top_n: int = 10
-) -> List[Dict[str, Any]]:
+    utilization_data: list[tuple[str, str, str, float, int, int, int]], top_n: int = 10
+) -> list[dict[str, Any]]:
     """
     Compute top N congested circuits.
 
@@ -214,7 +212,7 @@ def compute_top_congested_cpu(
 
     result = []
     for rank, item in enumerate(sorted_data[:top_n], 1):
-        circuit_id, site_id, site_name, util_pct, rx_bytes, tx_bytes, bandwidth_mbps = item
+        circuit_id, site_id, site_name, util_pct, _rx_bytes, _tx_bytes, bandwidth_mbps = item
         result.append(
             {
                 "rank": rank,
@@ -259,9 +257,9 @@ class AsyncDashboardPrecomputer:
         self.refresh_interval = refresh_interval
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._precompute_cycles = 0
-        self._last_precompute_time: Optional[float] = None
+        self._last_precompute_time: float | None = None
         self._last_duration_ms: float = 0
 
     def start(self) -> None:
@@ -301,7 +299,9 @@ class AsyncDashboardPrecomputer:
             except asyncio.CancelledError:
                 break
             except Exception as error:
-                logger.error(f"[ERROR] Async precompute failed: {error}", exc_info=True)
+                logger.exception(
+                    f"[ERROR] Async precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 await asyncio.sleep(0.1)
 
@@ -375,7 +375,7 @@ class AsyncDashboardPrecomputer:
 
             dashboard_data = {
                 "loading": False,
-                "total_sites": len(set(r.site_id for r in records)),
+                "total_sites": len({r.site_id for r in records}),
                 "healthy_sites": site_statuses.get("healthy", 0),
                 "degraded_sites": site_statuses.get("degraded", 0),
                 "critical_sites": site_statuses.get("critical", 0),
@@ -405,7 +405,7 @@ class AsyncDashboardPrecomputer:
             status_bar = status_bar_task.result()
 
             # Store all in Redis (parallel writes)
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now(UTC).isoformat()
 
             async with asyncio.TaskGroup() as tg:
                 tg.create_task(
@@ -459,14 +459,16 @@ class AsyncDashboardPrecomputer:
                 )
 
         except Exception as error:
-            logger.error(f"[ERROR] Async precompute failed: {error}", exc_info=True)
+            logger.exception(
+                f"[ERROR] Async precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+            )
 
-    def _compute_active_alerts(self) -> List[Dict[str, Any]]:
+    def _compute_active_alerts(self) -> list[dict[str, Any]]:
         """Compute active alerts."""
         circuit_states = self.data_provider._get_all_circuit_states()
         return self.data_provider.current_state_views.get_active_alerts(circuit_states)
 
-    def _compute_circuit_summary(self) -> Dict[str, Any]:
+    def _compute_circuit_summary(self) -> dict[str, Any]:
         """Compute circuit summary including bandwidth."""
         records = self.data_provider.utilization_records
 
@@ -484,11 +486,11 @@ class AsyncDashboardPrecomputer:
                 "total_bandwidth_gbps": 0.0,
             }
 
-        circuit_ids = set(r.circuit_id for r in records)
+        circuit_ids = {r.circuit_id for r in records}
         utils = [r.utilization_pct for r in records]
 
         # Calculate total bandwidth from unique circuits
-        circuit_bandwidth: Dict[str, int] = {}
+        circuit_bandwidth: dict[str, int] = {}
         for record in records:
             circuit_bandwidth[record.circuit_id] = getattr(record, "bandwidth_mbps", 0)
         total_bandwidth_mbps = sum(circuit_bandwidth.values())
@@ -507,7 +509,7 @@ class AsyncDashboardPrecomputer:
             "total_bandwidth_gbps": round(total_bandwidth_gbps, 1),
         }
 
-    def _compute_gateway_health(self) -> Dict[str, Any]:
+    def _compute_gateway_health(self) -> dict[str, Any]:
         """Compute gateway health summary."""
         return {
             "total": getattr(self.data_provider, "gateways_total", 0),
@@ -515,7 +517,7 @@ class AsyncDashboardPrecomputer:
             "disconnected": getattr(self.data_provider, "gateways_disconnected", 0),
         }
 
-    def _compute_vpn_summary(self) -> Dict[str, Any]:
+    def _compute_vpn_summary(self) -> dict[str, Any]:
         """Compute VPN peer summary."""
         try:
             if hasattr(self.data_provider, "redis_cache") and self.data_provider.redis_cache:
@@ -531,12 +533,12 @@ class AsyncDashboardPrecomputer:
                     "paths_down": down,
                     "health_percentage": round(health_pct, 1),
                 }
-        except Exception:
-            pass
+        except Exception as error:
+            logger.debug(f"Could not build VPN health summary: {error}")
 
         return {"total_peers": 0, "paths_up": 0, "paths_down": 0, "health_percentage": 0}
 
-    def _compute_status_bar(self) -> Dict[str, Any]:
+    def _compute_status_bar(self) -> dict[str, Any]:
         """Compute status bar data."""
         worker_statuses = {}
 
@@ -565,7 +567,7 @@ class AsyncDashboardPrecomputer:
 
         return {"worker_statuses": worker_statuses}
 
-    def _store_precomputed(self, key: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, key: str, data: dict[str, Any]) -> None:
         """Store pre-computed data in Redis."""
         full_key = f"{DASHBOARD_PREFIX}{key}"
 
@@ -575,7 +577,7 @@ class AsyncDashboardPrecomputer:
         except Exception as error:
             logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
 
-    def get_precomputed(self, key: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, key: str) -> dict[str, Any] | None:
         """Get pre-computed data from Redis."""
         full_key = f"{DASHBOARD_PREFIX}{key}"
 
@@ -589,7 +591,7 @@ class AsyncDashboardPrecomputer:
 
         return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get precomputer status."""
         return {
             "running": self._running,
@@ -629,10 +631,10 @@ class AsyncSitePrecomputer:
         self.cycle_delay = cycle_delay
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._cycle_count = 0
         self._sites_processed = 0
-        self._last_cycle_time: Optional[float] = None
+        self._last_cycle_time: float | None = None
         self._last_cycle_duration_ms: float = 0
 
     def start(self) -> None:
@@ -670,7 +672,9 @@ class AsyncSitePrecomputer:
             except asyncio.CancelledError:
                 break
             except Exception as error:
-                logger.error(f"[ERROR] Async site precompute failed: {error}", exc_info=True)
+                logger.exception(
+                    f"[ERROR] Async site precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 await asyncio.sleep(0.1)
 
@@ -715,7 +719,7 @@ class AsyncSitePrecomputer:
         """Precompute data for a single site (to be overridden)."""
         raise NotImplementedError("Subclasses must implement _precompute_site")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get worker status."""
         return {
             "running": self._running,
@@ -741,7 +745,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
         except Exception as error:
             logger.debug(f"Failed to precompute SLE for {site_id[:8]}: {error}")
 
-    def _compute_site_sle_details(self, site_id: str) -> Dict[str, Any]:
+    def _compute_site_sle_details(self, site_id: str) -> dict[str, Any]:
         """Compute formatted SLE details for a site."""
         if not hasattr(self.data_provider, "redis_cache") or not self.data_provider.redis_cache:
             return {"available": False, "error": "Cache not available"}
@@ -770,13 +774,13 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
                 "impacted_interfaces": interfaces,
                 "last_fetch_timestamp": last_fetch,
                 "cache_fresh": cache.is_site_sle_cache_fresh(site_id),
-                "precomputed_at": datetime.now(timezone.utc).isoformat(),
+                "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as error:
             return {"available": False, "error": str(error)}
 
-    def _store_precomputed(self, site_id: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
         """Store precomputed data in Redis."""
         key = f"{SITE_SLE_PREFIX}{site_id}"
 
@@ -786,7 +790,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
         except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id[:8]}: {error}")
 
-    def get_precomputed(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
         """Get precomputed SLE data for a site."""
         key = f"{SITE_SLE_PREFIX}{site_id}"
 
@@ -816,7 +820,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
         except Exception as error:
             logger.debug(f"Failed to precompute VPN for {site_id[:8]}: {error}")
 
-    def _compute_site_vpn_data(self, site_id: str) -> Dict[str, Any]:
+    def _compute_site_vpn_data(self, site_id: str) -> dict[str, Any]:
         """Compute formatted VPN peer data for a site."""
         if not hasattr(self.data_provider, "redis_cache") or not self.data_provider.redis_cache:
             return {"available": False, "peers": [], "error": "Cache not available"}
@@ -851,13 +855,13 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
                 "site_name": site_name,
                 "peer_count": len(table_data),
                 "peers": table_data,
-                "precomputed_at": datetime.now(timezone.utc).isoformat(),
+                "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as error:
             return {"available": False, "peers": [], "error": str(error)}
 
-    def _store_precomputed(self, site_id: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
         """Store precomputed data in Redis."""
         key = f"{SITE_VPN_PREFIX}{site_id}"
 
@@ -867,7 +871,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
         except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id[:8]}: {error}")
 
-    def get_precomputed(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
         """Get precomputed VPN data for a site."""
         key = f"{SITE_VPN_PREFIX}{site_id}"
 

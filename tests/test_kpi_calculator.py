@@ -5,10 +5,13 @@ Unit tests for KPI calculation logic.
 """
 
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from src.calculators.kpi_calculator import KPICalculator
-from src.models.facts import CircuitUtilizationRecord, CircuitStatusRecord, CircuitQualityRecord
+from src.models.facts import (
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
+)
 
 
 class TestKPICalculator(unittest.TestCase):
@@ -34,7 +37,7 @@ class TestKPICalculator(unittest.TestCase):
             rx_bytes=1000000,
             tx_bytes=500000,
             bandwidth_mbps=100,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def _create_status_record(
@@ -49,7 +52,7 @@ class TestKPICalculator(unittest.TestCase):
             up_minutes=up_minutes,
             down_minutes=down_minutes,
             flap_count=flap_count,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def test_calculate_availability_100_percent(self):

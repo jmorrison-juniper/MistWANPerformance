@@ -6,17 +6,16 @@ Computes derived KPIs from collected circuit metrics.
 
 import logging
 import os
+import statistics
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
-import statistics
+from typing import Any
 
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
     AggregatedMetrics,
+    CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,9 +35,9 @@ class DailyAggregateInput:
     site_id: str
     circuit_id: str
     date_key: str
-    utilization_records: List[CircuitUtilizationRecord]
-    status_records: List[CircuitStatusRecord]
-    quality_records: List[CircuitQualityRecord]
+    utilization_records: list[CircuitUtilizationRecord]
+    status_records: list[CircuitStatusRecord]
+    quality_records: list[CircuitQualityRecord]
 
 
 @dataclass
@@ -98,7 +97,7 @@ class KPICalculator:
         """Critical utilization threshold percentage."""
         return self.thresholds.critical
 
-    def calculate_availability(self, status_records: List[CircuitStatusRecord]) -> float:
+    def calculate_availability(self, status_records: list[CircuitStatusRecord]) -> float:
         """
         Calculate availability percentage from status records.
 
@@ -124,7 +123,7 @@ class KPICalculator:
         return round(availability, 4)
 
     def calculate_time_above_threshold_cumulative(
-        self, utilization_records: List[CircuitUtilizationRecord], threshold_pct: float
+        self, utilization_records: list[CircuitUtilizationRecord], threshold_pct: float
     ) -> int:
         """
         Calculate cumulative hours above threshold.
@@ -142,7 +141,7 @@ class KPICalculator:
         return hours_above
 
     def calculate_time_above_threshold_continuous(
-        self, utilization_records: List[CircuitUtilizationRecord], threshold_pct: float
+        self, utilization_records: list[CircuitUtilizationRecord], threshold_pct: float
     ) -> int:
         """
         Calculate longest consecutive run above threshold.
@@ -173,7 +172,7 @@ class KPICalculator:
         return max_consecutive
 
     def calculate_flap_rate(
-        self, status_records: List[CircuitStatusRecord], period_hours: int = 24
+        self, status_records: list[CircuitStatusRecord], period_hours: int = 24
     ) -> float:
         """
         Calculate flap rate (flaps per hour).
@@ -196,8 +195,8 @@ class KPICalculator:
         return round(total_flaps / period_hours, 4)
 
     def aggregate_utilization(
-        self, utilization_records: List[CircuitUtilizationRecord]
-    ) -> Dict[str, Any]:
+        self, utilization_records: list[CircuitUtilizationRecord]
+    ) -> dict[str, Any]:
         """
         Aggregate utilization metrics for a period.
 
@@ -214,7 +213,7 @@ class KPICalculator:
 
         return self._compute_utilization_stats(values, utilization_records)
 
-    def _empty_utilization_aggregate(self) -> Dict[str, Any]:
+    def _empty_utilization_aggregate(self) -> dict[str, Any]:
         """Return empty utilization aggregate structure."""
         return {
             "utilization_avg": None,
@@ -226,8 +225,8 @@ class KPICalculator:
         }
 
     def _compute_utilization_stats(
-        self, values: List[float], records: List[CircuitUtilizationRecord]
-    ) -> Dict[str, Any]:
+        self, values: list[float], records: list[CircuitUtilizationRecord]
+    ) -> dict[str, Any]:
         """
         Compute utilization statistics from values.
 
@@ -261,7 +260,7 @@ class KPICalculator:
             "hours_above_90": hours_90,
         }
 
-    def aggregate_quality(self, quality_records: List[CircuitQualityRecord]) -> Dict[str, Any]:
+    def aggregate_quality(self, quality_records: list[CircuitQualityRecord]) -> dict[str, Any]:
         """
         Aggregate quality metrics for a period.
 
@@ -276,7 +275,7 @@ class KPICalculator:
 
         return self._compute_quality_stats(quality_records)
 
-    def _empty_quality_aggregate(self) -> Dict[str, Any]:
+    def _empty_quality_aggregate(self) -> dict[str, Any]:
         """Return empty quality aggregate structure."""
         return {
             "loss_avg": None,
@@ -287,7 +286,7 @@ class KPICalculator:
             "latency_max": None,
         }
 
-    def _compute_quality_stats(self, records: List[CircuitQualityRecord]) -> Dict[str, Any]:
+    def _compute_quality_stats(self, records: list[CircuitQualityRecord]) -> dict[str, Any]:
         """
         Compute quality statistics from records.
 
@@ -341,9 +340,9 @@ class KPICalculator:
         site_id: str,
         circuit_id: str,
         date_key: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
     ) -> AggregatedMetrics:
         """
         Create daily aggregate using individual parameters (backward compatibility).
@@ -370,8 +369,8 @@ class KPICalculator:
         return self.create_daily_aggregate(aggregate_input)
 
     def _compute_availability_data(
-        self, status_records: List[CircuitStatusRecord]
-    ) -> Dict[str, Any]:
+        self, status_records: list[CircuitStatusRecord]
+    ) -> dict[str, Any]:
         """
         Compute availability metrics from status records.
 
@@ -399,9 +398,9 @@ class KPICalculator:
     def _build_aggregated_metrics(
         self,
         aggregate_input: DailyAggregateInput,
-        util_agg: Dict[str, Any],
-        availability_data: Dict[str, Any],
-        quality_agg: Dict[str, Any],
+        util_agg: dict[str, Any],
+        availability_data: dict[str, Any],
+        quality_agg: dict[str, Any],
     ) -> AggregatedMetrics:
         """
         Build AggregatedMetrics from computed data.
@@ -439,7 +438,7 @@ class KPICalculator:
         )
 
 
-def _calculate_availability_worker(status_records_data: List[Dict[str, Any]]) -> float:
+def _calculate_availability_worker(status_records_data: list[dict[str, Any]]) -> float:
     """
     Worker function for parallel availability calculation.
 
@@ -466,8 +465,8 @@ def _calculate_availability_worker(status_records_data: List[Dict[str, Any]]) ->
 
 
 def _create_daily_aggregate_worker(
-    worker_input: Tuple[str, str, str, List[Dict], List[Dict], List[Dict], Dict[str, float]],
-) -> Dict[str, Any]:
+    worker_input: tuple[str, str, str, list[dict], list[dict], list[dict], dict[str, float]],
+) -> dict[str, Any]:
     """
     Worker function for parallel daily aggregate creation.
 
@@ -517,8 +516,8 @@ def _create_daily_aggregate_worker(
 
 
 def _aggregate_utilization_data(
-    util_data: List[Dict[str, Any]], thresholds: Dict[str, float]
-) -> Dict[str, Any]:
+    util_data: list[dict[str, Any]], thresholds: dict[str, float]
+) -> dict[str, Any]:
     """Aggregate utilization from raw data dictionaries."""
     if not util_data:
         return {
@@ -557,7 +556,7 @@ def _aggregate_utilization_data(
     }
 
 
-def _compute_availability_from_data(status_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _compute_availability_from_data(status_data: list[dict[str, Any]]) -> dict[str, Any]:
     """Compute availability metrics from status data dictionaries."""
     total_up = sum(record.get("up_minutes", 0) for record in status_data) if status_data else 0
     total_down = sum(record.get("down_minutes", 0) for record in status_data) if status_data else 0
@@ -575,7 +574,7 @@ def _compute_availability_from_data(status_data: List[Dict[str, Any]]) -> Dict[s
     }
 
 
-def _aggregate_quality_data(quality_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _aggregate_quality_data(quality_data: list[dict[str, Any]]) -> dict[str, Any]:
     """Aggregate quality metrics from raw data dictionaries."""
     if not quality_data:
         return {
@@ -610,8 +609,8 @@ def _aggregate_quality_data(quality_data: List[Dict[str, Any]]) -> Dict[str, Any
 
 
 def calculate_availability_bulk(
-    circuit_status_map: Dict[str, List[CircuitStatusRecord]], use_parallel: bool = True
-) -> Dict[str, float]:
+    circuit_status_map: dict[str, list[CircuitStatusRecord]], use_parallel: bool = True
+) -> dict[str, float]:
     """
     Calculate availability for multiple circuits in parallel.
 
@@ -661,10 +660,10 @@ def calculate_availability_bulk(
 
 
 def create_daily_aggregates_parallel(
-    aggregate_inputs: List[DailyAggregateInput],
+    aggregate_inputs: list[DailyAggregateInput],
     thresholds: ThresholdConfig,
     use_parallel: bool = True,
-) -> List[AggregatedMetrics]:
+) -> list[AggregatedMetrics]:
     """
     Create daily aggregates for multiple circuits in parallel.
 

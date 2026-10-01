@@ -5,7 +5,7 @@ Determines appropriate thresholds based on site/region configuration.
 """
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, ClassVar
 
 from src.utils.config import ThresholdConfig
 
@@ -20,7 +20,7 @@ class ThresholdCalculator:
     """
 
     # Default quality thresholds
-    DEFAULT_QUALITY_THRESHOLDS = {
+    DEFAULT_QUALITY_THRESHOLDS: ClassVar[dict[str, dict[str, float]]] = {
         "loss": {"warn": 0.1, "high": 0.5, "critical": 1.0},
         "jitter": {"warn": 10.0, "high": 30.0, "critical": 50.0},
         "latency": {"warn": 50.0, "high": 100.0, "critical": 150.0},
@@ -29,8 +29,8 @@ class ThresholdCalculator:
     def __init__(
         self,
         default_config: ThresholdConfig,
-        region_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
-        store_type_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        region_overrides: dict[str, dict[str, Any]] | None = None,
+        store_type_overrides: dict[str, dict[str, Any]] | None = None,
     ):
         """
         Initialize threshold calculator.
@@ -46,8 +46,8 @@ class ThresholdCalculator:
         logger.debug("ThresholdCalculator initialized")
 
     def get_utilization_thresholds(
-        self, region: Optional[str] = None, store_type: Optional[str] = None
-    ) -> Dict[str, float]:
+        self, region: str | None = None, store_type: str | None = None
+    ) -> dict[str, float]:
         """
         Get utilization thresholds for a site.
 
@@ -89,8 +89,8 @@ class ThresholdCalculator:
         return thresholds
 
     def get_quality_thresholds(
-        self, metric: str, region: Optional[str] = None, store_type: Optional[str] = None
-    ) -> Dict[str, float]:
+        self, metric: str, region: str | None = None, store_type: str | None = None
+    ) -> dict[str, float]:
         """
         Get quality thresholds for a specific metric.
 
@@ -137,7 +137,7 @@ class ThresholdCalculator:
 
         return thresholds
 
-    def get_severity(self, value: float, thresholds: Dict[str, float]) -> str:
+    def get_severity(self, value: float, thresholds: dict[str, float]) -> str:
         """
         Determine severity level based on value and thresholds.
 
@@ -159,13 +159,13 @@ class ThresholdCalculator:
 
     def evaluate_circuit_health(
         self,
-        utilization_pct: Optional[float] = None,
-        loss_pct: Optional[float] = None,
-        jitter_ms: Optional[float] = None,
-        latency_ms: Optional[float] = None,
-        region: Optional[str] = None,
-        store_type: Optional[str] = None,
-    ) -> Dict[str, Any]:
+        utilization_pct: float | None = None,
+        loss_pct: float | None = None,
+        jitter_ms: float | None = None,
+        latency_ms: float | None = None,
+        region: str | None = None,
+        store_type: str | None = None,
+    ) -> dict[str, Any]:
         """
         Evaluate overall circuit health based on all metrics.
 

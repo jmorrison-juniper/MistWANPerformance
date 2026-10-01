@@ -1,7 +1,9 @@
+from typing import ClassVar
+
 from dash.development.base_component import Component
 
-from src.dashboard.data_provider import DashboardDataProvider
 from src.dashboard.app import WANPerformanceDashboard
+from src.dashboard.data_provider import DashboardDataProvider
 from src.dashboard.pages.detail_data import (
     shape_gateway_detail,
     shape_port_detail,
@@ -16,9 +18,9 @@ PEER_ID = "11:22:33:44:55:66"
 
 
 class FakeProvider:
-    site_lookup = {SITE_ID: "Store 100"}
-    sites = [{"id": SITE_ID, "name": "Store 100"}]
-    gateways = [
+    site_lookup: ClassVar[dict[str, str]] = {SITE_ID: "Store 100"}
+    sites: ClassVar[list[dict[str, object]]] = [{"id": SITE_ID, "name": "Store 100"}]
+    gateways: ClassVar[list[dict[str, object]]] = [
         {
             "id": GATEWAY_ID,
             "mac": GATEWAY_MAC,
@@ -31,7 +33,7 @@ class FakeProvider:
             "uptime": "12 days",
         }
     ]
-    port_stats = [
+    port_stats: ClassVar[list[dict[str, object]]] = [
         {
             "site_id": SITE_ID,
             "mac": GATEWAY_MAC,
@@ -66,7 +68,7 @@ class FakeProvider:
             "timestamp": 1_700_000_100,
         }
     ]
-    vpn_peers = [
+    vpn_peers: ClassVar[list[dict[str, object]]] = [
         {
             "site_id": SITE_ID,
             "mac": GATEWAY_MAC,

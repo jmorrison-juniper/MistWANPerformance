@@ -9,15 +9,6 @@ Async precomputers use TaskGroup for I/O parallelism and
 ProcessPoolExecutor for CPU-bound computation.
 """
 
-from src.cache.redis_cache import RedisCache
-from src.cache.background_refresh import (
-    BackgroundRefreshWorker,
-    AsyncBackgroundRefreshWorker,
-    refresh_stale_sites_parallel,
-)
-from src.cache.dashboard_precompute import DashboardPrecomputer
-from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
-
 # Async precomputers (parallelized with asyncio + ProcessPoolExecutor)
 from src.cache.async_precompute import (
     AsyncDashboardPrecomputer,
@@ -26,20 +17,28 @@ from src.cache.async_precompute import (
     get_process_pool,
     shutdown_process_pool,
 )
+from src.cache.background_refresh import (
+    AsyncBackgroundRefreshWorker,
+    BackgroundRefreshWorker,
+    refresh_stale_sites_parallel,
+)
+from src.cache.dashboard_precompute import DashboardPrecomputer
+from src.cache.redis_cache import RedisCache
+from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 
 __all__ = [
-    "RedisCache",
-    "BackgroundRefreshWorker",
     "AsyncBackgroundRefreshWorker",
-    "refresh_stale_sites_parallel",
-    # Threading-based precomputers (legacy)
-    "DashboardPrecomputer",
-    "SiteSlePrecomputer",
-    "SiteVpnPrecomputer",
     # Async precomputers (preferred)
     "AsyncDashboardPrecomputer",
     "AsyncSiteSlePrecomputer",
     "AsyncSiteVpnPrecomputer",
+    "BackgroundRefreshWorker",
+    # Threading-based precomputers (legacy)
+    "DashboardPrecomputer",
+    "RedisCache",
+    "SiteSlePrecomputer",
+    "SiteVpnPrecomputer",
     "get_process_pool",
+    "refresh_stale_sites_parallel",
     "shutdown_process_pool",
 ]

@@ -7,16 +7,13 @@ Designed for NOC dashboard consumption.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
 from enum import Enum
+from typing import Any, ClassVar
 
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
     AggregatedMetrics,
-    RollingWindowMetrics,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,7 +47,7 @@ class RankedCircuit:
 
     rank: int
     site_id: str
-    site_name: Optional[str]
+    site_name: str | None
     port_id: str
     bandwidth_mbps: int
     metric_value: float
@@ -85,13 +82,13 @@ class RankingViews:
     """
 
     # Default thresholds for status classification
-    UTIL_THRESHOLDS = {"warning": 70.0, "high": 80.0, "critical": 90.0}
-    AVAIL_THRESHOLDS = {"critical": 99.0, "high": 99.5, "warning": 99.9}
+    UTIL_THRESHOLDS: ClassVar[dict[str, float]] = {"warning": 70.0, "high": 80.0, "critical": 90.0}
+    AVAIL_THRESHOLDS: ClassVar[dict[str, float]] = {"critical": 99.0, "high": 99.5, "warning": 99.9}
 
     def __init__(
         self,
-        site_lookup: Optional[Dict[str, str]] = None,
-        region_lookup: Optional[Dict[str, str]] = None,
+        site_lookup: dict[str, str] | None = None,
+        region_lookup: dict[str, str] | None = None,
     ):
         """
         Initialize the ranking views.
@@ -135,10 +132,10 @@ class RankingViews:
 
     def top_n_by_utilization(
         self,
-        utilization_records: List[CircuitUtilizationRecord],
+        utilization_records: list[CircuitUtilizationRecord],
         top_n: int = 10,
         period_type: str = "hourly",
-    ) -> List[RankedCircuit]:
+    ) -> list[RankedCircuit]:
         """
         Get top N circuits by utilization (highest first).
 
@@ -195,8 +192,8 @@ class RankingViews:
         return results
 
     def worst_n_by_availability(
-        self, status_records: List[CircuitStatusRecord], top_n: int = 10, period_type: str = "daily"
-    ) -> List[RankedCircuit]:
+        self, status_records: list[CircuitStatusRecord], top_n: int = 10, period_type: str = "daily"
+    ) -> list[RankedCircuit]:
         """
         Get worst N circuits by availability (lowest first).
 
@@ -253,8 +250,8 @@ class RankingViews:
         return results
 
     def top_n_by_flaps(
-        self, status_records: List[CircuitStatusRecord], top_n: int = 10, period_type: str = "daily"
-    ) -> List[RankedCircuit]:
+        self, status_records: list[CircuitStatusRecord], top_n: int = 10, period_type: str = "daily"
+    ) -> list[RankedCircuit]:
         """
         Get top N circuits by flap count (most flaps first).
 
@@ -312,10 +309,10 @@ class RankingViews:
 
     def chronic_offenders(
         self,
-        aggregates: List[AggregatedMetrics],
+        aggregates: list[AggregatedMetrics],
         threshold_pct: float = 80.0,
         min_breaches: int = 3,
-    ) -> List[RankedCircuit]:
+    ) -> list[RankedCircuit]:
         """
         Find circuits that repeatedly breach thresholds.
 
@@ -374,8 +371,8 @@ class RankingViews:
         return results
 
     def region_rankings(
-        self, aggregates: List[AggregatedMetrics], metric_type: MetricType = MetricType.UTILIZATION
-    ) -> List[Dict[str, Any]]:
+        self, aggregates: list[AggregatedMetrics], metric_type: MetricType = MetricType.UTILIZATION
+    ) -> list[dict[str, Any]]:
         """
         Rank regions by aggregate metrics.
 

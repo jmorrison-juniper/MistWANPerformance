@@ -13,8 +13,8 @@ import logging
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,9 @@ class DashboardPrecomputer:
         self.refresh_interval = refresh_interval
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._precompute_cycles = 0
-        self._last_precompute_time: Optional[float] = None
+        self._last_precompute_time: float | None = None
         self._last_duration_ms: float = 0
 
     def start(self) -> None:
@@ -78,7 +78,9 @@ class DashboardPrecomputer:
                 # No delay - stay busy, immediately start next cycle
 
             except Exception as error:
-                logger.error(f"[ERROR] Precompute cycle failed: {error}", exc_info=True)
+                logger.exception(
+                    f"[ERROR] Precompute cycle failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -103,7 +105,7 @@ class DashboardPrecomputer:
             status_bar = self._precompute_status_bar()
 
             # Store all in Redis with timestamp
-            timestamp = datetime.now(timezone.utc).isoformat()
+            timestamp = datetime.now(UTC).isoformat()
 
             self._store_precomputed("main", {**dashboard_data, "precomputed_at": timestamp})
             self._store_precomputed(
@@ -127,9 +129,11 @@ class DashboardPrecomputer:
                 )
 
         except Exception as error:
-            logger.error(f"[ERROR] Precompute failed: {error}", exc_info=True)
+            logger.exception(
+                f"[ERROR] Precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+            )
 
-    def _precompute_dashboard_data(self) -> Dict[str, Any]:
+    def _precompute_dashboard_data(self) -> dict[str, Any]:
         """Pre-compute main dashboard data."""
         records = self.data_provider.utilization_records
 
@@ -182,7 +186,7 @@ class DashboardPrecomputer:
 
         return {
             "loading": False,
-            "total_sites": len(set(r.site_id for r in records)),
+            "total_sites": len({r.site_id for r in records}),
             "healthy_sites": site_statuses.get("healthy", 0),
             "degraded_sites": site_statuses.get("degraded", 0),
             "critical_sites": site_statuses.get("critical", 0),
@@ -199,7 +203,7 @@ class DashboardPrecomputer:
             "sle_degraded_sites": sle_degraded,
         }
 
-    def _compute_site_statuses(self) -> Dict[str, int]:
+    def _compute_site_statuses(self) -> dict[str, int]:
         """Compute site health status counts."""
         records = self.data_provider.utilization_records
         status_records = getattr(self.data_provider, "status_records", [])
@@ -235,7 +239,7 @@ class DashboardPrecomputer:
 
         return statuses
 
-    def _compute_top_congested(self, top_n: int = 10) -> List[Dict[str, Any]]:
+    def _compute_top_congested(self, top_n: int = 10) -> list[dict[str, Any]]:
         """
         Compute top N congested circuits.
 
@@ -280,7 +284,7 @@ class DashboardPrecomputer:
 
         return result
 
-    def _compute_active_alerts(self) -> List[Dict[str, Any]]:
+    def _compute_active_alerts(self) -> list[dict[str, Any]]:
         """Compute active alerts."""
         alerts = []
         records = self.data_provider.utilization_records
@@ -330,7 +334,7 @@ class DashboardPrecomputer:
 
         return alerts[:50]  # Limit to 50 alerts
 
-    def _compute_utilization_distribution(self) -> Dict[str, int]:
+    def _compute_utilization_distribution(self) -> dict[str, int]:
         """Compute utilization distribution buckets."""
         records = self.data_provider.utilization_records
 
@@ -353,7 +357,7 @@ class DashboardPrecomputer:
 
         return dist
 
-    def _compute_region_summary(self) -> List[Dict[str, Any]]:
+    def _compute_region_summary(self) -> list[dict[str, Any]]:
         """Compute region-level summary."""
         records = self.data_provider.utilization_records
 
@@ -389,21 +393,21 @@ class DashboardPrecomputer:
 
         return result[:20]  # Limit to top 20 regions
 
-    def _compute_trends(self) -> List[Dict[str, Any]]:
+    def _compute_trends(self) -> list[dict[str, Any]]:
         """Compute utilization trends data."""
         # Use cached trends if available from data_provider
         if hasattr(self.data_provider, "_calculate_trends"):
             return self.data_provider._calculate_trends()
         return []
 
-    def _compute_throughput(self) -> List[Dict[str, Any]]:
+    def _compute_throughput(self) -> list[dict[str, Any]]:
         """Compute throughput data."""
         # Use cached throughput if available from data_provider
         if hasattr(self.data_provider, "_calculate_throughput"):
             return self.data_provider._calculate_throughput()
         return []
 
-    def _precompute_circuit_summary(self) -> Dict[str, Any]:
+    def _precompute_circuit_summary(self) -> dict[str, Any]:
         """Pre-compute circuit summary metrics."""
         records = self.data_provider.utilization_records
         status_records = getattr(self.data_provider, "status_records", [])
@@ -441,15 +445,15 @@ class DashboardPrecomputer:
             "total_bandwidth_gbps": round(total_bw_gbps, 1),
         }
 
-    def _precompute_gateway_health(self) -> Dict[str, Any]:
+    def _precompute_gateway_health(self) -> dict[str, Any]:
         """Pre-compute gateway health summary."""
         return self.data_provider.get_gateway_health_summary()
 
-    def _precompute_vpn_summary(self) -> Dict[str, Any]:
+    def _precompute_vpn_summary(self) -> dict[str, Any]:
         """Pre-compute VPN peer summary."""
         return self.data_provider.get_vpn_peer_summary()
 
-    def _precompute_status_bar(self) -> Dict[str, Any]:
+    def _precompute_status_bar(self) -> dict[str, Any]:
         """Pre-compute status bar data."""
         from src.api.mist_client import get_rate_limit_status
 
@@ -460,8 +464,8 @@ class DashboardPrecomputer:
         if hasattr(self.cache, "get_cache_stats"):
             try:
                 cache_status = self.cache.get_cache_stats()
-            except Exception:
-                pass
+            except Exception as error:
+                logger.debug(f"Could not read cache status: {error}")
 
         # Worker statuses
         worker_statuses = {}
@@ -488,7 +492,7 @@ class DashboardPrecomputer:
             "worker_statuses": worker_statuses,
         }
 
-    def _store_precomputed(self, key: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, key: str, data: dict[str, Any]) -> None:
         """Store pre-computed data in Redis."""
         full_key = f"{DASHBOARD_PREFIX}{key}"
 
@@ -502,7 +506,7 @@ class DashboardPrecomputer:
         except Exception as error:
             logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
 
-    def get_precomputed(self, key: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, key: str) -> dict[str, Any] | None:
         """
         Get pre-computed data from Redis.
 
@@ -527,7 +531,7 @@ class DashboardPrecomputer:
 
         return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get precomputer status for monitoring."""
         return {
             "running": self._running,

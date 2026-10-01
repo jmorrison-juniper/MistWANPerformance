@@ -15,31 +15,27 @@ import csv
 import io
 import logging
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, cast
-from urllib.parse import parse_qs, unquote, urlparse
+from datetime import UTC, datetime
+from typing import Any, ClassVar, cast
+from urllib.parse import parse_qs, unquote
 
 import dash
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
-import plotly.express as px
 import plotly.graph_objects as go
+from dash import Input, Output, State, dash_table, dcc, html
+from dash.exceptions import PreventUpdate
 from plotly.subplots import make_subplots
 
-from src.views.current_state import CurrentStateViews, CircuitCurrentState, AlertSeverity
-from src.views.rankings import RankingViews, RankedCircuit
-from src.utils.performance import PerformanceTimer, timed, format_perf_report
-from src.dashboard.pages.shared import COLORS, REFRESH_INTERVAL_MS, NavigationBar
-from src.dashboard.pages.overview import OverviewPage
-from src.dashboard.pages.gateway import GatewayPage
-from src.dashboard.pages.port import PortPage
-from src.dashboard.pages.vpn_peer import VPNPeerPage
 from src.dashboard.pages.detail_data import (
     shape_gateway_detail,
     shape_port_detail,
     shape_vpn_peer_detail,
 )
+from src.dashboard.pages.gateway import GatewayPage
+from src.dashboard.pages.overview import OverviewPage
+from src.dashboard.pages.port import PortPage
+from src.dashboard.pages.vpn_peer import VPNPeerPage
+from src.utils.performance import PerformanceTimer
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +57,7 @@ class WANPerformanceDashboard:
     REFRESH_INTERVAL_MS = 60000  # 1 minute
 
     # T-Mobile Magenta color scheme (from MistCircuitStats-Redis)
-    COLORS = {
+    COLORS: ClassVar[dict[str, str]] = {
         # Primary brand color
         "primary": "#E20074",  # T-Mobile Magenta
         "primary_hover": "#C00062",  # Darker magenta for hover
@@ -85,7 +81,7 @@ class WANPerformanceDashboard:
     }
 
     def __init__(
-        self, app_name: str = "WAN Performance Dashboard", data_provider: Optional[Any] = None
+        self, app_name: str = "WAN Performance Dashboard", data_provider: Any | None = None
     ):
         """
         Initialize the dashboard.
@@ -522,7 +518,7 @@ class WANPerformanceDashboard:
                                         "borderRadius": "6px",
                                         "border": f"2px solid {self.COLORS['primary']}",
                                         "fontSize": "0.95rem",
-                                        "boxShadow": f"0 2px 8px rgba(226, 0, 116, 0.2)",
+                                        "boxShadow": "0 2px 8px rgba(226, 0, 116, 0.2)",
                                     },
                                 )
                             ],
@@ -1242,7 +1238,7 @@ class WANPerformanceDashboard:
         )
 
     def _build_status_card(
-        self, card_id: str, title: str, value: str, status: Optional[str] = None
+        self, card_id: str, title: str, value: str, status: str | None = None
     ) -> dbc.Card:
         """Build a status overview card."""
         color = self.COLORS.get(status, "#6c757d") if status else "#6c757d"
@@ -1259,7 +1255,7 @@ class WANPerformanceDashboard:
             className="text-center",
         )
 
-    def _build_region_drilldown(self, region: str, data: Dict) -> html.Div:
+    def _build_region_drilldown(self, region: str, data: dict) -> html.Div:
         """Build region drilldown view with site list."""
         sites = data.get("region_sites", {}).get(region, [])
 
@@ -1315,7 +1311,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_site_drilldown(self, site_id: str, data: Dict) -> html.Div:
+    def _build_site_drilldown(self, site_id: str, data: dict) -> html.Div:
         """Build site drilldown view with circuit list."""
         circuits = data.get("site_circuits", {}).get(site_id, [])
         site_name = data.get("site_names", {}).get(site_id, site_id)
@@ -1382,7 +1378,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_circuit_drilldown(self, circuit_id: str, data: Dict) -> html.Div:
+    def _build_circuit_drilldown(self, circuit_id: str, data: dict) -> html.Div:
         """Build circuit drilldown view with time series."""
         time_series = data.get("circuit_timeseries", {}).get(circuit_id, [])
 
@@ -1426,7 +1422,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_circuit_timeseries_chart(self, time_series: List[Dict]) -> go.Figure:
+    def _build_circuit_timeseries_chart(self, time_series: list[dict]) -> go.Figure:
         """Build time series chart for circuit metrics."""
         fig = make_subplots(
             rows=3,
@@ -1448,7 +1444,7 @@ class WANPerformanceDashboard:
                     y=utilization,
                     mode="lines",
                     name="Utilization",
-                    line=dict(color=self.COLORS["info"]),
+                    line={"color": self.COLORS["info"]},
                 ),
                 row=1,
                 col=1,
@@ -1460,7 +1456,7 @@ class WANPerformanceDashboard:
                     y=latency,
                     mode="lines",
                     name="Latency",
-                    line=dict(color=self.COLORS["warning"]),
+                    line={"color": self.COLORS["warning"]},
                 ),
                 row=2,
                 col=1,
@@ -1472,7 +1468,7 @@ class WANPerformanceDashboard:
                     y=availability,
                     mode="lines",
                     name="Availability",
-                    line=dict(color=self.COLORS["healthy"]),
+                    line={"color": self.COLORS["healthy"]},
                 ),
                 row=3,
                 col=1,
@@ -1490,7 +1486,7 @@ class WANPerformanceDashboard:
             template="plotly_dark",
             height=500,
             showlegend=False,
-            margin=dict(l=40, r=20, t=40, b=40),
+            margin={"l": 40, "r": 20, "t": 40, "b": 40},
         )
 
         return fig
@@ -1514,7 +1510,7 @@ class WANPerformanceDashboard:
         Returns:
             Dash HTML component with full site SLE detail view
         """
-        with PerformanceTimer("build_site_sle_detail_total", log_threshold_ms=200) as total_timer:
+        with PerformanceTimer("build_site_sle_detail_total", log_threshold_ms=200):
             if not self.data_provider:
                 return html.Div([dbc.Alert("Data provider not available", color="warning")])
 
@@ -1572,7 +1568,7 @@ class WANPerformanceDashboard:
 
             last_fetch_text = ""
             if last_fetch:
-                fetch_time = datetime.fromtimestamp(last_fetch, tz=timezone.utc)
+                fetch_time = datetime.fromtimestamp(last_fetch, tz=UTC)
                 last_fetch_text = fetch_time.strftime("%Y-%m-%d %H:%M UTC")
 
             return html.Div(
@@ -1806,7 +1802,7 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=14, color=self.COLORS["text_secondary"]),
+                font={"size": 14, "color": self.COLORS["text_secondary"]},
             )
         else:
             timestamps = []
@@ -1821,7 +1817,7 @@ class WANPerformanceDashboard:
                     continue
 
                 ts = start_time + (index * interval)
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                dt = datetime.fromtimestamp(ts, tz=UTC)
                 timestamps.append(dt)
 
                 if use_calculated:
@@ -1858,8 +1854,8 @@ class WANPerformanceDashboard:
                         y=sle_percentages,
                         mode="lines+markers",
                         name="SLE Health",
-                        line=dict(color=self.COLORS["info"], width=2),
-                        marker=dict(size=4),
+                        line={"color": self.COLORS["info"], "width": 2},
+                        marker={"size": 4},
                         fill="tozeroy",
                         fillcolor="rgba(40, 167, 69, 0.2)",
                         hovertemplate="Time: %{x}<br>SLE: %{y:.1f}%<extra></extra>",
@@ -1874,7 +1870,7 @@ class WANPerformanceDashboard:
                                 x=[ts],
                                 y=[pct],
                                 mode="markers",
-                                marker=dict(color=self.COLORS["critical"], size=8),
+                                marker={"color": self.COLORS["critical"], "size": 8},
                                 showlegend=False,
                                 hoverinfo="skip",
                             )
@@ -1885,7 +1881,7 @@ class WANPerformanceDashboard:
                                 x=[ts],
                                 y=[pct],
                                 mode="markers",
-                                marker=dict(color=self.COLORS["warning"], size=6),
+                                marker={"color": self.COLORS["warning"], "size": 6},
                                 showlegend=False,
                                 hoverinfo="skip",
                             )
@@ -1894,11 +1890,11 @@ class WANPerformanceDashboard:
         fig.update_layout(
             template="plotly_dark",
             height=300,
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin={"l": 40, "r": 20, "t": 20, "b": 40},
             xaxis_title="Time",
             yaxis_title="SLE Health %",
-            yaxis=dict(range=[0, 105]),  # 0-100% with some headroom
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            yaxis={"range": [0, 105]},  # 0-100% with some headroom
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
         )
 
         return fig
@@ -1960,7 +1956,7 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=14, color=self.COLORS["text_secondary"]),
+                font={"size": 14, "color": self.COLORS["text_secondary"]},
             )
         else:
             # Create buckets for SLE health distribution
@@ -2007,7 +2003,7 @@ class WANPerformanceDashboard:
         fig.update_layout(
             template="plotly_dark",
             height=300,
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin={"l": 40, "r": 20, "t": 20, "b": 40},
             xaxis_title="SLE Health Range",
             yaxis_title="Hours",
             showlegend=False,
@@ -2479,7 +2475,7 @@ class WANPerformanceDashboard:
             className="mt-4",
         )
 
-    def _get_sle_cache_status(self) -> Optional[Dict[str, int]]:
+    def _get_sle_cache_status(self) -> dict[str, int] | None:
         """
         Get SLE cache status (fresh/stale/missing counts).
 
@@ -2691,7 +2687,7 @@ class WANPerformanceDashboard:
         )
         def update_dashboard(n_intervals):
             """Update all dashboard components."""
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
 
             # Handle case where data provider is not yet available
@@ -2830,7 +2826,6 @@ class WANPerformanceDashboard:
         )
         def update_status_bar(n_intervals):
             """Update backend status bar indicators."""
-            from src.cache.redis_cache import RedisCache
             from src.api.mist_client import get_rate_limit_status
 
             # Backend connection status
@@ -2951,7 +2946,7 @@ class WANPerformanceDashboard:
                         if hasattr(self.data_provider, attr)
                     ]
                     if not worker_attrs:
-                        logger.debug(f"[STATUS] No worker attributes found on data_provider")
+                        logger.debug("[STATUS] No worker attributes found on data_provider")
 
                     # SLE background worker - shows current site being collected
                     if (
@@ -2961,12 +2956,11 @@ class WANPerformanceDashboard:
                         sle_status = self.data_provider.sle_background_worker.get_status()
                         sle_cycles = sle_status.get("collection_cycles", 0)
                         sle_collected = sle_status.get("total_sites_collected", 0)
-                        sle_degraded = sle_status.get("degraded_sites_collected", 0)
                         sle_rate_limited = sle_status.get("rate_limited", False)
                         current_site = sle_status.get("current_site", "")
 
                         if sle_rate_limited:
-                            activity_parts.append(f"SLE: RATE LIMITED")
+                            activity_parts.append("SLE: RATE LIMITED")
                         elif sle_status.get("running", False) and current_site:
                             # Show current site being collected (truncate if long)
                             site_display = (
@@ -2999,10 +2993,9 @@ class WANPerformanceDashboard:
                         and self.data_provider.vpn_background_worker
                     ):
                         vpn_status = self.data_provider.vpn_background_worker.get_status()
-                        vpn_cycles = vpn_status.get("collection_cycles", 0)
                         vpn_peers = vpn_status.get("total_peers_collected", 0)
                         if vpn_status.get("running", False):
-                            activity_parts.append(f"VPN: collecting")
+                            activity_parts.append("VPN: collecting")
                         else:
                             activity_parts.append(f"VPN: idle ({vpn_peers})")
 
@@ -3089,7 +3082,7 @@ class WANPerformanceDashboard:
                         break
 
                 # Calculate time range
-                end_time = int(datetime.now(timezone.utc).timestamp())
+                end_time = int(datetime.now(UTC).timestamp())
                 start_time = end_time - (hours * 3600)
 
                 # Get time-series data from data provider
@@ -3135,7 +3128,7 @@ class WANPerformanceDashboard:
                         break
 
                 # Calculate time range
-                end_time = int(datetime.now(timezone.utc).timestamp())
+                end_time = int(datetime.now(UTC).timestamp())
                 start_time = end_time - (hours * 3600)
 
                 # Get VPN time-series data from data provider
@@ -3356,7 +3349,7 @@ class WANPerformanceDashboard:
             """Update breadcrumb navigation based on drilldown state."""
             level = state.get("level", "overview")
 
-            items: List[Any] = [
+            items: list[Any] = [
                 dbc.Button("Overview", id="nav-overview", color="link", className="p-0")
             ]
 
@@ -3545,7 +3538,7 @@ class WANPerformanceDashboard:
                 ["site_name", "site_id", "gateway_health", "wan_link", "app_health", "worst_score"],
             )
 
-    def _generate_csv_download(self, data: List[Dict], filename: str, columns: List[str]) -> Dict:
+    def _generate_csv_download(self, data: list[dict], filename: str, columns: list[str]) -> dict:
         """
         Generate CSV download data.
 
@@ -3567,7 +3560,7 @@ class WANPerformanceDashboard:
 
         return {"content": output.getvalue(), "filename": filename, "type": "text/csv"}
 
-    def _add_port_links_to_congested(self, congested_records: List[Dict]) -> List[Dict]:
+    def _add_port_links_to_congested(self, congested_records: list[dict]) -> list[dict]:
         """
         Add clickable markdown links to congested circuit records.
 
@@ -3595,7 +3588,7 @@ class WANPerformanceDashboard:
             result.append(enriched)
         return result
 
-    def _build_alerts_list(self, alerts: List[Dict]) -> html.Div:
+    def _build_alerts_list(self, alerts: list[dict]) -> html.Div:
         """Build the alerts list component."""
         if not alerts:
             return html.Div(html.P("No active alerts", className="text-muted"))
@@ -3612,8 +3605,6 @@ class WANPerformanceDashboard:
             else:
                 severity = str(severity_value).lower()
 
-            color = self.COLORS.get(severity, self.COLORS["info"])
-
             alert_items.append(
                 dbc.Alert(
                     [
@@ -3628,7 +3619,7 @@ class WANPerformanceDashboard:
 
         return html.Div(alert_items)
 
-    def _build_utilization_chart(self, distribution: Dict) -> go.Figure:
+    def _build_utilization_chart(self, distribution: dict) -> go.Figure:
         """Build utilization distribution chart with log-scaled Y-axis."""
         if not distribution:
             distribution = {
@@ -3680,21 +3671,21 @@ class WANPerformanceDashboard:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=40, r=20, t=40, b=60),
+            margin={"l": 40, "r": 20, "t": 40, "b": 60},
             xaxis_title="Utilization Range",
             yaxis_title="Circuit Count (log scale)",
             yaxis_type="log",
-            yaxis=dict(
-                dtick=1,  # Show major gridlines at 1, 10, 100, 1000, etc.
-                tickformat=",d",  # Format as integers
-            ),
+            yaxis={
+                "dtick": 1,  # Show major gridlines at 1, 10, 100, 1000, etc.
+                "tickformat": ",d",  # Format as integers
+            },
             showlegend=False,
             xaxis_tickangle=-45,
         )
 
         return fig
 
-    def _build_region_chart(self, region_data: List[Dict]) -> go.Figure:
+    def _build_region_chart(self, region_data: list[dict]) -> go.Figure:
         """Build region summary chart (clickable for drilldown)."""
         if not region_data:
             region_data = [{"region": "No Data", "avg_utilization": 0, "circuit_count": 0}]
@@ -3723,14 +3714,14 @@ class WANPerformanceDashboard:
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin={"l": 40, "r": 20, "t": 20, "b": 40},
             xaxis_title="Region (click to drill down)",
             yaxis_title="Avg Utilization %",
         )
 
         return fig
 
-    def _build_trends_chart(self, trends: List[Dict]) -> go.Figure:
+    def _build_trends_chart(self, trends: list[dict]) -> go.Figure:
         """Build trends line chart for real-time utilization %."""
         fig = go.Figure()
 
@@ -3745,7 +3736,7 @@ class WANPerformanceDashboard:
                     y=avg_util,
                     mode="lines",
                     name="Avg Utilization",
-                    line=dict(color=self.COLORS["healthy"]),
+                    line={"color": self.COLORS["healthy"]},
                     hovertemplate="Time: %{x}<br>Avg: %{y:.1f}%<extra></extra>",
                 )
             )
@@ -3756,7 +3747,7 @@ class WANPerformanceDashboard:
                     y=max_util,
                     mode="lines",
                     name="Max Utilization",
-                    line=dict(color=self.COLORS["warning"]),
+                    line={"color": self.COLORS["warning"]},
                     hovertemplate="Time: %{x}<br>Max: %{y:.1f}%<extra></extra>",
                 )
             )
@@ -3779,21 +3770,21 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=12, color=self.COLORS["text_secondary"]),
+                font={"size": 12, "color": self.COLORS["text_secondary"]},
             )
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin={"l": 40, "r": 20, "t": 20, "b": 40},
             xaxis_title="Time",
             yaxis_title="Utilization %",
-            yaxis=dict(range=[0, 100]),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            yaxis={"range": [0, 100]},
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
         )
 
         return fig
 
-    def _build_throughput_chart(self, throughput: List[Dict]) -> go.Figure:
+    def _build_throughput_chart(self, throughput: list[dict]) -> go.Figure:
         """Build throughput line chart for aggregate traffic (Mbps)."""
         fig = go.Figure()
 
@@ -3808,7 +3799,7 @@ class WANPerformanceDashboard:
                     y=rx_mbps,
                     mode="lines",
                     name="RX (Download)",
-                    line=dict(color=self.COLORS["info"]),
+                    line={"color": self.COLORS["info"]},
                     fill="tozeroy",
                     fillcolor="rgba(23, 162, 184, 0.2)",
                     hovertemplate="Time: %{x}<br>RX: %{y:.1f} Mbps<extra></extra>",
@@ -3821,7 +3812,7 @@ class WANPerformanceDashboard:
                     y=tx_mbps,
                     mode="lines",
                     name="TX (Upload)",
-                    line=dict(color=self.COLORS["primary"]),
+                    line={"color": self.COLORS["primary"]},
                     fill="tozeroy",
                     fillcolor="rgba(226, 0, 116, 0.2)",
                     hovertemplate="Time: %{x}<br>TX: %{y:.1f} Mbps<extra></extra>",
@@ -3836,21 +3827,21 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=12, color=self.COLORS["text_secondary"]),
+                font={"size": 12, "color": self.COLORS["text_secondary"]},
             )
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=40, r=20, t=20, b=40),
+            margin={"l": 40, "r": 20, "t": 20, "b": 40},
             xaxis_title="Time",
             yaxis_title="Throughput (Mbps)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
         )
 
         return fig
 
     def _build_gateway_bandwidth_chart(
-        self, timeseries_data: List[Dict], site_name: str = "Selected Site"
+        self, timeseries_data: list[dict], site_name: str = "Selected Site"
     ) -> go.Figure:
         """
         Build gateway port bandwidth time-series chart.
@@ -3866,8 +3857,7 @@ class WANPerformanceDashboard:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
             tx_mbps = [t.get("tx_bps", 0) / 1_000_000 for t in timeseries_data]
@@ -3878,7 +3868,7 @@ class WANPerformanceDashboard:
                     y=rx_mbps,
                     mode="lines",
                     name="RX (Mbps)",
-                    line=dict(color=self.COLORS["info"], width=2),
+                    line={"color": self.COLORS["info"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(23, 162, 184, 0.15)",
                     hovertemplate="Time: %{x}<br>RX: %{y:.2f} Mbps<extra></extra>",
@@ -3891,7 +3881,7 @@ class WANPerformanceDashboard:
                     y=tx_mbps,
                     mode="lines",
                     name="TX (Mbps)",
-                    line=dict(color=self.COLORS["primary"], width=2),
+                    line={"color": self.COLORS["primary"], "width": 2},
                     fill="tozeroy",
                     fillcolor="rgba(226, 0, 116, 0.15)",
                     hovertemplate="Time: %{x}<br>TX: %{y:.2f} Mbps<extra></extra>",
@@ -3905,26 +3895,26 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=12, color=self.COLORS["text_secondary"]),
+                font={"size": 12, "color": self.COLORS["text_secondary"]},
             )
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=20, t=30, b=40),
-            title=dict(
-                text=f"Gateway Bandwidth - {site_name}",
-                font=dict(size=14, color=self.COLORS["text_primary"]),
-            ),
+            margin={"l": 50, "r": 20, "t": 30, "b": 40},
+            title={
+                "text": f"Gateway Bandwidth - {site_name}",
+                "font": {"size": 14, "color": self.COLORS["text_primary"]},
+            },
             xaxis_title="Time",
             yaxis_title="Bandwidth (Mbps)",
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
         return fig
 
     def _build_vpn_quality_chart(
-        self, timeseries_data: List[Dict], site_name: str = "Selected Site"
+        self, timeseries_data: list[dict], site_name: str = "Selected Site"
     ) -> go.Figure:
         """
         Build VPN peer quality time-series chart with loss/latency/jitter.
@@ -3940,8 +3930,7 @@ class WANPerformanceDashboard:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
-                for t in timeseries_data
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC) for t in timeseries_data
             ]
             loss_pct = [t.get("loss", 0) for t in timeseries_data]
             latency_ms = [t.get("latency", 0) for t in timeseries_data]
@@ -3954,7 +3943,7 @@ class WANPerformanceDashboard:
                     y=loss_pct,
                     mode="lines",
                     name="Loss (%)",
-                    line=dict(color=self.COLORS["critical"], width=2),
+                    line={"color": self.COLORS["critical"], "width": 2},
                     hovertemplate="Time: %{x}<br>Loss: %{y:.2f}%<extra></extra>",
                 ),
                 secondary_y=False,
@@ -3967,7 +3956,7 @@ class WANPerformanceDashboard:
                     y=latency_ms,
                     mode="lines",
                     name="Latency (ms)",
-                    line=dict(color=self.COLORS["warning"], width=2),
+                    line={"color": self.COLORS["warning"], "width": 2},
                     hovertemplate="Time: %{x}<br>Latency: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -3980,7 +3969,7 @@ class WANPerformanceDashboard:
                     y=jitter_ms,
                     mode="lines",
                     name="Jitter (ms)",
-                    line=dict(color=self.COLORS["info"], width=2, dash="dot"),
+                    line={"color": self.COLORS["info"], "width": 2, "dash": "dot"},
                     hovertemplate="Time: %{x}<br>Jitter: %{y:.1f} ms<extra></extra>",
                 ),
                 secondary_y=True,
@@ -3993,17 +3982,17 @@ class WANPerformanceDashboard:
                 x=0.5,
                 y=0.5,
                 showarrow=False,
-                font=dict(size=12, color=self.COLORS["text_secondary"]),
+                font={"size": 12, "color": self.COLORS["text_secondary"]},
             )
 
         fig.update_layout(
             template="plotly_dark",
-            margin=dict(l=50, r=50, t=30, b=40),
-            title=dict(
-                text=f"VPN Quality - {site_name}",
-                font=dict(size=14, color=self.COLORS["text_primary"]),
-            ),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            margin={"l": 50, "r": 50, "t": 30, "b": 40},
+            title={
+                "text": f"VPN Quality - {site_name}",
+                "font": {"size": 14, "color": self.COLORS["text_primary"]},
+            },
+            legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1},
             hovermode="x unified",
         )
 
@@ -4016,7 +4005,7 @@ class WANPerformanceDashboard:
     # Page Builder Methods (Multi-Page Routing)
     # -------------------------------------------------------------------------
 
-    def _build_gateway_page(self, gateway_id: str, site_id: str = None) -> html.Div:
+    def _build_gateway_page(self, gateway_id: str, site_id: str | None = None) -> html.Div:
         """
         Build the gateway detail page layout.
 
@@ -4029,7 +4018,9 @@ class WANPerformanceDashboard:
         """
         return self.gateway_page.build_layout(gateway_id, site_id, self.data_provider)
 
-    def _build_port_page(self, site_id: str, port_id: str, gateway_id: str = None) -> html.Div:
+    def _build_port_page(
+        self, site_id: str, port_id: str, gateway_id: str | None = None
+    ) -> html.Div:
         """
         Build the port detail page layout.
 

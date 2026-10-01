@@ -5,8 +5,8 @@ Collects circuit utilization metrics from Mist WAN edge devices.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from src.api.mist_client import MistAPIClient
 from src.models.facts import CircuitUtilizationRecord
@@ -37,9 +37,9 @@ class UtilizationCollector:
     def collect_for_site(
         self,
         site_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> List[CircuitUtilizationRecord]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[CircuitUtilizationRecord]:
         """
         Collect utilization metrics for all circuits at a site.
 
@@ -76,10 +76,10 @@ class UtilizationCollector:
         self,
         site_id: str,
         device_id: str,
-        device: Dict[str, Any],
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> List[CircuitUtilizationRecord]:
+        device: dict[str, Any],
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[CircuitUtilizationRecord]:
         """
         Collect utilization metrics for a specific WAN edge device.
 
@@ -114,10 +114,10 @@ class UtilizationCollector:
         self,
         site_id: str,
         device_id: str,
-        device: Dict[str, Any],
+        device: dict[str, Any],
         port_name: str,
-        port_data: Dict[str, Any],
-    ) -> Optional[CircuitUtilizationRecord]:
+        port_data: dict[str, Any],
+    ) -> CircuitUtilizationRecord | None:
         """
         Create a CircuitUtilizationRecord from port statistics.
 
@@ -147,7 +147,7 @@ class UtilizationCollector:
             utilization_pct = min(utilization_pct, 100.0)
 
             # Generate hour_key for current hour
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             hour_key = now.strftime("%Y%m%d%H")
 
             return CircuitUtilizationRecord(
@@ -166,8 +166,8 @@ class UtilizationCollector:
             return None
 
     def collect_for_org(
-        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
-    ) -> List[CircuitUtilizationRecord]:
+        self, start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[CircuitUtilizationRecord]:
         """
         Collect utilization metrics for all sites in the organization.
 
