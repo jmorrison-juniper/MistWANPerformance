@@ -4,14 +4,14 @@ Tests for AsyncMistAPIClient
 Tests the async Mist API client implementation with aiohttp.
 """
 
-import asyncio
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.api.async_mist_client import (
+    AsyncMistAPIClient,
     AsyncMistConnection,
     AsyncMistStatsOperations,
-    AsyncMistAPIClient,
 )
 from src.utils.config import MistConfig, OperationalConfig
 

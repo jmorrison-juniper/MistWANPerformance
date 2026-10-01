@@ -6,21 +6,21 @@ Provides data to the dashboard from collectors and aggregators.
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
 from collections import defaultdict
+from datetime import UTC, datetime
+from typing import Any
 
+from src.models.dimensions import DimCircuit, DimSite
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
-    FailoverEventRecord,
     AggregatedMetrics,
+    CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
+    FailoverEventRecord,
 )
-from src.models.dimensions import DimSite, DimCircuit
-from src.views.rankings import RankingViews
+from src.utils.performance import PerformanceTimer
 from src.views.current_state import CurrentStateViews
-from src.utils.performance import PerformanceTimer, timed
+from src.views.rankings import RankingViews
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class DashboardDataProvider:
     """
 
     def __init__(
-        self, sites: Optional[List[DimSite]] = None, circuits: Optional[List[DimCircuit]] = None
+        self, sites: list[DimSite] | None = None, circuits: list[DimCircuit] | None = None
     ):
         """
         Initialize the data provider.
@@ -47,11 +47,11 @@ class DashboardDataProvider:
         self.circuits = circuits or []
 
         # Build lookup dictionaries
-        self.site_lookup: Dict[str, str] = {s.site_id: s.site_name for s in self.sites}
-        self.region_lookup: Dict[str, str] = {
+        self.site_lookup: dict[str, str] = {s.site_id: s.site_name for s in self.sites}
+        self.region_lookup: dict[str, str] = {
             s.site_id: (s.region or "Unknown") for s in self.sites
         }
-        self.circuit_role_lookup: Dict[str, str] = {c.circuit_id: c.role for c in self.circuits}
+        self.circuit_role_lookup: dict[str, str] = {c.circuit_id: c.role for c in self.circuits}
 
         # Initialize view generators
         self.ranking_views = RankingViews(self.site_lookup, self.region_lookup)
@@ -60,30 +60,30 @@ class DashboardDataProvider:
         )
 
         # Data stores (in-memory cache)
-        self.utilization_records: List[CircuitUtilizationRecord] = []
-        self.status_records: List[CircuitStatusRecord] = []
-        self.quality_records: List[CircuitQualityRecord] = []
-        self.gateway_inventory: List[Dict[str, Any]] = []
+        self.utilization_records: list[CircuitUtilizationRecord] = []
+        self.status_records: list[CircuitStatusRecord] = []
+        self.quality_records: list[CircuitQualityRecord] = []
+        self.gateway_inventory: list[dict[str, Any]] = []
 
         # Status tracking for UI display
-        self.cache_status: Dict[str, Any] = {
+        self.cache_status: dict[str, Any] = {
             "fresh_sites": 0,
             "stale_sites": 0,
             "missing_sites": 0,
             "total_records": 0,
             "last_update": None,
         }
-        self.refresh_activity: Dict[str, Any] = {
+        self.refresh_activity: dict[str, Any] = {
             "active": False,
             "current_sites": [],
             "current_interfaces": [],
             "last_refresh_time": None,
             "status": "initializing",  # initializing, loading, running, idle
         }
-        self.background_worker: Optional[Any] = None  # Set externally
+        self.background_worker: Any | None = None  # Set externally
         self.data_load_complete: bool = False  # Tracks if initial load finished
-        self.failover_records: List[FailoverEventRecord] = []
-        self.daily_aggregates: List[AggregatedMetrics] = []
+        self.failover_records: list[FailoverEventRecord] = []
+        self.daily_aggregates: list[AggregatedMetrics] = []
 
         # WAN port status counts (set externally after port processing)
         self.wan_down_count: int = 0
@@ -100,21 +100,21 @@ class DashboardDataProvider:
         self._last_snapshot_time: float = 0.0
         self._min_snapshot_interval: float = 60.0  # Minimum 60 seconds between snapshots
         self.disconnected_site_ids: set = set()  # Sites with offline gateways
-        self.region_aggregates: List[AggregatedMetrics] = []
+        self.region_aggregates: list[AggregatedMetrics] = []
 
         # SLE (Service Level Experience) data
-        self.sle_data: Optional[Dict[str, Any]] = None
-        self.worst_sites_gateway_health: Optional[Dict[str, Any]] = None
-        self.worst_sites_wan_link: Optional[Dict[str, Any]] = None
+        self.sle_data: dict[str, Any] | None = None
+        self.worst_sites_gateway_health: dict[str, Any] | None = None
+        self.worst_sites_wan_link: dict[str, Any] | None = None
 
         # Alarms data
-        self.alarms_data: Optional[Dict[str, Any]] = None
-        self.alarms_by_severity: Dict[str, int] = {}
-        self.alarms_by_type: Dict[str, int] = {}
+        self.alarms_data: dict[str, Any] | None = None
+        self.alarms_by_severity: dict[str, int] = {}
+        self.alarms_by_type: dict[str, int] = {}
 
         logger.debug("DashboardDataProvider initialized")
 
-    def update_utilization(self, records: List[CircuitUtilizationRecord]):
+    def update_utilization(self, records: list[CircuitUtilizationRecord]):
         """Update utilization records cache."""
         self.utilization_records = records
         logger.debug(f"Updated {len(records)} utilization records")
@@ -147,7 +147,7 @@ class DashboardDataProvider:
                 return False
 
             # Process port stats into utilization records
-            current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+            current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
             circuits = []
             utilization_records = []
@@ -224,28 +224,28 @@ class DashboardDataProvider:
             logger.error(f"[REFRESH] Failed to refresh from cache: {error}", exc_info=True)
             return False
 
-    def update_status(self, records: List[CircuitStatusRecord]):
+    def update_status(self, records: list[CircuitStatusRecord]):
         """Update status records cache."""
         self.status_records = records
         logger.debug(f"Updated {len(records)} status records")
 
-    def update_quality(self, records: List[CircuitQualityRecord]):
+    def update_quality(self, records: list[CircuitQualityRecord]):
         """Update quality records cache."""
         self.quality_records = records
         logger.debug(f"Updated {len(records)} quality records")
 
-    def update_failovers(self, records: List[FailoverEventRecord]):
+    def update_failovers(self, records: list[FailoverEventRecord]):
         """Update failover records cache."""
         self.failover_records = records
         logger.debug(f"Updated {len(records)} failover records")
 
-    def update_aggregates(self, daily: List[AggregatedMetrics], region: List[AggregatedMetrics]):
+    def update_aggregates(self, daily: list[AggregatedMetrics], region: list[AggregatedMetrics]):
         """Update aggregate caches."""
         self.daily_aggregates = daily
         self.region_aggregates = region
         logger.debug(f"Updated {len(daily)} daily, {len(region)} region aggregates")
 
-    def update_sle_data(self, sle_data: Dict[str, Any]):
+    def update_sle_data(self, sle_data: dict[str, Any]):
         """
         Update SLE data cache.
 
@@ -257,8 +257,8 @@ class DashboardDataProvider:
 
     def update_worst_sites(
         self,
-        gateway_health: Optional[Dict[str, Any]] = None,
-        wan_link: Optional[Dict[str, Any]] = None,
+        gateway_health: dict[str, Any] | None = None,
+        wan_link: dict[str, Any] | None = None,
     ):
         """
         Update worst sites by SLE metric.
@@ -276,7 +276,7 @@ class DashboardDataProvider:
             self.worst_sites_wan_link = wan_link
             logger.debug(f"Updated {len(wan_link.get('results', []))} worst wan-link sites")
 
-    def update_alarms(self, alarms_data: Dict[str, Any]):
+    def update_alarms(self, alarms_data: dict[str, Any]):
         """
         Update alarms data cache and compute summary stats.
 
@@ -299,7 +299,7 @@ class DashboardDataProvider:
         total = alarms_data.get("total", len(alarms_data.get("results", [])))
         logger.debug(f"Updated {total} alarms ({len(self.alarms_by_type)} types)")
 
-    def update_gateway_inventory(self, inventory_data: Dict[str, Any]):
+    def update_gateway_inventory(self, inventory_data: dict[str, Any]):
         """
         Update gateway inventory counts from API response.
 
@@ -342,7 +342,7 @@ class DashboardDataProvider:
             f"{len(self.disconnected_site_ids)} sites fully offline"
         )
 
-    def get_sle_summary(self) -> Dict[str, Any]:
+    def get_sle_summary(self) -> dict[str, Any]:
         """
         Get SLE summary for dashboard display.
 
@@ -367,10 +367,10 @@ class DashboardDataProvider:
             if "application-health" in site:
                 app_health_scores.append(site["application-health"])
 
-        def avg(lst: List[float]) -> float:
+        def avg(lst: list[float]) -> float:
             return sum(lst) / len(lst) if lst else 0.0
 
-        def count_below_threshold(lst: List[float], threshold: float) -> int:
+        def count_below_threshold(lst: list[float], threshold: float) -> int:
             return len([v for v in lst if v < threshold])
 
         return {
@@ -386,7 +386,7 @@ class DashboardDataProvider:
             "worst_wan_link": self.worst_sites_wan_link,
         }
 
-    def get_sle_degraded_sites(self, threshold: float = 0.9) -> List[Dict[str, Any]]:
+    def get_sle_degraded_sites(self, threshold: float = 0.9) -> list[dict[str, Any]]:
         """
         Get list of sites with any degraded SLE metric (below threshold).
 
@@ -439,7 +439,7 @@ class DashboardDataProvider:
 
         return degraded_sites
 
-    def get_site_sle_details(self, site_id: str, metric: str = "wan-link-health") -> Dict[str, Any]:
+    def get_site_sle_details(self, site_id: str, metric: str = "wan-link-health") -> dict[str, Any]:
         """
         Get detailed SLE data for a specific site from cache.
 
@@ -500,7 +500,7 @@ class DashboardDataProvider:
             logger.warning(f"Failed to get site SLE details for {site_id}: {error}")
             return {"available": False, "error": str(error)}
 
-    def get_alarms_summary(self) -> Dict[str, Any]:
+    def get_alarms_summary(self) -> dict[str, Any]:
         """
         Get alarms summary for dashboard display.
 
@@ -520,7 +520,7 @@ class DashboardDataProvider:
             "recent_alarms": self.alarms_data.get("results", [])[:10],  # Top 10 recent
         }
 
-    def get_dashboard_data(self) -> Dict[str, Any]:
+    def get_dashboard_data(self) -> dict[str, Any]:
         """
         Get all data needed for dashboard rendering.
 
@@ -592,7 +592,7 @@ class DashboardDataProvider:
             "sle_degraded_sites": self.get_sle_degraded_sites(),
         }
 
-    def _calculate_site_statuses(self) -> Dict[str, int]:
+    def _calculate_site_statuses(self) -> dict[str, int]:
         """
         Calculate site health status counts.
 
@@ -631,7 +631,7 @@ class DashboardDataProvider:
 
         return statuses
 
-    def _get_all_circuit_states(self) -> List:
+    def _get_all_circuit_states(self) -> list:
         """
         Get current state for all circuits.
 
@@ -678,7 +678,7 @@ class DashboardDataProvider:
 
         return states
 
-    def _calculate_utilization_distribution(self) -> Dict[str, int]:
+    def _calculate_utilization_distribution(self) -> dict[str, int]:
         """
         Calculate distribution of circuits across utilization buckets.
 
@@ -729,15 +729,15 @@ class DashboardDataProvider:
 
         return buckets
 
-    def _calculate_region_summary(self) -> List[Dict[str, Any]]:
+    def _calculate_region_summary(self) -> list[dict[str, Any]]:
         """
         Calculate summary statistics by region.
 
         Returns:
             List of region summary dictionaries
         """
-        region_utilizations: Dict[str, List[float]] = defaultdict(list)
-        region_counts: Dict[str, int] = defaultdict(int)
+        region_utilizations: dict[str, list[float]] = defaultdict(list)
+        region_counts: dict[str, int] = defaultdict(int)
 
         for record in self.utilization_records:
             region = self.region_lookup.get(record.site_id, "Unknown")
@@ -762,7 +762,7 @@ class DashboardDataProvider:
 
         return sorted(summaries, key=lambda x: x["avg_utilization"], reverse=True)
 
-    def _calculate_trends(self) -> List[Dict[str, Any]]:
+    def _calculate_trends(self) -> list[dict[str, Any]]:
         """
         Calculate trend data for the last 24 hours.
 
@@ -804,7 +804,7 @@ class DashboardDataProvider:
 
         return trends
 
-    def _calculate_throughput(self) -> List[Dict[str, Any]]:
+    def _calculate_throughput(self) -> list[dict[str, Any]]:
         """
         Calculate cumulative throughput data for the last 24 hours.
 
@@ -832,8 +832,8 @@ class DashboardDataProvider:
 
         return [
             {
-                "timestamp": datetime.now(timezone.utc).strftime("%H:%M"),
-                "datetime": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).strftime("%H:%M"),
+                "datetime": datetime.now(UTC).isoformat(),
                 "rx_mbps": 0,  # Can't calculate rate from single snapshot
                 "tx_mbps": 0,
                 "total_rx_gb": round(total_rx / (1024**3), 2),
@@ -906,7 +906,7 @@ class DashboardDataProvider:
             logger.error(f"[TRENDS] Failed to store snapshot: {error}")
             return False
 
-    def get_region_sites(self, region: str) -> List[Dict[str, Any]]:
+    def get_region_sites(self, region: str) -> list[dict[str, Any]]:
         """
         Get all sites in a region for drilldown view.
 
@@ -935,9 +935,7 @@ class DashboardDataProvider:
             # Determine status
             down_count = sum(1 for r in site_status if r.status_code == 0)
             status = "healthy"
-            if down_count > 0:
-                status = "critical"
-            elif avg_util >= 80:
+            if down_count > 0 or avg_util >= 80:
                 status = "critical"
             elif avg_util >= 70:
                 status = "degraded"
@@ -954,7 +952,7 @@ class DashboardDataProvider:
 
         return sorted(site_data, key=lambda x: x["avg_utilization"], reverse=True)
 
-    def get_site_circuits(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_circuits(self, site_id: str) -> list[dict[str, Any]]:
         """
         Get all circuits for a site for drilldown view.
 
@@ -1011,7 +1009,7 @@ class DashboardDataProvider:
 
         return circuit_data
 
-    def get_circuit_timeseries(self, circuit_id: str) -> List[Dict[str, Any]]:
+    def get_circuit_timeseries(self, circuit_id: str) -> list[dict[str, Any]]:
         """
         Get time series data for a circuit for drilldown view.
 
@@ -1065,7 +1063,7 @@ class DashboardDataProvider:
 
         return time_series
 
-    def get_circuit_summary(self) -> Dict[str, Any]:
+    def get_circuit_summary(self) -> dict[str, Any]:
         """
         Get summary statistics for WAN circuits.
 
@@ -1103,8 +1101,8 @@ class DashboardDataProvider:
         circuit_ids = set(r.circuit_id for r in self.utilization_records)
 
         # Calculate per-circuit max utilization
-        circuit_max_util: Dict[str, float] = {}
-        circuit_bandwidth: Dict[str, int] = {}
+        circuit_max_util: dict[str, float] = {}
+        circuit_bandwidth: dict[str, int] = {}
         for record in self.utilization_records:
             circuit_max_util[record.circuit_id] = max(
                 circuit_max_util.get(record.circuit_id, 0.0), record.utilization_pct
@@ -1167,12 +1165,12 @@ class DashboardDataProvider:
             Number of sites currently using backup circuits
         """
         # Group circuits by site
-        site_circuits: Dict[str, List] = defaultdict(list)
+        site_circuits: dict[str, list] = defaultdict(list)
         for circuit in self.circuits:
             site_circuits[circuit.site_id].append(circuit)
 
         # Get current status for each circuit (most recent)
-        circuit_status: Dict[str, bool] = {}
+        circuit_status: dict[str, bool] = {}
         for record in self.status_records:
             circuit_status[record.circuit_id] = record.status_code == 1
 
@@ -1196,7 +1194,7 @@ class DashboardDataProvider:
 
         return failover_count
 
-    def get_primary_secondary_comparison(self, site_id: str) -> Dict[str, Any]:
+    def get_primary_secondary_comparison(self, site_id: str) -> dict[str, Any]:
         """
         Get primary vs secondary comparison data for a site.
 
@@ -1247,7 +1245,7 @@ class DashboardDataProvider:
             failover_records=self.failover_records,
         )
 
-    def get_gateway_health_summary(self) -> Dict[str, Any]:
+    def get_gateway_health_summary(self) -> dict[str, Any]:
         """
         Get gateway device health summary.
 
@@ -1273,7 +1271,7 @@ class DashboardDataProvider:
 
     # ==================== VPN Peer Path Methods ====================
 
-    def get_vpn_peer_summary(self) -> Dict[str, Any]:
+    def get_vpn_peer_summary(self) -> dict[str, Any]:
         """
         Get org-level VPN peer path summary statistics.
 
@@ -1319,7 +1317,7 @@ class DashboardDataProvider:
             "timestamp": 0,
         }
 
-    def get_site_vpn_peers(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_vpn_peers(self, site_id: str) -> list[dict[str, Any]]:
         """
         Get VPN peer paths for a specific site.
 
@@ -1346,7 +1344,7 @@ class DashboardDataProvider:
 
         return []
 
-    def get_vpn_peer_table_data(self, site_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_vpn_peer_table_data(self, site_id: str | None = None) -> list[dict[str, Any]]:
         """
         Get VPN peer data formatted for dashboard table display.
 
@@ -1426,10 +1424,10 @@ class DashboardDataProvider:
         site_id: str,
         device_mac: str,
         port_id: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get gateway port bandwidth time-series (rx_bps, tx_bps).
 
@@ -1492,10 +1490,10 @@ class DashboardDataProvider:
         site_id: str,
         device_mac: str,
         peer_mac: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get VPN peer metrics time-series (loss, latency, jitter, mos).
 
@@ -1551,10 +1549,10 @@ class DashboardDataProvider:
         site_id: str,
         device_mac: str,
         metric: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 600,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get device insight metrics time-series (tx_bytes, rx_bytes, cpu, etc.).
 
@@ -1609,7 +1607,7 @@ class DashboardDataProvider:
 
     def get_sites_needing_timeseries_refresh(
         self, timeseries_type: str = "gateway_ts", max_age_seconds: int = 3600
-    ) -> Dict[str, List[str]]:
+    ) -> dict[str, list[str]]:
         """
         Get sites that need time-series data refresh.
 

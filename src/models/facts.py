@@ -6,8 +6,7 @@ Grain: Site x Circuit x Hour
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -26,7 +25,7 @@ class CircuitUtilizationRecord:
     rx_bytes: int
     tx_bytes: int
     bandwidth_mbps: int
-    collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    collected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -67,7 +66,7 @@ class CircuitStatusRecord:
     up_minutes: int  # 0-60
     down_minutes: int  # 0-60
     flap_count: int
-    collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    collected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -115,24 +114,24 @@ class CircuitQualityRecord:
     hour_key: str  # YYYYMMDDHH format
 
     # Frame loss metrics
-    frame_loss_pct: Optional[float] = None
-    loss_avg: Optional[float] = None
-    loss_max: Optional[float] = None
-    loss_p95: Optional[float] = None
+    frame_loss_pct: float | None = None
+    loss_avg: float | None = None
+    loss_max: float | None = None
+    loss_p95: float | None = None
 
     # Jitter metrics (milliseconds)
-    jitter_ms: Optional[float] = None
-    jitter_avg: Optional[float] = None
-    jitter_max: Optional[float] = None
-    jitter_p95: Optional[float] = None
+    jitter_ms: float | None = None
+    jitter_avg: float | None = None
+    jitter_max: float | None = None
+    jitter_p95: float | None = None
 
     # Latency metrics (milliseconds)
-    latency_ms: Optional[float] = None
-    latency_avg: Optional[float] = None
-    latency_max: Optional[float] = None
-    latency_p95: Optional[float] = None
+    latency_ms: float | None = None
+    latency_avg: float | None = None
+    latency_max: float | None = None
+    latency_p95: float | None = None
 
-    collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    collected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -197,9 +196,9 @@ class FailoverEventRecord:
     primary_status_after: str
     secondary_status_before: str
     secondary_status_after: str
-    failover_duration_seconds: Optional[int] = None  # Set on recovery
-    trigger_reason: Optional[str] = None  # link_down, threshold_breach, etc.
-    collected_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    failover_duration_seconds: int | None = None  # Set on recovery
+    trigger_reason: str | None = None  # link_down, threshold_breach, etc.
+    collected_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -239,9 +238,9 @@ class RollingWindowMetrics:
     window_hours: int  # 3, 12, or 24
 
     # Utilization in window
-    utilization_avg: Optional[float] = None
-    utilization_max: Optional[float] = None
-    utilization_p95: Optional[float] = None
+    utilization_avg: float | None = None
+    utilization_max: float | None = None
+    utilization_p95: float | None = None
 
     # Time above threshold (continuous and cumulative)
     continuous_hours_above_70: float = 0.0
@@ -252,15 +251,15 @@ class RollingWindowMetrics:
     cumulative_hours_above_90: float = 0.0
 
     # Availability in window
-    availability_pct: Optional[float] = None
+    availability_pct: float | None = None
     flap_count: int = 0
 
     # Quality in window
-    loss_avg: Optional[float] = None
-    jitter_avg: Optional[float] = None
-    latency_avg: Optional[float] = None
+    loss_avg: float | None = None
+    jitter_avg: float | None = None
+    latency_avg: float | None = None
 
-    calculated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    calculated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""
@@ -303,14 +302,14 @@ class AggregatedMetrics:
     """
 
     site_id: str
-    circuit_id: Optional[str]  # None for region-level aggregates
+    circuit_id: str | None  # None for region-level aggregates
     period_key: str  # YYYYMMDD for daily, YYYYWW for weekly, YYYYMM for monthly
     period_type: str  # "daily", "weekly", "monthly"
 
     # Utilization aggregates
-    utilization_avg: Optional[float] = None
-    utilization_max: Optional[float] = None
-    utilization_p95: Optional[float] = None
+    utilization_avg: float | None = None
+    utilization_max: float | None = None
+    utilization_p95: float | None = None
     hours_above_70: int = 0
     hours_above_80: int = 0
     hours_above_90: int = 0
@@ -318,18 +317,18 @@ class AggregatedMetrics:
     # Availability aggregates
     total_up_minutes: int = 0
     total_down_minutes: int = 0
-    availability_pct: Optional[float] = None
+    availability_pct: float | None = None
     total_flaps: int = 0
 
     # Quality aggregates
-    loss_avg: Optional[float] = None
-    loss_max: Optional[float] = None
-    jitter_avg: Optional[float] = None
-    jitter_max: Optional[float] = None
-    latency_avg: Optional[float] = None
-    latency_max: Optional[float] = None
+    loss_avg: float | None = None
+    loss_max: float | None = None
+    jitter_avg: float | None = None
+    jitter_max: float | None = None
+    latency_avg: float | None = None
+    latency_max: float | None = None
 
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for database insertion."""

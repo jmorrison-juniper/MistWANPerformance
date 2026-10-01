@@ -6,7 +6,6 @@ without blocking on heavy operations.
 """
 
 import os
-import multiprocessing
 
 # Server socket
 bind = f"0.0.0.0:{os.getenv('DASH_PORT', '8050')}"

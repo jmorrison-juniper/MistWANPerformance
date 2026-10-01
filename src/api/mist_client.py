@@ -13,8 +13,9 @@ Split into focused classes per 5-item rule:
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Callable
+from datetime import datetime
+from typing import Any
 
 # Mist API SDK import with graceful fallback
 MIST_API_AVAILABLE = False
@@ -59,8 +60,8 @@ class RateLimitState:
             return
         self._initialized = True
         self.rate_limited = False
-        self.rate_limit_hit_time: Optional[float] = None
-        self.rate_limit_reset_time: Optional[float] = None
+        self.rate_limit_hit_time: float | None = None
+        self.rate_limit_reset_time: float | None = None
         self._hit_count = 0
 
     def set_rate_limited(self) -> float:
@@ -114,14 +115,14 @@ class RateLimitState:
 
             return True
 
-    def seconds_until_reset(self) -> Optional[float]:
+    def seconds_until_reset(self) -> float | None:
         """Get seconds remaining until rate limit resets."""
         with self._lock:
             if not self.rate_limited or not self.rate_limit_reset_time:
                 return None
             return max(0, self.rate_limit_reset_time - time.time())
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current rate limit status for status bar display."""
         with self._lock:
             if not self.rate_limited:
@@ -163,12 +164,12 @@ class RateLimitError(Exception):
     Callers should catch this and wait until seconds_remaining expires.
     """
 
-    def __init__(self, message: str, seconds_remaining: Optional[float] = None):
+    def __init__(self, message: str, seconds_remaining: float | None = None):
         super().__init__(message)
         self.seconds_remaining = seconds_remaining
 
 
-def get_rate_limit_status() -> Dict[str, Any]:
+def get_rate_limit_status() -> dict[str, Any]:
     """
     Get the current rate limit status for external consumers (e.g., dashboard).
 
@@ -261,7 +262,7 @@ class MistConnection:
                 seconds_remaining=remaining,
             )
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
 
         for attempt in range(1, self.ops_config.max_retries + 1):
             try:
@@ -362,7 +363,7 @@ class MistSiteOperations:
             logger.error(f"[ERROR] Mist API connection failed: {error}")
             return False
 
-    def get_sites(self) -> List[Dict[str, Any]]:
+    def get_sites(self) -> list[dict[str, Any]]:
         """
         Get all sites in the organization.
 
@@ -396,7 +397,7 @@ class MistSiteOperations:
         logger.info(f"[OK] Retrieved {len(sites)} total sites")
         return sites
 
-    def get_site_groups(self) -> Dict[str, str]:
+    def get_site_groups(self) -> dict[str, str]:
         """
         Get all site groups in the organization with their human-readable names.
 
@@ -435,7 +436,7 @@ class MistSiteOperations:
         logger.info(f"[OK] Retrieved {len(sitegroup_map)} site groups")
         return sitegroup_map
 
-    def get_site_wan_edges(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_wan_edges(self, site_id: str) -> list[dict[str, Any]]:
         """
         Get WAN edge devices (gateways) for a specific site.
 
@@ -460,7 +461,7 @@ class MistSiteOperations:
         logger.debug(f"Found {len(devices)} WAN edge devices")
         return devices
 
-    def get_gateway_inventory(self) -> Dict[str, Any]:
+    def get_gateway_inventory(self) -> dict[str, Any]:
         """
         Get organization gateway inventory with connection status.
 
@@ -548,8 +549,8 @@ class MistStatsOperations:
         self.connection = connection
 
     def get_org_gateway_port_stats(
-        self, on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None
-    ) -> List[Dict[str, Any]]:
+        self, on_batch: Callable[[list[dict[str, Any]], int, str | None], None] | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway port statistics.
 
@@ -609,7 +610,7 @@ class MistStatsOperations:
         )
         return all_ports
 
-    def get_org_device_stats(self) -> List[Dict[str, Any]]:
+    def get_org_device_stats(self) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway device statistics.
 
@@ -650,9 +651,9 @@ class MistStatsOperations:
         self,
         site_id: str,
         device_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> dict[str, Any]:
         """
         Get WAN edge device statistics including port utilization.
 
@@ -667,7 +668,7 @@ class MistStatsOperations:
         """
         logger.debug(f"Retrieving stats for WAN edge {device_id}")
 
-        api_kwargs: Dict[str, Union[str, int]] = {"site_id": site_id, "device_id": device_id}
+        api_kwargs: dict[str, str | int] = {"site_id": site_id, "device_id": device_id}
 
         if start_time:
             api_kwargs["start"] = int(start_time.timestamp())
@@ -687,10 +688,10 @@ class MistStatsOperations:
         self,
         site_id: str,
         device_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        event_types: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Get WAN edge device events (status changes, flaps).
 
@@ -706,10 +707,10 @@ class MistStatsOperations:
         """
         logger.debug(f"Retrieving events for WAN edge {device_id}")
 
-        events: List[Dict[str, Any]] = []
+        events: list[dict[str, Any]] = []
         page = 1
 
-        api_kwargs: Dict[str, Union[str, int]] = {
+        api_kwargs: dict[str, str | int] = {
             "site_id": site_id,
             "device_type": "gateway",
             "limit": self.connection.ops_config.page_limit,
@@ -746,8 +747,8 @@ class MistStatsOperations:
         return events
 
     def get_org_wan_client_stats(
-        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+        self, start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get organization-wide WAN client statistics.
 
@@ -760,7 +761,7 @@ class MistStatsOperations:
         """
         logger.info("[...] Retrieving organization WAN client stats")
 
-        api_kwargs: Dict[str, Union[str, int]] = {"org_id": self.connection.config.org_id}
+        api_kwargs: dict[str, str | int] = {"org_id": self.connection.config.org_id}
 
         if start_time:
             api_kwargs["start"] = int(start_time.timestamp())
@@ -801,11 +802,11 @@ class MistInsightsOperations:
     def get_org_sites_sle(
         self,
         sle: str = "wan",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
         limit: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE scores for all sites in the organization.
 
@@ -837,13 +838,13 @@ class MistInsightsOperations:
         """
         logger.info(f"[...] Retrieving org SLE scores (sle={sle}, duration={duration})")
 
-        all_results: List[Dict[str, Any]] = []
+        all_results: list[dict[str, Any]] = []
         page = 1
         total_count = 0
-        response_metadata: Dict[str, Any] = {}
+        response_metadata: dict[str, Any] = {}
 
         while True:
-            api_kwargs: Dict[str, Any] = {
+            api_kwargs: dict[str, Any] = {
                 "org_id": self.connection.config.org_id,
                 "sle": sle,
                 "limit": limit,
@@ -890,10 +891,10 @@ class MistInsightsOperations:
     def get_org_worst_sites_by_sle(
         self,
         sle: str = "gateway-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get worst performing sites by SLE metric.
 
@@ -913,7 +914,7 @@ class MistInsightsOperations:
         """
         logger.info(f"[...] Retrieving worst sites by SLE (metric={sle})")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "org_id": self.connection.config.org_id,
             "metric": "worst-sites-by-sle",
             "sle": sle,
@@ -940,14 +941,14 @@ class MistInsightsOperations:
 
     def search_org_alarms(
         self,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-        alarm_type: Optional[str] = None,
-        site_id: Optional[str] = None,
-        status: Optional[str] = None,
+        alarm_type: str | None = None,
+        site_id: str | None = None,
+        status: str | None = None,
         limit: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search organization alarms.
 
@@ -981,14 +982,14 @@ class MistInsightsOperations:
         """
         logger.info(f"[...] Searching org alarms (type={alarm_type})")
 
-        all_results: List[Dict[str, Any]] = []
+        all_results: list[dict[str, Any]] = []
         total_count = 0
-        search_after: Optional[str] = None
+        search_after: str | None = None
         page_num = 0
 
         while True:
             page_num += 1
-            api_kwargs: Dict[str, Any] = {"org_id": self.connection.config.org_id, "limit": limit}
+            api_kwargs: dict[str, Any] = {"org_id": self.connection.config.org_id, "limit": limit}
 
             if start_time:
                 api_kwargs["start"] = str(start_time)
@@ -1035,8 +1036,8 @@ class MistInsightsOperations:
     # ==================== VPN Peer Path Statistics ====================
 
     def get_vpn_peer_stats(
-        self, site_id: Optional[str] = None, device_mac: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, site_id: str | None = None, device_mac: str | None = None
+    ) -> dict[str, Any]:
         """
         Get VPN peer path statistics using the mistapi SDK with pagination.
 
@@ -1058,15 +1059,15 @@ class MistInsightsOperations:
         logger.debug(f"Fetching VPN peer stats (site={site_id}, mac={device_mac})")
 
         try:
-            all_results: List[Dict[str, Any]] = []
-            search_after: Optional[str] = None
+            all_results: list[dict[str, Any]] = []
+            search_after: str | None = None
             page_num = 0
             total_count = 0
 
             while True:
                 page_num += 1
 
-                api_kwargs: Dict[str, Any] = {
+                api_kwargs: dict[str, Any] = {
                     "org_id": self.connection.config.org_id,
                     "limit": 1000,
                 }
@@ -1132,8 +1133,8 @@ class MistInsightsOperations:
             }
 
     def _group_peers_by_port(
-        self, results: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        self, results: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
         """
         Group VPN peer path results by port_id.
 
@@ -1143,7 +1144,7 @@ class MistInsightsOperations:
         Returns:
             Dictionary mapping port_id to list of peer records
         """
-        peers_by_port: Dict[str, List[Dict[str, Any]]] = {}
+        peers_by_port: dict[str, list[dict[str, Any]]] = {}
 
         for peer in results:
             port_id = peer.get("port_id", "unknown")
@@ -1172,7 +1173,7 @@ class MistInsightsOperations:
 
         return peers_by_port
 
-    def get_org_vpn_peer_stats(self) -> Dict[str, Any]:
+    def get_org_vpn_peer_stats(self) -> dict[str, Any]:
         """
         Get all VPN peer path statistics for the organization.
 
@@ -1184,7 +1185,7 @@ class MistInsightsOperations:
         """
         return self.get_vpn_peer_stats()
 
-    def get_site_vpn_peer_stats(self, site_id: str) -> Dict[str, Any]:
+    def get_site_vpn_peer_stats(self, site_id: str) -> dict[str, Any]:
         """
         Get VPN peer path statistics for a specific site.
 
@@ -1202,12 +1203,12 @@ class MistInsightsOperations:
         self,
         site_id: str,
         device_mac: str,
-        port_id: Optional[str] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        port_id: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
         metrics: str = "rx_bps,tx_bps",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get gateway port time-series statistics (rx_bps, tx_bps).
 
@@ -1246,7 +1247,7 @@ class MistInsightsOperations:
             f"device {device_mac}, port {port_id}"
         )
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "device_id": device_id,
             "interval": interval,
@@ -1297,13 +1298,13 @@ class MistInsightsOperations:
         self,
         site_id: str,
         device_mac: str,
-        peer_mac: Optional[str] = None,
-        port_id: Optional[str] = None,
-        peer_port_id: Optional[str] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        peer_mac: str | None = None,
+        port_id: str | None = None,
+        peer_port_id: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get VPN peer path time-series metrics (loss, latency, jitter, mos).
 
@@ -1344,7 +1345,7 @@ class MistInsightsOperations:
             f"device {clean_mac}, peer {peer_mac}"
         )
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "device_mac": clean_mac,
             "metric": "vpn_peer-metrics",
@@ -1402,10 +1403,10 @@ class MistInsightsOperations:
         site_id: str,
         device_mac: str,
         metric: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 600,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get device-level metric time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
 
@@ -1441,7 +1442,7 @@ class MistInsightsOperations:
             f"[...] Retrieving device metric {metric} for site {site_id}, device {clean_mac}"
         )
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "device_mac": clean_mac,
             "metric": metric,
@@ -1490,10 +1491,10 @@ class MistInsightsOperations:
         self,
         site_id: str,
         metric: str = "gateway-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE time-series trend for a specific site.
 
@@ -1523,7 +1524,7 @@ class MistInsightsOperations:
         """
         logger.info(f"[...] Retrieving SLE trend for site {site_id} (metric={metric})")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "scope": "site",
             "scope_id": site_id,
@@ -1553,10 +1554,10 @@ class MistInsightsOperations:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get detailed SLE summary with time-series and classifiers for a site.
 
@@ -1581,7 +1582,7 @@ class MistInsightsOperations:
         """
         logger.debug(f"[...] Retrieving SLE summary for site {site_id} (metric={metric})")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "scope": "site",
             "scope_id": site_id,
@@ -1609,10 +1610,10 @@ class MistInsightsOperations:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE histogram showing distribution of scores for a site.
 
@@ -1632,7 +1633,7 @@ class MistInsightsOperations:
         """
         logger.debug(f"[...] Retrieving SLE histogram for site {site_id} (metric={metric})")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "scope": "site",
             "scope_id": site_id,
@@ -1657,7 +1658,7 @@ class MistInsightsOperations:
 
     def get_site_sle_threshold(
         self, site_id: str, metric: str = "wan-link-health"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE threshold configuration for a site/metric.
 
@@ -1690,10 +1691,10 @@ class MistInsightsOperations:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get list of impacted gateways for a site's SLE metric.
 
@@ -1716,7 +1717,7 @@ class MistInsightsOperations:
         """
         logger.debug(f"[...] Retrieving impacted gateways for site {site_id}")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "scope": "site",
             "scope_id": site_id,
@@ -1743,10 +1744,10 @@ class MistInsightsOperations:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get list of impacted interfaces for a site's SLE metric.
 
@@ -1769,7 +1770,7 @@ class MistInsightsOperations:
         """
         logger.debug(f"[...] Retrieving impacted interfaces for site {site_id}")
 
-        api_kwargs: Dict[str, Any] = {
+        api_kwargs: dict[str, Any] = {
             "site_id": site_id,
             "scope": "site",
             "scope_id": site_id,
@@ -1792,7 +1793,7 @@ class MistInsightsOperations:
 
         return response.data if hasattr(response, "data") else {}
 
-    def get_site_sle_classifiers(self, site_id: str, metric: str = "wan-link-health") -> List[str]:
+    def get_site_sle_classifiers(self, site_id: str, metric: str = "wan-link-health") -> list[str]:
         """
         Get list of available classifiers for a site's SLE metric.
 
@@ -1863,19 +1864,19 @@ class MistAPIClient:
         """Test the API connection by retrieving organization info."""
         return self.site_ops.test_connection()
 
-    def get_sites(self) -> List[Dict[str, Any]]:
+    def get_sites(self) -> list[dict[str, Any]]:
         """Get all sites in the organization."""
         return self.site_ops.get_sites()
 
-    def get_site_groups(self) -> Dict[str, str]:
+    def get_site_groups(self) -> dict[str, str]:
         """Get all site groups with human-readable names."""
         return self.site_ops.get_site_groups()
 
-    def get_site_wan_edges(self, site_id: str) -> List[Dict[str, Any]]:
+    def get_site_wan_edges(self, site_id: str) -> list[dict[str, Any]]:
         """Get WAN edge devices (gateways) for a specific site."""
         return self.site_ops.get_site_wan_edges(site_id)
 
-    def get_gateway_inventory(self) -> Dict[str, Any]:
+    def get_gateway_inventory(self) -> dict[str, Any]:
         """
         Get organization gateway inventory with connection status.
 
@@ -1885,8 +1886,8 @@ class MistAPIClient:
         return self.site_ops.get_gateway_inventory()
 
     def get_org_gateway_port_stats(
-        self, on_batch: Optional[Callable[[List[Dict[str, Any]], int, Optional[str]], None]] = None
-    ) -> List[Dict[str, Any]]:
+        self, on_batch: Callable[[list[dict[str, Any]], int, str | None], None] | None = None
+    ) -> list[dict[str, Any]]:
         """
         Get organization-wide gateway port statistics (rx_bytes, tx_bytes, speed).
 
@@ -1896,7 +1897,7 @@ class MistAPIClient:
         """
         return self.stats_ops.get_org_gateway_port_stats(on_batch=on_batch)
 
-    def get_org_device_stats(self) -> List[Dict[str, Any]]:
+    def get_org_device_stats(self) -> list[dict[str, Any]]:
         """Get organization-wide gateway device statistics."""
         return self.stats_ops.get_org_device_stats()
 
@@ -1904,9 +1905,9 @@ class MistAPIClient:
         self,
         site_id: str,
         device_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> Dict[str, Any]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> dict[str, Any]:
         """Get WAN edge device statistics including port utilization."""
         return self.stats_ops.get_wan_edge_stats(site_id, device_id, start_time, end_time)
 
@@ -1914,18 +1915,18 @@ class MistAPIClient:
         self,
         site_id: str,
         device_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        event_types: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        event_types: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Get WAN edge device events (status changes, flaps)."""
         return self.stats_ops.get_wan_edge_events(
             site_id, device_id, start_time, end_time, event_types
         )
 
     def get_org_wan_client_stats(
-        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
-    ) -> List[Dict[str, Any]]:
+        self, start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[dict[str, Any]]:
         """Get organization-wide WAN client statistics."""
         return self.stats_ops.get_org_wan_client_stats(start_time, end_time)
 
@@ -1936,11 +1937,11 @@ class MistAPIClient:
     def get_org_sites_sle(
         self,
         sle: str = "wan",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
         limit: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE scores for all sites in the organization.
 
@@ -1961,10 +1962,10 @@ class MistAPIClient:
     def get_org_worst_sites_by_sle(
         self,
         sle: str = "gateway-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get worst performing sites by SLE metric.
 
@@ -1983,14 +1984,14 @@ class MistAPIClient:
 
     def search_org_alarms(
         self,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-        alarm_type: Optional[str] = None,
-        site_id: Optional[str] = None,
-        status: Optional[str] = None,
+        alarm_type: str | None = None,
+        site_id: str | None = None,
+        status: str | None = None,
         limit: int = 1000,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Search organization alarms.
 
@@ -2020,10 +2021,10 @@ class MistAPIClient:
         self,
         site_id: str,
         metric: str = "gateway-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get SLE time-series trend for a specific site.
 
@@ -2051,10 +2052,10 @@ class MistAPIClient:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get detailed SLE summary with time-series and classifiers for a site.
 
@@ -2072,10 +2073,10 @@ class MistAPIClient:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get SLE histogram showing distribution of scores for a site."""
         return self.insights_ops.get_site_sle_histogram(
             site_id=site_id,
@@ -2087,7 +2088,7 @@ class MistAPIClient:
 
     def get_site_sle_threshold(
         self, site_id: str, metric: str = "wan-link-health"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get SLE threshold configuration for a site/metric."""
         return self.insights_ops.get_site_sle_threshold(site_id=site_id, metric=metric)
 
@@ -2095,10 +2096,10 @@ class MistAPIClient:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get list of impacted gateways for a site's SLE metric."""
         return self.insights_ops.get_site_sle_impacted_gateways(
             site_id=site_id,
@@ -2112,10 +2113,10 @@ class MistAPIClient:
         self,
         site_id: str,
         metric: str = "wan-link-health",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1d",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Get list of impacted interfaces for a site's SLE metric."""
         return self.insights_ops.get_site_sle_impacted_interfaces(
             site_id=site_id,
@@ -2125,7 +2126,7 @@ class MistAPIClient:
             duration=duration,
         )
 
-    def get_site_sle_classifiers(self, site_id: str, metric: str = "wan-link-health") -> List[str]:
+    def get_site_sle_classifiers(self, site_id: str, metric: str = "wan-link-health") -> list[str]:
         """Get list of available classifiers for a site's SLE metric."""
         return self.insights_ops.get_site_sle_classifiers(site_id=site_id, metric=metric)
 
@@ -2134,8 +2135,8 @@ class MistAPIClient:
     # -------------------------------------------------------------------------
 
     def get_vpn_peer_stats(
-        self, site_id: Optional[str] = None, device_mac: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, site_id: str | None = None, device_mac: str | None = None
+    ) -> dict[str, Any]:
         """
         Get VPN peer path statistics.
 
@@ -2148,7 +2149,7 @@ class MistAPIClient:
         """
         return self.insights_ops.get_vpn_peer_stats(site_id=site_id, device_mac=device_mac)
 
-    def get_org_vpn_peer_stats(self) -> Dict[str, Any]:
+    def get_org_vpn_peer_stats(self) -> dict[str, Any]:
         """
         Get all VPN peer path statistics for the organization.
 
@@ -2157,7 +2158,7 @@ class MistAPIClient:
         """
         return self.insights_ops.get_org_vpn_peer_stats()
 
-    def get_site_vpn_peer_stats(self, site_id: str) -> Dict[str, Any]:
+    def get_site_vpn_peer_stats(self, site_id: str) -> dict[str, Any]:
         """
         Get VPN peer path statistics for a specific site.
 
@@ -2177,12 +2178,12 @@ class MistAPIClient:
         self,
         site_id: str,
         device_mac: str,
-        port_id: Optional[str] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        port_id: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
         metrics: str = "rx_bps,tx_bps",
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get gateway port time-series statistics (rx_bps, tx_bps).
 
@@ -2214,13 +2215,13 @@ class MistAPIClient:
         self,
         site_id: str,
         device_mac: str,
-        peer_mac: Optional[str] = None,
-        port_id: Optional[str] = None,
-        peer_port_id: Optional[str] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        peer_mac: str | None = None,
+        port_id: str | None = None,
+        peer_port_id: str | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 3600,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get VPN peer path time-series metrics (loss, latency, jitter, mos).
 
@@ -2255,10 +2256,10 @@ class MistAPIClient:
         site_id: str,
         device_mac: str,
         metric: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         interval: int = 600,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Get device-level metric time-series (tx_bytes, rx_bytes, cpu, memory, etc.).
 

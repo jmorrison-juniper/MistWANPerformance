@@ -6,21 +6,15 @@ This is the landing page showing overall WAN health at a glance.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
+from dash import dash_table, dcc, html
 
 from src.dashboard.pages.shared import (
     COLORS,
     REFRESH_INTERVAL_MS,
     StatusCards,
-    ChartBuilders,
-    LinkBuilder,
-    PageLayout,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +37,7 @@ class OverviewPage:
 
     PAGE_ID = "overview-page"
 
-    def __init__(self, data_provider: Optional[Any] = None):
+    def __init__(self, data_provider: Any | None = None):
         """
         Initialize overview page.
 
@@ -52,7 +46,7 @@ class OverviewPage:
         """
         self.data_provider = data_provider
 
-    def build_layout(self, data_provider: Optional[Any] = None) -> html.Div:
+    def build_layout(self, data_provider: Any | None = None) -> html.Div:
         """
         Build the overview page layout.
 
@@ -176,7 +170,7 @@ class OverviewPage:
                                 "borderRadius": "6px",
                                 "border": f"2px solid {COLORS['primary']}",
                                 "fontSize": "0.95rem",
-                                "boxShadow": f"0 2px 8px rgba(226, 0, 116, 0.2)",
+                                "boxShadow": "0 2px 8px rgba(226, 0, 116, 0.2)",
                             },
                         )
                     ],

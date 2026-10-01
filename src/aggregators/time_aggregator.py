@@ -8,19 +8,19 @@ Organized per 5-item rule into focused classes.
 import logging
 import os
 import statistics
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
+from src.calculators.kpi_calculator import KPICalculator
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
     AggregatedMetrics,
+    CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
     RollingWindowMetrics,
 )
-from src.calculators.kpi_calculator import KPICalculator
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class AggregateCalculator:
     """
 
     @staticmethod
-    def calculate_percentile(values: List[float], percentile: int) -> Optional[float]:
+    def calculate_percentile(values: list[float], percentile: int) -> float | None:
         """
         Calculate percentile value from a list.
 
@@ -64,10 +64,10 @@ class AggregateCalculator:
     @staticmethod
     def merge_aggregates(
         site_id: str,
-        circuit_id: Optional[str],
+        circuit_id: str | None,
         period_key: str,
         period_type: str,
-        aggregates: List[AggregatedMetrics],
+        aggregates: list[AggregatedMetrics],
     ) -> AggregatedMetrics:
         """
         Merge multiple aggregates into a single summary.
@@ -138,7 +138,7 @@ class AggregateCalculator:
         )
 
     @staticmethod
-    def _collect_aggregate_metrics(aggregates: List[AggregatedMetrics]) -> Dict[str, List[float]]:
+    def _collect_aggregate_metrics(aggregates: list[AggregatedMetrics]) -> dict[str, list[float]]:
         """Collect non-null metric values from aggregates."""
         return {
             "util_avgs": [a.utilization_avg for a in aggregates if a.utilization_avg is not None],
@@ -153,7 +153,7 @@ class AggregateCalculator:
         }
 
     @staticmethod
-    def _sum_aggregate_totals(aggregates: List[AggregatedMetrics]) -> Dict[str, int]:
+    def _sum_aggregate_totals(aggregates: list[AggregatedMetrics]) -> dict[str, int]:
         """Sum total counts from aggregates."""
         return {
             "up": sum(a.total_up_minutes for a in aggregates),
@@ -175,7 +175,7 @@ class CalendarAggregator:
     - Daily to monthly rollups
     """
 
-    def __init__(self, kpi_calculator: Optional[KPICalculator] = None):
+    def __init__(self, kpi_calculator: KPICalculator | None = None):
         """
         Initialize the calendar aggregator.
 
@@ -187,10 +187,10 @@ class CalendarAggregator:
 
     def aggregate_hourly_to_daily(
         self,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
-    ) -> List[AggregatedMetrics]:
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
+    ) -> list[AggregatedMetrics]:
         """
         Aggregate hourly records to daily summaries.
 
@@ -233,8 +233,8 @@ class CalendarAggregator:
         return daily_aggregates
 
     def aggregate_daily_to_weekly(
-        self, daily_aggregates: List[AggregatedMetrics]
-    ) -> List[AggregatedMetrics]:
+        self, daily_aggregates: list[AggregatedMetrics]
+    ) -> list[AggregatedMetrics]:
         """
         Aggregate daily records to weekly summaries.
 
@@ -265,8 +265,8 @@ class CalendarAggregator:
         return weekly_aggregates
 
     def aggregate_daily_to_monthly(
-        self, daily_aggregates: List[AggregatedMetrics]
-    ) -> List[AggregatedMetrics]:
+        self, daily_aggregates: list[AggregatedMetrics]
+    ) -> list[AggregatedMetrics]:
         """
         Aggregate daily records to monthly summaries.
 
@@ -296,7 +296,7 @@ class CalendarAggregator:
         logger.info(f"[OK] Created {len(monthly_aggregates)} monthly aggregates")
         return monthly_aggregates
 
-    def _group_by_circuit_date(self, records: List[Any]) -> Dict[Tuple[str, str, str], List[Any]]:
+    def _group_by_circuit_date(self, records: list[Any]) -> dict[tuple[str, str, str], list[Any]]:
         """Group records by site_id, circuit_id, and date."""
         grouped = defaultdict(list)
 
@@ -336,11 +336,11 @@ class RollingWindowAggregator:
         self,
         site_id: str,
         circuit_id: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
         window_hours: int,
-        window_end: Optional[datetime] = None,
+        window_end: datetime | None = None,
     ) -> RollingWindowMetrics:
         """
         Calculate metrics for a rolling time window.
@@ -358,7 +358,7 @@ class RollingWindowAggregator:
             RollingWindowMetrics for the window
         """
         if window_end is None:
-            window_end = datetime.now(timezone.utc)
+            window_end = datetime.now(UTC)
 
         window_start = window_end - timedelta(hours=window_hours)
 
@@ -401,11 +401,11 @@ class RollingWindowAggregator:
         self,
         site_id: str,
         circuit_id: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
-        window_end: Optional[datetime] = None,
-    ) -> Dict[int, RollingWindowMetrics]:
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
+        window_end: datetime | None = None,
+    ) -> dict[int, RollingWindowMetrics]:
         """
         Calculate all rolling windows (3h, 12h, 24h) for a circuit.
 
@@ -436,16 +436,16 @@ class RollingWindowAggregator:
         return results
 
     def _filter_records_in_window(
-        self, records: List[Any], window_start: datetime, window_end: datetime
-    ) -> List[Any]:
+        self, records: list[Any], window_start: datetime, window_end: datetime
+    ) -> list[Any]:
         """Filter records that fall within the time window."""
         start_key = window_start.strftime("%Y%m%d%H")
         end_key = window_end.strftime("%Y%m%d%H")
         return [record for record in records if start_key <= record.hour_key <= end_key]
 
     def _calculate_utilization_metrics(
-        self, records: List[CircuitUtilizationRecord]
-    ) -> Dict[str, Any]:
+        self, records: list[CircuitUtilizationRecord]
+    ) -> dict[str, Any]:
         """Calculate utilization metrics from records."""
         if not records:
             return {
@@ -475,7 +475,7 @@ class RollingWindowAggregator:
             "cumulative_90": self._calculate_cumulative_hours(records, 90.0),
         }
 
-    def _calculate_availability_metrics(self, records: List[CircuitStatusRecord]) -> Dict[str, Any]:
+    def _calculate_availability_metrics(self, records: list[CircuitStatusRecord]) -> dict[str, Any]:
         """Calculate availability metrics from records."""
         total_up = sum(record.up_minutes for record in records)
         total_down = sum(record.down_minutes for record in records)
@@ -489,8 +489,8 @@ class RollingWindowAggregator:
         return {"availability": availability, "flaps": total_flaps}
 
     def _calculate_quality_metrics(
-        self, records: List[CircuitQualityRecord]
-    ) -> Dict[str, Optional[float]]:
+        self, records: list[CircuitQualityRecord]
+    ) -> dict[str, float | None]:
         """Calculate quality metrics from records."""
         loss_values = [record.loss_avg for record in records if record.loss_avg is not None]
         jitter_values = [record.jitter_avg for record in records if record.jitter_avg is not None]
@@ -505,7 +505,7 @@ class RollingWindowAggregator:
         }
 
     def _calculate_continuous_hours(
-        self, records: List[CircuitUtilizationRecord], threshold: float
+        self, records: list[CircuitUtilizationRecord], threshold: float
     ) -> float:
         """Calculate longest continuous run above threshold."""
         if not records:
@@ -525,7 +525,7 @@ class RollingWindowAggregator:
         return float(max_run)
 
     def _calculate_cumulative_hours(
-        self, records: List[CircuitUtilizationRecord], threshold: float
+        self, records: list[CircuitUtilizationRecord], threshold: float
     ) -> float:
         """Calculate total hours above threshold."""
         if not records:
@@ -545,8 +545,8 @@ class RegionAggregator:
         logger.debug("RegionAggregator initialized")
 
     def aggregate_to_region(
-        self, aggregates: List[AggregatedMetrics], site_region_map: Dict[str, str]
-    ) -> List[AggregatedMetrics]:
+        self, aggregates: list[AggregatedMetrics], site_region_map: dict[str, str]
+    ) -> list[AggregatedMetrics]:
         """
         Aggregate circuit metrics to region level.
 
@@ -590,7 +590,7 @@ class TimeAggregator:
     RollingWindowAggregator, and RegionAggregator.
     """
 
-    def __init__(self, kpi_calculator: Optional[KPICalculator] = None):
+    def __init__(self, kpi_calculator: KPICalculator | None = None):
         """
         Initialize the time aggregator facade.
 
@@ -604,30 +604,30 @@ class TimeAggregator:
 
     def aggregate_hourly_to_daily(
         self,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
-    ) -> List[AggregatedMetrics]:
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
+    ) -> list[AggregatedMetrics]:
         """Aggregate hourly records to daily summaries."""
         return self.calendar.aggregate_hourly_to_daily(
             utilization_records, status_records, quality_records
         )
 
     def aggregate_daily_to_weekly(
-        self, daily_aggregates: List[AggregatedMetrics]
-    ) -> List[AggregatedMetrics]:
+        self, daily_aggregates: list[AggregatedMetrics]
+    ) -> list[AggregatedMetrics]:
         """Aggregate daily records to weekly summaries."""
         return self.calendar.aggregate_daily_to_weekly(daily_aggregates)
 
     def aggregate_daily_to_monthly(
-        self, daily_aggregates: List[AggregatedMetrics]
-    ) -> List[AggregatedMetrics]:
+        self, daily_aggregates: list[AggregatedMetrics]
+    ) -> list[AggregatedMetrics]:
         """Aggregate daily records to monthly summaries."""
         return self.calendar.aggregate_daily_to_monthly(daily_aggregates)
 
     def aggregate_to_region(
-        self, aggregates: List[AggregatedMetrics], site_region_map: Dict[str, str]
-    ) -> List[AggregatedMetrics]:
+        self, aggregates: list[AggregatedMetrics], site_region_map: dict[str, str]
+    ) -> list[AggregatedMetrics]:
         """Aggregate circuit metrics to region level."""
         return self.region.aggregate_to_region(aggregates, site_region_map)
 
@@ -635,11 +635,11 @@ class TimeAggregator:
         self,
         site_id: str,
         circuit_id: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
         window_hours: int,
-        window_end: Optional[datetime] = None,
+        window_end: datetime | None = None,
     ) -> RollingWindowMetrics:
         """Calculate metrics for a rolling time window."""
         return self.rolling.calculate_rolling_window(
@@ -656,11 +656,11 @@ class TimeAggregator:
         self,
         site_id: str,
         circuit_id: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
-        window_end: Optional[datetime] = None,
-    ) -> Dict[int, RollingWindowMetrics]:
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
+        window_end: datetime | None = None,
+    ) -> dict[int, RollingWindowMetrics]:
         """Calculate all rolling windows (3h, 12h, 24h) for a circuit."""
         return self.rolling.calculate_all_windows(
             site_id, circuit_id, utilization_records, status_records, quality_records, window_end
@@ -668,13 +668,13 @@ class TimeAggregator:
 
     # Helper method proxies for backward compatibility with tests
 
-    def _calculate_percentile(self, values: List[float], percentile: int) -> Optional[float]:
+    def _calculate_percentile(self, values: list[float], percentile: int) -> float | None:
         """Proxy to AggregateCalculator.calculate_percentile for backward compatibility."""
         return AggregateCalculator.calculate_percentile(values, percentile)
 
     def _filter_records_in_window(
-        self, records: List[Any], window_start: datetime, window_end: datetime
-    ) -> List[Any]:
+        self, records: list[Any], window_start: datetime, window_end: datetime
+    ) -> list[Any]:
         """Proxy to rolling._filter_records_in_window for backward compatibility."""
         return self.rolling._filter_records_in_window(records, window_start, window_end)
 
@@ -684,7 +684,7 @@ class TimeAggregator:
 # -----------------------------------------------------------------------------
 
 
-def _merge_aggregates_worker(worker_input: Tuple) -> Dict[str, Any]:
+def _merge_aggregates_worker(worker_input: tuple) -> dict[str, Any]:
     """
     Worker function for merging daily aggregates into weekly/monthly.
 
@@ -773,8 +773,8 @@ def _merge_aggregates_worker(worker_input: Tuple) -> Dict[str, Any]:
 
 
 def aggregate_daily_to_weekly_parallel(
-    daily_aggregates: List[AggregatedMetrics], use_parallel: bool = True
-) -> List[AggregatedMetrics]:
+    daily_aggregates: list[AggregatedMetrics], use_parallel: bool = True
+) -> list[AggregatedMetrics]:
     """
     Aggregate daily records to weekly summaries using parallel processing.
 
@@ -851,8 +851,8 @@ def aggregate_daily_to_weekly_parallel(
 
 
 def aggregate_daily_to_monthly_parallel(
-    daily_aggregates: List[AggregatedMetrics], use_parallel: bool = True
-) -> List[AggregatedMetrics]:
+    daily_aggregates: list[AggregatedMetrics], use_parallel: bool = True
+) -> list[AggregatedMetrics]:
     """
     Aggregate daily records to monthly summaries using parallel processing.
 
@@ -926,8 +926,8 @@ def aggregate_daily_to_monthly_parallel(
 
 
 def aggregate_to_region_parallel(
-    aggregates: List[AggregatedMetrics], site_region_map: Dict[str, str], use_parallel: bool = True
-) -> List[AggregatedMetrics]:
+    aggregates: list[AggregatedMetrics], site_region_map: dict[str, str], use_parallel: bool = True
+) -> list[AggregatedMetrics]:
     """
     Aggregate circuit metrics to region level using parallel processing.
 

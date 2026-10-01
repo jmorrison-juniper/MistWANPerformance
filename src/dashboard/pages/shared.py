@@ -6,12 +6,12 @@ Includes navigation, status cards, chart builders, and styling constants.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from dash import dcc, html
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
+from dash import dcc, html
 from plotly.subplots import make_subplots
 
 logger = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ class NavigationBar:
 
     @staticmethod
     def build(
-        current_page: str, breadcrumbs: List[Dict[str, str]], show_home: bool = True
+        current_page: str, breadcrumbs: list[dict[str, str]], show_home: bool = True
     ) -> dbc.Navbar:
         """
         Build navigation bar with breadcrumbs.
@@ -115,7 +115,7 @@ class StatusCards:
     """Reusable status card components."""
 
     @staticmethod
-    def build_card(card_id: str, title: str, value: str, status: Optional[str] = None) -> dbc.Card:
+    def build_card(card_id: str, title: str, value: str, status: str | None = None) -> dbc.Card:
         """
         Build a status overview card.
 
@@ -146,9 +146,9 @@ class StatusCards:
     def build_metric_card(
         title: str,
         value: str,
-        subtitle: Optional[str] = None,
-        trend: Optional[str] = None,
-        status: Optional[str] = None,
+        subtitle: str | None = None,
+        trend: str | None = None,
+        status: str | None = None,
     ) -> dbc.Card:
         """
         Build a metric card with optional trend indicator.
@@ -205,7 +205,7 @@ class ChartBuilders:
 
     @staticmethod
     def build_bandwidth_timeseries(
-        timeseries_data: List[Dict], title: str = "Bandwidth"
+        timeseries_data: list[dict], title: str = "Bandwidth"
     ) -> go.Figure:
         """
         Build bandwidth time-series chart with rx/tx.
@@ -221,7 +221,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
                 for t in timeseries_data
             ]
             rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
@@ -269,7 +269,7 @@ class ChartBuilders:
 
     @staticmethod
     def build_quality_timeseries(
-        timeseries_data: List[Dict], title: str = "Quality Metrics"
+        timeseries_data: list[dict], title: str = "Quality Metrics"
     ) -> go.Figure:
         """
         Build quality time-series chart with loss/latency/jitter.
@@ -285,7 +285,7 @@ class ChartBuilders:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
                 for t in timeseries_data
             ]
             loss_pct = [t.get("loss", 0) for t in timeseries_data]
@@ -402,7 +402,7 @@ class LinkBuilder:
     """Build clickable links for navigation to detail pages."""
 
     @staticmethod
-    def gateway_link(gateway_id: str, gateway_name: str, site_id: Optional[str] = None) -> dcc.Link:
+    def gateway_link(gateway_id: str, gateway_name: str, site_id: str | None = None) -> dcc.Link:
         """
         Build a clickable link to gateway detail page.
 
@@ -427,7 +427,7 @@ class LinkBuilder:
 
     @staticmethod
     def port_link(
-        site_id: str, port_id: str, port_name: str, gateway_id: Optional[str] = None
+        site_id: str, port_id: str, port_name: str, gateway_id: str | None = None
     ) -> dcc.Link:
         """
         Build a clickable link to port detail page.
@@ -480,8 +480,8 @@ class PageLayout:
     def wrap(
         page_id: str,
         title: str,
-        breadcrumbs: List[Dict[str, str]],
-        content: List[Any],
+        breadcrumbs: list[dict[str, str]],
+        content: list[Any],
         refresh_interval: int = REFRESH_INTERVAL_MS,
     ) -> html.Div:
         """

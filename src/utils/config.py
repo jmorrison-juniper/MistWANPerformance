@@ -8,7 +8,6 @@ and configuration files.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -32,7 +31,7 @@ class SnowflakeConfig:
     database: str = "WAN_PERFORMANCE"
     schema: str = "RETAIL_WAN"
     warehouse: str = "COMPUTE_WH"
-    role: Optional[str] = None
+    role: str | None = None
 
 
 @dataclass
@@ -88,15 +87,15 @@ class Config:
     Loads configuration from environment variables with .env file support.
     """
 
-    mist: Optional[MistConfig] = field(default=None)
-    snowflake: Optional[SnowflakeConfig] = field(default=None)
+    mist: MistConfig | None = field(default=None)
+    snowflake: SnowflakeConfig | None = field(default=None)
     redis: RedisConfig = field(default_factory=RedisConfig)
     thresholds: ThresholdConfig = field(default_factory=ThresholdConfig)
     operational: OperationalConfig = field(default_factory=OperationalConfig)
 
     # Threshold overrides by region/store type
-    region_overrides: Dict[str, Dict[str, float]] = field(default_factory=dict)
-    store_type_overrides: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    region_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
+    store_type_overrides: dict[str, dict[str, float]] = field(default_factory=dict)
 
     # Paths
     data_dir: Path = field(default_factory=lambda: Path("data"))
@@ -198,8 +197,8 @@ class Config:
         self,
         metric: str,
         level: str,
-        region: Optional[str] = None,
-        store_type: Optional[str] = None,
+        region: str | None = None,
+        store_type: str | None = None,
     ) -> float:
         """
         Get threshold value with support for region/store type overrides.

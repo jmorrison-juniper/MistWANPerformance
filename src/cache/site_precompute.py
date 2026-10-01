@@ -12,8 +12,8 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,11 @@ class SiteSlePrecomputer:
         self.cycle_delay = cycle_delay
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._current_index = 0
         self._cycle_count = 0
         self._sites_processed = 0
-        self._last_cycle_time: Optional[float] = None
+        self._last_cycle_time: float | None = None
 
     def start(self) -> None:
         """Start the background precomputation thread."""
@@ -130,7 +130,7 @@ class SiteSlePrecomputer:
         except Exception as error:
             logger.debug(f"Failed to precompute SLE for {site_id}: {error}")
 
-    def _compute_site_sle_details(self, site_id: str) -> Dict[str, Any]:
+    def _compute_site_sle_details(self, site_id: str) -> dict[str, Any]:
         """Compute formatted SLE details for a site."""
         if not hasattr(self.data_provider, "redis_cache") or not self.data_provider.redis_cache:
             return {"available": False, "error": "Cache not available"}
@@ -159,13 +159,13 @@ class SiteSlePrecomputer:
                 "impacted_interfaces": interfaces,
                 "last_fetch_timestamp": last_fetch,
                 "cache_fresh": cache.is_site_sle_cache_fresh(site_id),
-                "precomputed_at": datetime.now(timezone.utc).isoformat(),
+                "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as error:
             return {"available": False, "error": str(error)}
 
-    def _store_precomputed(self, site_id: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
         """Store precomputed data in Redis."""
         key = f"{SITE_SLE_PREFIX}{site_id}"
 
@@ -175,7 +175,7 @@ class SiteSlePrecomputer:
         except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id}: {error}")
 
-    def get_precomputed(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
         """Get precomputed SLE data for a site."""
         key = f"{SITE_SLE_PREFIX}{site_id}"
 
@@ -189,7 +189,7 @@ class SiteSlePrecomputer:
 
         return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get worker status for monitoring."""
         return {
             "running": self._running,
@@ -224,11 +224,11 @@ class SiteVpnPrecomputer:
         self.cycle_delay = cycle_delay
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._current_index = 0
         self._cycle_count = 0
         self._sites_processed = 0
-        self._last_cycle_time: Optional[float] = None
+        self._last_cycle_time: float | None = None
 
     def start(self) -> None:
         """Start the background precomputation thread."""
@@ -308,7 +308,7 @@ class SiteVpnPrecomputer:
         except Exception as error:
             logger.debug(f"Failed to precompute VPN for {site_id}: {error}")
 
-    def _compute_site_vpn_data(self, site_id: str) -> Dict[str, Any]:
+    def _compute_site_vpn_data(self, site_id: str) -> dict[str, Any]:
         """Compute formatted VPN peer data for a site."""
         if not hasattr(self.data_provider, "redis_cache") or not self.data_provider.redis_cache:
             return {"available": False, "peers": [], "error": "Cache not available"}
@@ -346,13 +346,13 @@ class SiteVpnPrecomputer:
                 "site_name": site_name,
                 "peer_count": len(table_data),
                 "peers": table_data,
-                "precomputed_at": datetime.now(timezone.utc).isoformat(),
+                "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
         except Exception as error:
             return {"available": False, "peers": [], "error": str(error)}
 
-    def _store_precomputed(self, site_id: str, data: Dict[str, Any]) -> None:
+    def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
         """Store precomputed data in Redis."""
         key = f"{SITE_VPN_PREFIX}{site_id}"
 
@@ -362,7 +362,7 @@ class SiteVpnPrecomputer:
         except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id}: {error}")
 
-    def get_precomputed(self, site_id: str) -> Optional[Dict[str, Any]]:
+    def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
         """Get precomputed VPN data for a site."""
         key = f"{SITE_VPN_PREFIX}{site_id}"
 
@@ -376,7 +376,7 @@ class SiteVpnPrecomputer:
 
         return None
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get worker status for monitoring."""
         return {
             "running": self._running,

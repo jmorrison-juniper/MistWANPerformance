@@ -8,8 +8,7 @@ and reporting system.
 import argparse
 import logging
 import sys
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 from src.utils.config import Config
 from src.utils.logging_config import setup_logging
@@ -73,8 +72,8 @@ Examples:
 
 def run_collection(
     config: Config,
-    start_time: Optional[datetime] = None,
-    end_time: Optional[datetime] = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
     dry_run: bool = False,
 ) -> bool:
     """
@@ -177,7 +176,7 @@ def main() -> int:
 
     logger.info("=" * 60)
     logger.info("MistWANPerformance - Starting")
-    logger.info(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
+    logger.info(f"Timestamp: {datetime.now(UTC).isoformat()}")
     logger.info("=" * 60)
 
     # Load configuration

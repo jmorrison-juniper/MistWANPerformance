@@ -1,7 +1,7 @@
 from dash.development.base_component import Component
 
-from src.dashboard.data_provider import DashboardDataProvider
 from src.dashboard.app import WANPerformanceDashboard
+from src.dashboard.data_provider import DashboardDataProvider
 from src.dashboard.pages.detail_data import (
     shape_gateway_detail,
     shape_port_detail,

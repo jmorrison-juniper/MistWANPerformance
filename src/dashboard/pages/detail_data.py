@@ -6,12 +6,12 @@ without a live Mist API or Redis cache.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import quote, unquote
 
-from dash import dcc
 import plotly.graph_objects as go
+from dash import dcc
 from plotly.subplots import make_subplots
 
 from src.dashboard.pages.gateway import GatewayPage
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 EMPTY = "-"
 
 
-def _first(record: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> Any:
+def _first(record: dict[str, Any] | None, *keys: str, default: Any = None) -> Any:
     if not record:
         return default
     for key in keys:
@@ -83,11 +83,11 @@ def _fmt_timestamp(value: Any) -> str:
     if value in (None, ""):
         return EMPTY
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        return datetime.fromtimestamp(value, tz=UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
     return str(value)
 
 
-def _badge(status: str) -> Dict[str, str]:
+def _badge(status: str) -> dict[str, str]:
     normalized = (status or "unknown").lower()
     if normalized in {"up", "online", "connected", "true", "ok", "healthy"}:
         css = "badge bg-success"
@@ -104,7 +104,7 @@ def _badge(status: str) -> Dict[str, str]:
     return {"text": label, "className": css}
 
 
-def _site_name(provider: Any, site_id: Optional[str]) -> str:
+def _site_name(provider: Any, site_id: str | None) -> str:
     if not site_id:
         return EMPTY
     lookup = getattr(provider, "site_lookup", {}) or {}
@@ -119,7 +119,7 @@ def _site_name(provider: Any, site_id: Optional[str]) -> str:
     return site_id
 
 
-def _gateway_inventory(provider: Any) -> List[Dict[str, Any]]:
+def _gateway_inventory(provider: Any) -> list[dict[str, Any]]:
     for attr in ("gateways", "gateway_inventory"):
         value = getattr(provider, attr, None)
         if isinstance(value, dict):
@@ -133,7 +133,7 @@ def _gateway_inventory(provider: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def _gateway_matches(gateway: Dict[str, Any], gateway_id: str) -> bool:
+def _gateway_matches(gateway: dict[str, Any], gateway_id: str) -> bool:
     candidates = {
         str(_first(gateway, "id", "gateway_id", "device_id", default="")),
         str(_first(gateway, "mac", "device_mac", default="")),
@@ -144,15 +144,15 @@ def _gateway_matches(gateway: Dict[str, Any], gateway_id: str) -> bool:
     )
 
 
-def _find_gateway(provider: Any, gateway_id: str) -> Optional[Dict[str, Any]]:
+def _find_gateway(provider: Any, gateway_id: str) -> dict[str, Any] | None:
     for gateway in _gateway_inventory(provider):
         if _gateway_matches(gateway, gateway_id):
             return gateway
     return None
 
 
-def _site_port_records(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any]]:
-    records: List[Dict[str, Any]] = []
+def _site_port_records(provider: Any, site_id: str | None) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
     for attr in ("port_stats", "ports"):
         value = getattr(provider, attr, None)
         if isinstance(value, dict):
@@ -172,14 +172,14 @@ def _site_port_records(provider: Any, site_id: Optional[str]) -> List[Dict[str, 
             port for port in records if not port.get("site_id") or port.get("site_id") == site_id
         ]
 
-    unique: Dict[tuple, Dict[str, Any]] = {}
+    unique: dict[tuple, dict[str, Any]] = {}
     for port in records:
         key = (port.get("site_id"), port.get("mac"), port.get("port_id") or port.get("name"))
         unique[key] = port
     return list(unique.values())
 
 
-def _port_matches(port: Dict[str, Any], port_id: str, gateway_id: Optional[str] = None) -> bool:
+def _port_matches(port: dict[str, Any], port_id: str, gateway_id: str | None = None) -> bool:
     names = {str(_first(port, "port_id", "name", "interface", default=""))}
     if port_id not in names:
         return False
@@ -197,10 +197,10 @@ def _port_matches(port: Dict[str, Any], port_id: str, gateway_id: Optional[str] 
 
 def _find_port(
     provider: Any,
-    site_id: Optional[str],
+    site_id: str | None,
     port_id: str,
-    gateway_id: Optional[str] = None,
-) -> Optional[Dict[str, Any]]:
+    gateway_id: str | None = None,
+) -> dict[str, Any] | None:
     for port in _site_port_records(provider, site_id):
         if _port_matches(port, port_id, gateway_id):
             return port
@@ -209,10 +209,10 @@ def _find_port(
 
 def _gateway_ports(
     provider: Any,
-    site_id: Optional[str],
+    site_id: str | None,
     gateway_id: str,
-    gateway: Optional[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
+    gateway: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
     gateway_mac = _first(gateway, "mac", "device_mac", default=gateway_id)
     ports = []
     for port in _site_port_records(provider, site_id):
@@ -224,8 +224,8 @@ def _gateway_ports(
     return ports
 
 
-def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any]]:
-    peers: List[Dict[str, Any]] = []
+def _site_vpn_peers(provider: Any, site_id: str | None) -> list[dict[str, Any]]:
+    peers: list[dict[str, Any]] = []
     for attr in ("vpn_peers", "peers"):
         value = getattr(provider, attr, None)
         if isinstance(value, dict):
@@ -243,7 +243,7 @@ def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any
             peer for peer in peers if not peer.get("site_id") or peer.get("site_id") == site_id
         ]
 
-    unique: Dict[tuple, Dict[str, Any]] = {}
+    unique: dict[tuple, dict[str, Any]] = {}
     for peer in peers:
         key = (
             peer.get("site_id"),
@@ -254,13 +254,13 @@ def _site_vpn_peers(provider: Any, site_id: Optional[str]) -> List[Dict[str, Any
     return list(unique.values())
 
 
-def _peer_id(peer: Dict[str, Any]) -> str:
+def _peer_id(peer: dict[str, Any]) -> str:
     return str(
         _first(peer, "peer_id", "peer_mac", "mac", "peer_router_name", "peer_name", default="")
     )
 
 
-def _find_peer(provider: Any, site_id: Optional[str], peer_id: str) -> Optional[Dict[str, Any]]:
+def _find_peer(provider: Any, site_id: str | None, peer_id: str) -> dict[str, Any] | None:
     normalized = peer_id.lower().replace(":", "")
     for peer in _site_vpn_peers(provider, site_id):
         candidates = {
@@ -275,7 +275,7 @@ def _find_peer(provider: Any, site_id: Optional[str], peer_id: str) -> Optional[
     return None
 
 
-def _call_timeseries(method: Any, **kwargs: Any) -> List[Dict[str, Any]]:
+def _call_timeseries(method: Any, **kwargs: Any) -> list[dict[str, Any]]:
     try:
         return method(**kwargs) or []
     except TypeError:
@@ -287,18 +287,18 @@ def _call_timeseries(method: Any, **kwargs: Any) -> List[Dict[str, Any]]:
         return method(**compact) or []
 
 
-def _time_bounds(hours: int) -> Dict[str, int]:
-    end_time = int(datetime.now(timezone.utc).timestamp())
+def _time_bounds(hours: int) -> dict[str, int]:
+    end_time = int(datetime.now(UTC).timestamp())
     return {"start_time": end_time - int(hours or 24) * 3600, "end_time": end_time}
 
 
 def _gateway_bandwidth(
-    provider: Any, site_id: Optional[str], gateway_id: str, ports: List[Dict[str, Any]]
+    provider: Any, site_id: str | None, gateway_id: str, ports: list[dict[str, Any]]
 ) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_gateway_port_timeseries"):
         return ChartBuilders.build_empty_chart("No gateway bandwidth data available")
 
-    totals: Dict[Any, Dict[str, Any]] = {}
+    totals: dict[Any, dict[str, Any]] = {}
     bounds = _time_bounds(24)
     for port in ports or [{"mac": gateway_id, "port_id": ""}]:
         device_mac = _first(port, "mac", "device_mac", default=gateway_id)
@@ -318,14 +318,14 @@ def _gateway_bandwidth(
 
 
 def _device_metrics(
-    provider: Any, site_id: Optional[str], gateway_id: str, gateway: Optional[Dict[str, Any]]
+    provider: Any, site_id: str | None, gateway_id: str, gateway: dict[str, Any] | None
 ) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_device_metrics_timeseries"):
         return ChartBuilders.build_empty_chart("No device metrics data available")
 
     device_mac = _first(gateway, "mac", "device_mac", default=gateway_id)
     bounds = _time_bounds(24)
-    series: Dict[str, List[Dict[str, Any]]] = {}
+    series: dict[str, list[dict[str, Any]]] = {}
     for metric in ("cpu", "memory"):
         series[metric] = _call_timeseries(
             provider.get_device_metrics_timeseries,
@@ -344,7 +344,7 @@ def _device_metrics(
         fig.add_trace(
             go.Scatter(
                 x=[
-                    datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=timezone.utc)
+                    datetime.fromtimestamp(_as_float(p.get("timestamp")), tz=UTC)
                     for p in points
                 ],
                 y=[
@@ -366,7 +366,7 @@ def _device_metrics(
     return fig
 
 
-def shape_gateway_detail(provider: Any, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def shape_gateway_detail(provider: Any, context: dict[str, Any] | None) -> dict[str, Any]:
     gateway_id = (context or {}).get("gateway_id", "")
     site_id = (context or {}).get("site_id")
     if not provider:
@@ -426,7 +426,7 @@ def shape_gateway_detail(provider: Any, context: Optional[Dict[str, Any]]) -> Di
         return _gateway_empty(gateway_id, site_id, "Unable to load gateway data")
 
 
-def _gateway_empty(gateway_id: str, site_id: Optional[str], message: str) -> Dict[str, Any]:
+def _gateway_empty(gateway_id: str, site_id: str | None, message: str) -> dict[str, Any]:
     return {
         "message": message,
         "gateway_name": gateway_id[:8] + "..." if gateway_id else EMPTY,
@@ -447,7 +447,7 @@ def _gateway_empty(gateway_id: str, site_id: Optional[str], message: str) -> Dic
     }
 
 
-def _format_gateway_peer_row(site_id: str, peer: Dict[str, Any]) -> Dict[str, Any]:
+def _format_gateway_peer_row(site_id: str, peer: dict[str, Any]) -> dict[str, Any]:
     peer_id = _peer_id(peer) or "unknown"
     peer_name = _first(
         peer, "peer_name", "peer_site_name", "peer_router_name", "vpn_name", default=peer_id
@@ -466,8 +466,8 @@ def _format_gateway_peer_row(site_id: str, peer: Dict[str, Any]) -> Dict[str, An
 
 
 def shape_port_detail(
-    provider: Any, context: Optional[Dict[str, Any]], hours: int = 24
-) -> Dict[str, Any]:
+    provider: Any, context: dict[str, Any] | None, hours: int = 24
+) -> dict[str, Any]:
     site_id = (context or {}).get("site_id")
     port_id = unquote((context or {}).get("port_id", ""))
     gateway_id = (context or {}).get("gateway_id")
@@ -535,8 +535,8 @@ def shape_port_detail(
 
 
 def _port_empty(
-    site_id: Optional[str], port_id: str, gateway_id: Optional[str], message: str
-) -> Dict[str, Any]:
+    site_id: str | None, port_id: str, gateway_id: str | None, message: str
+) -> dict[str, Any]:
     return {
         "message": message,
         "port_name": port_id or EMPTY,
@@ -579,7 +579,7 @@ def _port_empty(
 
 
 def _port_bandwidth(
-    provider: Any, site_id: Optional[str], port: Dict[str, Any], hours: int
+    provider: Any, site_id: str | None, port: dict[str, Any], hours: int
 ) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_gateway_port_timeseries"):
         return ChartBuilders.build_empty_chart("No bandwidth data available")
@@ -594,8 +594,8 @@ def _port_bandwidth(
 
 
 def shape_vpn_peer_detail(
-    provider: Any, context: Optional[Dict[str, Any]], hours: int = 24
-) -> Dict[str, Any]:
+    provider: Any, context: dict[str, Any] | None, hours: int = 24
+) -> dict[str, Any]:
     site_id = (context or {}).get("site_id")
     peer_id = unquote((context or {}).get("peer_id", ""))
     if not provider:
@@ -649,7 +649,7 @@ def shape_vpn_peer_detail(
         return _vpn_empty(site_id, peer_id, "Unable to load VPN peer data")
 
 
-def _vpn_empty(site_id: Optional[str], peer_id: str, message: str) -> Dict[str, Any]:
+def _vpn_empty(site_id: str | None, peer_id: str, message: str) -> dict[str, Any]:
     return {
         "message": message,
         "peer_name": peer_id or EMPTY,
@@ -683,7 +683,7 @@ def _vpn_empty(site_id: Optional[str], peer_id: str, message: str) -> Dict[str, 
 
 
 def _vpn_quality(
-    provider: Any, site_id: Optional[str], peer: Dict[str, Any], hours: int
+    provider: Any, site_id: str | None, peer: dict[str, Any], hours: int
 ) -> go.Figure:
     if not provider or not site_id or not hasattr(provider, "get_vpn_peer_timeseries"):
         return ChartBuilders.build_empty_chart("No VPN quality data available")

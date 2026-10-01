@@ -15,31 +15,27 @@ import csv
 import io
 import logging
 import re
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, cast
-from urllib.parse import parse_qs, unquote, urlparse
+from datetime import UTC, datetime
+from typing import Any, cast
+from urllib.parse import parse_qs, unquote
 
 import dash
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc  # type: ignore[import-untyped]
-import plotly.express as px
 import plotly.graph_objects as go
+from dash import Input, Output, State, dash_table, dcc, html
+from dash.exceptions import PreventUpdate
 from plotly.subplots import make_subplots
 
-from src.views.current_state import CurrentStateViews, CircuitCurrentState, AlertSeverity
-from src.views.rankings import RankingViews, RankedCircuit
-from src.utils.performance import PerformanceTimer, timed, format_perf_report
-from src.dashboard.pages.shared import COLORS, REFRESH_INTERVAL_MS, NavigationBar
-from src.dashboard.pages.overview import OverviewPage
-from src.dashboard.pages.gateway import GatewayPage
-from src.dashboard.pages.port import PortPage
-from src.dashboard.pages.vpn_peer import VPNPeerPage
 from src.dashboard.pages.detail_data import (
     shape_gateway_detail,
     shape_port_detail,
     shape_vpn_peer_detail,
 )
+from src.dashboard.pages.gateway import GatewayPage
+from src.dashboard.pages.overview import OverviewPage
+from src.dashboard.pages.port import PortPage
+from src.dashboard.pages.vpn_peer import VPNPeerPage
+from src.utils.performance import PerformanceTimer
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +81,7 @@ class WANPerformanceDashboard:
     }
 
     def __init__(
-        self, app_name: str = "WAN Performance Dashboard", data_provider: Optional[Any] = None
+        self, app_name: str = "WAN Performance Dashboard", data_provider: Any | None = None
     ):
         """
         Initialize the dashboard.
@@ -522,7 +518,7 @@ class WANPerformanceDashboard:
                                         "borderRadius": "6px",
                                         "border": f"2px solid {self.COLORS['primary']}",
                                         "fontSize": "0.95rem",
-                                        "boxShadow": f"0 2px 8px rgba(226, 0, 116, 0.2)",
+                                        "boxShadow": "0 2px 8px rgba(226, 0, 116, 0.2)",
                                     },
                                 )
                             ],
@@ -1242,7 +1238,7 @@ class WANPerformanceDashboard:
         )
 
     def _build_status_card(
-        self, card_id: str, title: str, value: str, status: Optional[str] = None
+        self, card_id: str, title: str, value: str, status: str | None = None
     ) -> dbc.Card:
         """Build a status overview card."""
         color = self.COLORS.get(status, "#6c757d") if status else "#6c757d"
@@ -1259,7 +1255,7 @@ class WANPerformanceDashboard:
             className="text-center",
         )
 
-    def _build_region_drilldown(self, region: str, data: Dict) -> html.Div:
+    def _build_region_drilldown(self, region: str, data: dict) -> html.Div:
         """Build region drilldown view with site list."""
         sites = data.get("region_sites", {}).get(region, [])
 
@@ -1315,7 +1311,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_site_drilldown(self, site_id: str, data: Dict) -> html.Div:
+    def _build_site_drilldown(self, site_id: str, data: dict) -> html.Div:
         """Build site drilldown view with circuit list."""
         circuits = data.get("site_circuits", {}).get(site_id, [])
         site_name = data.get("site_names", {}).get(site_id, site_id)
@@ -1382,7 +1378,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_circuit_drilldown(self, circuit_id: str, data: Dict) -> html.Div:
+    def _build_circuit_drilldown(self, circuit_id: str, data: dict) -> html.Div:
         """Build circuit drilldown view with time series."""
         time_series = data.get("circuit_timeseries", {}).get(circuit_id, [])
 
@@ -1426,7 +1422,7 @@ class WANPerformanceDashboard:
             ]
         )
 
-    def _build_circuit_timeseries_chart(self, time_series: List[Dict]) -> go.Figure:
+    def _build_circuit_timeseries_chart(self, time_series: list[dict]) -> go.Figure:
         """Build time series chart for circuit metrics."""
         fig = make_subplots(
             rows=3,
@@ -1572,7 +1568,7 @@ class WANPerformanceDashboard:
 
             last_fetch_text = ""
             if last_fetch:
-                fetch_time = datetime.fromtimestamp(last_fetch, tz=timezone.utc)
+                fetch_time = datetime.fromtimestamp(last_fetch, tz=UTC)
                 last_fetch_text = fetch_time.strftime("%Y-%m-%d %H:%M UTC")
 
             return html.Div(
@@ -1821,7 +1817,7 @@ class WANPerformanceDashboard:
                     continue
 
                 ts = start_time + (index * interval)
-                dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+                dt = datetime.fromtimestamp(ts, tz=UTC)
                 timestamps.append(dt)
 
                 if use_calculated:
@@ -2479,7 +2475,7 @@ class WANPerformanceDashboard:
             className="mt-4",
         )
 
-    def _get_sle_cache_status(self) -> Optional[Dict[str, int]]:
+    def _get_sle_cache_status(self) -> dict[str, int] | None:
         """
         Get SLE cache status (fresh/stale/missing counts).
 
@@ -2691,7 +2687,7 @@ class WANPerformanceDashboard:
         )
         def update_dashboard(n_intervals):
             """Update all dashboard components."""
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             timestamp = now.strftime("%Y-%m-%d %H:%M:%S UTC")
 
             # Handle case where data provider is not yet available
@@ -2830,7 +2826,6 @@ class WANPerformanceDashboard:
         )
         def update_status_bar(n_intervals):
             """Update backend status bar indicators."""
-            from src.cache.redis_cache import RedisCache
             from src.api.mist_client import get_rate_limit_status
 
             # Backend connection status
@@ -2951,7 +2946,7 @@ class WANPerformanceDashboard:
                         if hasattr(self.data_provider, attr)
                     ]
                     if not worker_attrs:
-                        logger.debug(f"[STATUS] No worker attributes found on data_provider")
+                        logger.debug("[STATUS] No worker attributes found on data_provider")
 
                     # SLE background worker - shows current site being collected
                     if (
@@ -2966,7 +2961,7 @@ class WANPerformanceDashboard:
                         current_site = sle_status.get("current_site", "")
 
                         if sle_rate_limited:
-                            activity_parts.append(f"SLE: RATE LIMITED")
+                            activity_parts.append("SLE: RATE LIMITED")
                         elif sle_status.get("running", False) and current_site:
                             # Show current site being collected (truncate if long)
                             site_display = (
@@ -3002,7 +2997,7 @@ class WANPerformanceDashboard:
                         vpn_cycles = vpn_status.get("collection_cycles", 0)
                         vpn_peers = vpn_status.get("total_peers_collected", 0)
                         if vpn_status.get("running", False):
-                            activity_parts.append(f"VPN: collecting")
+                            activity_parts.append("VPN: collecting")
                         else:
                             activity_parts.append(f"VPN: idle ({vpn_peers})")
 
@@ -3089,7 +3084,7 @@ class WANPerformanceDashboard:
                         break
 
                 # Calculate time range
-                end_time = int(datetime.now(timezone.utc).timestamp())
+                end_time = int(datetime.now(UTC).timestamp())
                 start_time = end_time - (hours * 3600)
 
                 # Get time-series data from data provider
@@ -3135,7 +3130,7 @@ class WANPerformanceDashboard:
                         break
 
                 # Calculate time range
-                end_time = int(datetime.now(timezone.utc).timestamp())
+                end_time = int(datetime.now(UTC).timestamp())
                 start_time = end_time - (hours * 3600)
 
                 # Get VPN time-series data from data provider
@@ -3356,7 +3351,7 @@ class WANPerformanceDashboard:
             """Update breadcrumb navigation based on drilldown state."""
             level = state.get("level", "overview")
 
-            items: List[Any] = [
+            items: list[Any] = [
                 dbc.Button("Overview", id="nav-overview", color="link", className="p-0")
             ]
 
@@ -3545,7 +3540,7 @@ class WANPerformanceDashboard:
                 ["site_name", "site_id", "gateway_health", "wan_link", "app_health", "worst_score"],
             )
 
-    def _generate_csv_download(self, data: List[Dict], filename: str, columns: List[str]) -> Dict:
+    def _generate_csv_download(self, data: list[dict], filename: str, columns: list[str]) -> dict:
         """
         Generate CSV download data.
 
@@ -3567,7 +3562,7 @@ class WANPerformanceDashboard:
 
         return {"content": output.getvalue(), "filename": filename, "type": "text/csv"}
 
-    def _add_port_links_to_congested(self, congested_records: List[Dict]) -> List[Dict]:
+    def _add_port_links_to_congested(self, congested_records: list[dict]) -> list[dict]:
         """
         Add clickable markdown links to congested circuit records.
 
@@ -3595,7 +3590,7 @@ class WANPerformanceDashboard:
             result.append(enriched)
         return result
 
-    def _build_alerts_list(self, alerts: List[Dict]) -> html.Div:
+    def _build_alerts_list(self, alerts: list[dict]) -> html.Div:
         """Build the alerts list component."""
         if not alerts:
             return html.Div(html.P("No active alerts", className="text-muted"))
@@ -3628,7 +3623,7 @@ class WANPerformanceDashboard:
 
         return html.Div(alert_items)
 
-    def _build_utilization_chart(self, distribution: Dict) -> go.Figure:
+    def _build_utilization_chart(self, distribution: dict) -> go.Figure:
         """Build utilization distribution chart with log-scaled Y-axis."""
         if not distribution:
             distribution = {
@@ -3694,7 +3689,7 @@ class WANPerformanceDashboard:
 
         return fig
 
-    def _build_region_chart(self, region_data: List[Dict]) -> go.Figure:
+    def _build_region_chart(self, region_data: list[dict]) -> go.Figure:
         """Build region summary chart (clickable for drilldown)."""
         if not region_data:
             region_data = [{"region": "No Data", "avg_utilization": 0, "circuit_count": 0}]
@@ -3730,7 +3725,7 @@ class WANPerformanceDashboard:
 
         return fig
 
-    def _build_trends_chart(self, trends: List[Dict]) -> go.Figure:
+    def _build_trends_chart(self, trends: list[dict]) -> go.Figure:
         """Build trends line chart for real-time utilization %."""
         fig = go.Figure()
 
@@ -3793,7 +3788,7 @@ class WANPerformanceDashboard:
 
         return fig
 
-    def _build_throughput_chart(self, throughput: List[Dict]) -> go.Figure:
+    def _build_throughput_chart(self, throughput: list[dict]) -> go.Figure:
         """Build throughput line chart for aggregate traffic (Mbps)."""
         fig = go.Figure()
 
@@ -3850,7 +3845,7 @@ class WANPerformanceDashboard:
         return fig
 
     def _build_gateway_bandwidth_chart(
-        self, timeseries_data: List[Dict], site_name: str = "Selected Site"
+        self, timeseries_data: list[dict], site_name: str = "Selected Site"
     ) -> go.Figure:
         """
         Build gateway port bandwidth time-series chart.
@@ -3866,7 +3861,7 @@ class WANPerformanceDashboard:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
                 for t in timeseries_data
             ]
             rx_mbps = [t.get("rx_bps", 0) / 1_000_000 for t in timeseries_data]
@@ -3924,7 +3919,7 @@ class WANPerformanceDashboard:
         return fig
 
     def _build_vpn_quality_chart(
-        self, timeseries_data: List[Dict], site_name: str = "Selected Site"
+        self, timeseries_data: list[dict], site_name: str = "Selected Site"
     ) -> go.Figure:
         """
         Build VPN peer quality time-series chart with loss/latency/jitter.
@@ -3940,7 +3935,7 @@ class WANPerformanceDashboard:
 
         if timeseries_data:
             timestamps = [
-                datetime.fromtimestamp(t.get("timestamp", 0), tz=timezone.utc)
+                datetime.fromtimestamp(t.get("timestamp", 0), tz=UTC)
                 for t in timeseries_data
             ]
             loss_pct = [t.get("loss", 0) for t in timeseries_data]

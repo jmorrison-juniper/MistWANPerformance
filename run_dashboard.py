@@ -24,26 +24,24 @@ import os
 import signal
 import sys
 import threading
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import List, Tuple, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
+from typing import Any
 
-from src.utils.logging_config import setup_logging
-from src.utils.config import Config
-from src.dashboard.app import WANPerformanceDashboard
-from src.dashboard.data_provider import DashboardDataProvider
-from src.models.dimensions import DimSite, DimCircuit
-from src.models.facts import CircuitUtilizationRecord
-
-# Import both legacy and async precomputers
-from src.cache.dashboard_precompute import DashboardPrecomputer
-from src.cache.site_precompute import SiteSlePrecomputer, SiteVpnPrecomputer
 from src.cache.async_precompute import (
     AsyncDashboardPrecomputer,
     AsyncSiteSlePrecomputer,
     AsyncSiteVpnPrecomputer,
     shutdown_process_pool,
 )
+
+# Import both legacy and async precomputers
+from src.dashboard.app import WANPerformanceDashboard
+from src.dashboard.data_provider import DashboardDataProvider
+from src.models.dimensions import DimCircuit, DimSite
+from src.models.facts import CircuitUtilizationRecord
+from src.utils.config import Config
+from src.utils.logging_config import setup_logging
 
 # Global references for background refresh and data loading
 _background_worker = None
@@ -60,8 +58,8 @@ _shutdown_event = threading.Event()
 _dashboard_app = None  # Store dashboard for WSGI access
 
 # Async event loop for precomputers (runs in dedicated thread)
-_async_loop: Optional[asyncio.AbstractEventLoop] = None
-_async_thread: Optional[threading.Thread] = None
+_async_loop: asyncio.AbstractEventLoop | None = None
+_async_thread: threading.Thread | None = None
 
 # CPU count for parallel processing (leave 1 core for system)
 CPU_COUNT = max(1, (os.cpu_count() or 4) - 1)
@@ -535,8 +533,8 @@ def load_from_cache(cache, config: Config) -> tuple:
 
 
 def _process_port_batch(
-    port_batch: List[Dict[str, Any]], site_lookup_keys: set, current_hour: str
-) -> Tuple[List[dict], List[dict], int]:
+    port_batch: list[dict[str, Any]], site_lookup_keys: set, current_hour: str
+) -> tuple[list[dict], list[dict], int]:
     """
     Process a batch of port stats in parallel.
 
@@ -652,7 +650,7 @@ def process_port_stats_to_utilization(
         Tuple of (circuits list, utilization_records list, wan_down_count, wan_disabled_count)
     """
     logger = logging.getLogger(__name__)
-    current_hour = datetime.now(timezone.utc).strftime("%Y%m%d%H")
+    current_hour = datetime.now(UTC).strftime("%Y%m%d%H")
 
     # Log diagnostic info (sample first 500)
     port_usage_counts = {}
@@ -1002,7 +1000,7 @@ def load_live_data(config: Config) -> tuple:
 
             cache = get_cache(config.redis.url)
             if cache.is_connected():
-                logger.info(f"[OK] Redis cache connected")
+                logger.info("[OK] Redis cache connected")
 
                 # Check persistence configuration and warn if data at risk
                 check_redis_persistence(cache, logger)
@@ -1324,7 +1322,7 @@ def load_data_async(data_provider: DashboardDataProvider, config: Config):
                         "status": "running",
                         "current_sites": sites_refreshed[:10],
                         "current_interfaces": interfaces_refreshed[:10],
-                        "last_refresh_time": datetime.now(timezone.utc).isoformat(),
+                        "last_refresh_time": datetime.now(UTC).isoformat(),
                     }
 
                 # Store trends snapshot after each refresh cycle

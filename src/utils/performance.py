@@ -18,9 +18,9 @@ Usage:
 
 import logging
 import time
-from contextlib import contextmanager
+from collections.abc import Callable
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class PerformanceMetrics:
     def __new__(cls) -> "PerformanceMetrics":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance._metrics: Dict[str, List[float]] = {}
+            cls._instance._metrics: dict[str, list[float]] = {}
             cls._instance._enabled = True
         return cls._instance
 
@@ -55,7 +55,7 @@ class PerformanceMetrics:
 
         self._metrics[operation].append(elapsed_ms)
 
-    def get_stats(self, operation: str) -> Dict[str, float]:
+    def get_stats(self, operation: str) -> dict[str, float]:
         """
         Get statistics for an operation.
 
@@ -74,7 +74,7 @@ class PerformanceMetrics:
             "last": measurements[-1],
         }
 
-    def get_all_stats(self) -> Dict[str, Dict[str, float]]:
+    def get_all_stats(self) -> dict[str, dict[str, float]]:
         """Get statistics for all recorded operations."""
         return {op: self.get_stats(op) for op in self._metrics}
 

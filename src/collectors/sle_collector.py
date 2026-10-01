@@ -15,9 +15,9 @@ Endpoints used:
 
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Any
 
 from src.api.mist_client import MistAPIClient
 from src.cache.redis_cache import RedisCache
@@ -45,7 +45,7 @@ class SLECollectionResult:
     histogram_collected: bool
     gateways_collected: bool
     interfaces_collected: bool
-    error_message: Optional[str] = None
+    error_message: str | None = None
     collection_time_ms: int = 0
 
 
@@ -78,8 +78,8 @@ class SLECollector:
         self,
         site_id: str,
         site_name: str = "Unknown",
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
         duration: str = "1w",
     ) -> SLECollectionResult:
         """
@@ -143,7 +143,7 @@ class SLECollector:
         return result
 
     def _collect_summary(
-        self, site_id: str, start_time: Optional[int], end_time: Optional[int], duration: str
+        self, site_id: str, start_time: int | None, end_time: int | None, duration: str
     ) -> bool:
         """Collect and cache SLE summary data."""
         try:
@@ -172,7 +172,7 @@ class SLECollector:
             return False
 
     def _collect_histogram(
-        self, site_id: str, start_time: Optional[int], end_time: Optional[int], duration: str
+        self, site_id: str, start_time: int | None, end_time: int | None, duration: str
     ) -> bool:
         """Collect and cache SLE histogram data."""
         try:
@@ -201,7 +201,7 @@ class SLECollector:
             return False
 
     def _collect_impacted_gateways(
-        self, site_id: str, start_time: Optional[int], end_time: Optional[int], duration: str
+        self, site_id: str, start_time: int | None, end_time: int | None, duration: str
     ) -> bool:
         """Collect and cache impacted gateways data."""
         try:
@@ -230,7 +230,7 @@ class SLECollector:
             return False
 
     def _collect_impacted_interfaces(
-        self, site_id: str, start_time: Optional[int], end_time: Optional[int], duration: str
+        self, site_id: str, start_time: int | None, end_time: int | None, duration: str
     ) -> bool:
         """Collect and cache impacted interfaces data."""
         try:
@@ -260,7 +260,7 @@ class SLECollector:
 
     def _update_last_fetch_timestamp(self, site_id: str) -> None:
         """Update the last fetch timestamp for incremental updates."""
-        timestamp = int(datetime.now(timezone.utc).timestamp())
+        timestamp = int(datetime.now(UTC).timestamp())
         key = f"{self.cache.PREFIX_SITE_SLE}:last_fetch:{site_id}"
         try:
             self.cache.client.set(key, str(timestamp), ex=CACHE_TTL_SECONDS)
@@ -268,8 +268,8 @@ class SLECollector:
             logger.warning(f"Failed to update last fetch timestamp: {error}")
 
     def collect_for_degraded_sites(
-        self, degraded_sites: List[Dict[str, Any]], max_sites: Optional[int] = None
-    ) -> Tuple[int, int, List[SLECollectionResult]]:
+        self, degraded_sites: list[dict[str, Any]], max_sites: int | None = None
+    ) -> tuple[int, int, list[SLECollectionResult]]:
         """
         Collect SLE data for degraded sites (priority collection).
 
@@ -314,10 +314,10 @@ class SLECollector:
 
     def collect_for_all_sites(
         self,
-        all_sites: List[Dict[str, Any]],
+        all_sites: list[dict[str, Any]],
         max_age_seconds: int = MAX_CACHE_AGE_SECONDS,
-        max_sites: Optional[int] = None,
-    ) -> Tuple[int, int, int, List[SLECollectionResult]]:
+        max_sites: int | None = None,
+    ) -> tuple[int, int, int, list[SLECollectionResult]]:
         """
         Collect SLE data for all sites, skipping fresh cache entries.
 
@@ -379,7 +379,7 @@ class SLECollector:
 
         return success_count, failure_count, skipped_count, results
 
-    def get_cached_site_data(self, site_id: str) -> Dict[str, Any]:
+    def get_cached_site_data(self, site_id: str) -> dict[str, Any]:
         """
         Retrieve all cached SLE data for a site.
 

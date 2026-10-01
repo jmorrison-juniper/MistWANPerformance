@@ -5,13 +5,13 @@ Unit tests for rolling window and time aggregation logic.
 """
 
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 
 from src.aggregators.time_aggregator import TimeAggregator
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
     CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
     RollingWindowMetrics,
 )
 
@@ -37,7 +37,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             rx_bytes=1000000,
             tx_bytes=500000,
             bandwidth_mbps=100,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def _create_status_record(
@@ -52,7 +52,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             up_minutes=up_minutes,
             down_minutes=down_minutes,
             flap_count=flap_count,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def _create_quality_record(
@@ -66,7 +66,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             loss_avg=loss_avg,
             jitter_avg=jitter_avg,
             latency_avg=latency_avg,
-            collected_at=datetime.now(timezone.utc),
+            collected_at=datetime.now(UTC),
         )
 
     def test_rolling_window_3h_utilization_avg(self):
@@ -78,7 +78,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010112", 80.0),
         ]
 
-        window_end = datetime(2024, 1, 1, 12, 30, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 12, 30, tzinfo=UTC)
 
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
@@ -105,7 +105,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010112", 72.0),
         ]
 
-        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
 
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
@@ -130,7 +130,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010112", 85.0),  # Above
         ]
 
-        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
 
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
@@ -153,7 +153,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_status_record("2024010112", 60, 0, 0),
         ]
 
-        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
 
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
@@ -178,7 +178,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_quality_record("2024010112", 0.3, 20.0, 70.0),
         ]
 
-        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 13, 0, tzinfo=UTC)
 
         result = self.aggregator.calculate_rolling_window(
             site_id=self.test_site_id,
@@ -202,7 +202,7 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
         """Test that all window sizes (3h, 12h, 24h) are calculated."""
         records = [self._create_utilization_record(f"2024010{i:02d}", 50.0 + i) for i in range(24)]
 
-        window_end = datetime(2024, 1, 1, 23, 30, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 23, 30, tzinfo=UTC)
 
         results = self.aggregator.calculate_rolling_windows_for_circuit(
             site_id=self.test_site_id,
@@ -249,8 +249,8 @@ class TestTimeAggregatorRollingWindows(unittest.TestCase):
             self._create_utilization_record("2024010114", 90.0),  # After window
         ]
 
-        window_start = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
-        window_end = datetime(2024, 1, 1, 12, 59, tzinfo=timezone.utc)
+        window_start = datetime(2024, 1, 1, 10, 0, tzinfo=UTC)
+        window_end = datetime(2024, 1, 1, 12, 59, tzinfo=UTC)
 
         filtered = self.aggregator._filter_records_in_window(records, window_start, window_end)
 
@@ -264,7 +264,7 @@ class TestRollingWindowMetricsModel(unittest.TestCase):
 
     def test_to_dict_contains_all_fields(self):
         """Test that to_dict returns all expected fields."""
-        window_end = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
 
         metrics = RollingWindowMetrics(
             site_id="site-001",
@@ -290,7 +290,7 @@ class TestRollingWindowMetricsModel(unittest.TestCase):
 
     def test_primary_key_format(self):
         """Test primary key generation."""
-        window_end = datetime(2024, 1, 1, 12, 0, tzinfo=timezone.utc)
+        window_end = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
 
         metrics = RollingWindowMetrics(
             site_id="site-001", circuit_id="device:wan0", window_end=window_end, window_hours=3
@@ -423,8 +423,8 @@ class TestParallelAggregation(unittest.TestCase):
     def test_empty_input_returns_empty(self):
         """Test that empty input returns empty list."""
         from src.aggregators.time_aggregator import (
-            aggregate_daily_to_weekly_parallel,
             aggregate_daily_to_monthly_parallel,
+            aggregate_daily_to_weekly_parallel,
             aggregate_to_region_parallel,
         )
 

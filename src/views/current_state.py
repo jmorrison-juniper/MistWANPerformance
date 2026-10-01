@@ -7,16 +7,15 @@ Shows current circuit status, congestion, and alerts.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
     CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
     FailoverEventRecord,
-    RollingWindowMetrics,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,33 +39,33 @@ class CircuitCurrentState:
     """
 
     site_id: str
-    site_name: Optional[str]
+    site_name: str | None
     circuit_id: str
     circuit_role: str  # "primary", "secondary", "backup"
-    region: Optional[str]
+    region: str | None
 
     # Status
     is_up: bool
-    status_since: Optional[datetime] = None
+    status_since: datetime | None = None
 
     # Current utilization
-    current_utilization_pct: Optional[float] = None
+    current_utilization_pct: float | None = None
     utilization_trend: str = "stable"  # "rising", "falling", "stable"
 
     # Quality
-    current_loss_pct: Optional[float] = None
-    current_jitter_ms: Optional[float] = None
-    current_latency_ms: Optional[float] = None
+    current_loss_pct: float | None = None
+    current_jitter_ms: float | None = None
+    current_latency_ms: float | None = None
 
     # Alerts
     alert_severity: AlertSeverity = AlertSeverity.INFO
-    alert_messages: List[str] = field(default_factory=list)
+    alert_messages: list[str] = field(default_factory=list)
 
     # Failover status
     is_in_failover: bool = False
-    failover_since: Optional[datetime] = None
+    failover_since: datetime | None = None
 
-    last_updated: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict:
         """Convert to dictionary for API/dashboard consumption."""
@@ -100,8 +99,8 @@ class SiteCongestionSummary:
     """
 
     site_id: str
-    site_name: Optional[str]
-    region: Optional[str]
+    site_name: str | None
+    region: str | None
 
     # Circuit counts
     total_circuits: int = 0
@@ -113,7 +112,7 @@ class SiteCongestionSummary:
     circuits_above_70: int = 0
     circuits_above_80: int = 0
     circuits_above_90: int = 0
-    max_utilization_pct: Optional[float] = None
+    max_utilization_pct: float | None = None
 
     # Overall status
     site_status: str = "healthy"  # "healthy", "degraded", "critical"
@@ -157,9 +156,9 @@ class CurrentStateViews:
 
     def __init__(
         self,
-        site_lookup: Optional[Dict[str, str]] = None,
-        region_lookup: Optional[Dict[str, str]] = None,
-        circuit_role_lookup: Optional[Dict[str, str]] = None,
+        site_lookup: dict[str, str] | None = None,
+        region_lookup: dict[str, str] | None = None,
+        circuit_role_lookup: dict[str, str] | None = None,
     ):
         """
         Initialize current state views.
@@ -174,7 +173,7 @@ class CurrentStateViews:
         self.circuit_role_lookup = circuit_role_lookup or {}
         logger.debug("CurrentStateViews initialized")
 
-    def _determine_trend(self, recent_values: List[float], lookback_count: int = 3) -> str:
+    def _determine_trend(self, recent_values: list[float], lookback_count: int = 3) -> str:
         """
         Determine trend direction from recent values.
 
@@ -204,10 +203,10 @@ class CurrentStateViews:
 
     def _generate_alerts(
         self,
-        utilization: Optional[float],
-        loss: Optional[float],
-        jitter: Optional[float],
-        latency: Optional[float],
+        utilization: float | None,
+        loss: float | None,
+        jitter: float | None,
+        latency: float | None,
         is_up: bool,
     ) -> tuple:
         """
@@ -253,10 +252,10 @@ class CurrentStateViews:
         self,
         site_id: str,
         circuit_id: str,
-        utilization_records: List[CircuitUtilizationRecord],
-        status_records: List[CircuitStatusRecord],
-        quality_records: List[CircuitQualityRecord],
-        failover_records: Optional[List[FailoverEventRecord]] = None,
+        utilization_records: list[CircuitUtilizationRecord],
+        status_records: list[CircuitStatusRecord],
+        quality_records: list[CircuitQualityRecord],
+        failover_records: list[FailoverEventRecord] | None = None,
     ) -> CircuitCurrentState:
         """
         Generate current state for a single circuit.
@@ -330,7 +329,7 @@ class CurrentStateViews:
         )
 
     def get_site_congestion_summary(
-        self, site_id: str, circuit_states: List[CircuitCurrentState]
+        self, site_id: str, circuit_states: list[CircuitCurrentState]
     ) -> SiteCongestionSummary:
         """
         Generate congestion summary for a site.
@@ -393,9 +392,9 @@ class CurrentStateViews:
 
     def get_active_alerts(
         self,
-        circuit_states: List[CircuitCurrentState],
+        circuit_states: list[CircuitCurrentState],
         min_severity: AlertSeverity = AlertSeverity.WARNING,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Get list of active alerts across all circuits.
 
@@ -437,8 +436,8 @@ class CurrentStateViews:
         return alerts
 
     def get_failover_status(
-        self, failover_records: List[FailoverEventRecord]
-    ) -> List[Dict[str, Any]]:
+        self, failover_records: list[FailoverEventRecord]
+    ) -> list[dict[str, Any]]:
         """
         Get current failover status across all sites.
 
@@ -475,14 +474,14 @@ class CurrentStateViews:
     def get_primary_vs_secondary_comparison(
         self,
         site_id: str,
-        primary_utilization: List[CircuitUtilizationRecord],
-        secondary_utilization: List[CircuitUtilizationRecord],
-        primary_quality: List[CircuitQualityRecord],
-        secondary_quality: List[CircuitQualityRecord],
-        primary_status: List[CircuitStatusRecord],
-        secondary_status: List[CircuitStatusRecord],
-        failover_records: Optional[List[FailoverEventRecord]] = None,
-    ) -> Dict[str, Any]:
+        primary_utilization: list[CircuitUtilizationRecord],
+        secondary_utilization: list[CircuitUtilizationRecord],
+        primary_quality: list[CircuitQualityRecord],
+        secondary_quality: list[CircuitQualityRecord],
+        primary_status: list[CircuitStatusRecord],
+        secondary_status: list[CircuitStatusRecord],
+        failover_records: list[FailoverEventRecord] | None = None,
+    ) -> dict[str, Any]:
         """
         Compare primary and secondary circuit metrics during failover.
 
@@ -615,11 +614,11 @@ class CurrentStateViews:
         primary_up: bool,
         secondary_up: bool,
         in_failover: bool,
-        primary_util: Optional[CircuitUtilizationRecord],
-        secondary_util: Optional[CircuitUtilizationRecord],
-        primary_quality: Optional[CircuitQualityRecord],
-        secondary_quality: Optional[CircuitQualityRecord],
-    ) -> List[str]:
+        primary_util: CircuitUtilizationRecord | None,
+        secondary_util: CircuitUtilizationRecord | None,
+        primary_quality: CircuitQualityRecord | None,
+        secondary_quality: CircuitQualityRecord | None,
+    ) -> list[str]:
         """Generate human-readable comparison notes."""
         notes = []
 

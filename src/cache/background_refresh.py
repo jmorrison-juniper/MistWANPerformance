@@ -15,10 +15,11 @@ import asyncio
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Union
+from collections.abc import Callable
+from typing import Any
 
-from src.api.mist_client import RateLimitError, get_rate_limit_status, is_rate_limited
 from src.api.async_mist_client import AsyncMistAPIClient
+from src.api.mist_client import RateLimitError, get_rate_limit_status, is_rate_limited
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,11 @@ class AsyncBackgroundRefreshWorker:
     def __init__(
         self,
         cache,
-        api_client: Union[Any, AsyncMistAPIClient],
-        site_ids: List[str],
+        api_client: Any | AsyncMistAPIClient,
+        site_ids: list[str],
         min_delay_between_fetches: int = 5,
         max_age_seconds: int = 3600,
-        on_data_updated: Optional[Callable] = None,
+        on_data_updated: Callable | None = None,
         parallel_site_limit: int = 5,
         use_async_api: bool = False,
     ):
@@ -78,7 +79,7 @@ class AsyncBackgroundRefreshWorker:
         self.use_async_api = use_async_api
 
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
         self._last_refresh_time = 0.0
         self._total_sites_refreshed = 0
         self._refresh_cycles = 0
@@ -272,7 +273,7 @@ class AsyncBackgroundRefreshWorker:
         except Exception as api_error:
             logger.error(f"[ERROR] Async API fetch failed: {api_error}")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current async worker status for monitoring."""
         rate_status = get_rate_limit_status()
         return {
@@ -299,7 +300,7 @@ class AsyncBackgroundRefreshWorker:
 
 
 async def refresh_stale_sites_parallel(
-    cache, api_client, stale_site_ids: List[str], max_concurrent: int = 5
+    cache, api_client, stale_site_ids: list[str], max_concurrent: int = 5
 ) -> int:
     """
     Refresh multiple stale sites in parallel using asyncio TaskGroup.
@@ -389,10 +390,10 @@ class BackgroundRefreshWorker:
         self,
         cache,
         api_client,
-        site_ids: List[str],
+        site_ids: list[str],
         min_delay_between_fetches: int = 5,
         max_age_seconds: int = 3600,
-        on_data_updated: Optional[Callable] = None,
+        on_data_updated: Callable | None = None,
     ):
         """
         Initialize the background refresh worker.
@@ -413,14 +414,14 @@ class BackgroundRefreshWorker:
         self.on_data_updated = on_data_updated
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._last_refresh_time = 0
         self._total_sites_refreshed = 0
         self._refresh_cycles = 0
         self._initial_coverage_complete = False
         self._sites_with_data: set = set()
         self._rate_limited = False
-        self._rate_limit_resume_time: Optional[float] = None
+        self._rate_limit_resume_time: float | None = None
 
     def start(self) -> None:
         """Start the background refresh worker thread."""
@@ -598,7 +599,7 @@ class BackgroundRefreshWorker:
         except Exception as api_error:
             logger.error(f"[ERROR] API fetch failed in refresh cycle: {api_error}")
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current worker status for monitoring."""
         rate_status = get_rate_limit_status()
         return {
@@ -642,7 +643,7 @@ class SLEBackgroundWorker:
         data_provider,
         min_delay_between_fetches: int = 1,
         max_age_seconds: int = 3600,
-        on_site_collected: Optional[Callable] = None,
+        on_site_collected: Callable | None = None,
     ):
         """
         Initialize the SLE background worker.
@@ -663,12 +664,12 @@ class SLEBackgroundWorker:
         self.on_site_collected = on_site_collected
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._total_sites_collected = 0
         self._degraded_sites_collected = 0
         self._collection_cycles = 0
         self._rate_limited = False
-        self._current_site: Optional[str] = None
+        self._current_site: str | None = None
 
     def start(self) -> None:
         """Start the SLE background worker."""
@@ -890,7 +891,7 @@ class SLEBackgroundWorker:
                 f"{sle_cache_status['missing']} missing ({cycle_duration:.1f}s)"
             )
 
-    def _get_all_sites_list(self) -> List[Dict[str, Any]]:
+    def _get_all_sites_list(self) -> list[dict[str, Any]]:
         """Get list of all sites from data provider."""
         if hasattr(self.data_provider, "sle_data") and self.data_provider.sle_data:
             return [
@@ -902,7 +903,7 @@ class SLEBackgroundWorker:
             ]
         return []
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current worker status for monitoring."""
         return {
             "running": self._running,
@@ -941,7 +942,7 @@ class VPNPeerBackgroundWorker:
         api_client,
         min_delay_between_fetches: int = 5,
         refresh_interval_seconds: int = 300,
-        on_data_updated: Optional[Callable] = None,
+        on_data_updated: Callable | None = None,
     ):
         """
         Initialize the VPN peer background worker.
@@ -960,7 +961,7 @@ class VPNPeerBackgroundWorker:
         self.on_data_updated = on_data_updated
 
         self._running = False
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
         self._total_peers_collected = 0
         self._collection_cycles = 0
         self._rate_limited = False
@@ -1077,7 +1078,7 @@ class VPNPeerBackgroundWorker:
                 total_peers = result.get("total_peers", 0)
 
                 # Group peers by gateway (mac address from peer records)
-                peers_by_gateway: Dict[str, Dict[str, List[Dict[str, Any]]]] = {}
+                peers_by_gateway: dict[str, dict[str, list[dict[str, Any]]]] = {}
 
                 for port_id, peers_list in peers_by_port.items():
                     for peer in peers_list:
@@ -1123,7 +1124,7 @@ class VPNPeerBackgroundWorker:
         except Exception as error:
             logger.error(f"[ERROR] VPN peer collection cycle failed: {error}", exc_info=True)
 
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self) -> dict[str, Any]:
         """Get current worker status for monitoring."""
         return {
             "running": self._running,

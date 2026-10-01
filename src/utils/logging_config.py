@@ -8,11 +8,10 @@ import logging
 import logging.handlers
 import sys
 from pathlib import Path
-from typing import Optional
 
 
 def setup_logging(
-    level: int = logging.INFO, log_file: Optional[str] = None, log_dir: Path = Path("data/logs")
+    level: int = logging.INFO, log_file: str | None = None, log_dir: Path = Path("data/logs")
 ) -> logging.Logger:
     """
     Configure application-wide logging.

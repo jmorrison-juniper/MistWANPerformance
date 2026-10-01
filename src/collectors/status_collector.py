@@ -6,8 +6,8 @@ Collects circuit status and flap events from Mist WAN edge devices.
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.api.mist_client import MistAPIClient
 from src.models.facts import CircuitStatusRecord
@@ -26,8 +26,8 @@ class StatusRecordInput:
     site_id: str
     device_id: str
     port_name: str
-    port_data: Dict[str, Any]
-    events: List[Dict[str, Any]]
+    port_data: dict[str, Any]
+    events: list[dict[str, Any]]
 
 
 @dataclass
@@ -69,9 +69,9 @@ class StatusCollector:
     def collect_for_site(
         self,
         site_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> List[CircuitStatusRecord]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[CircuitStatusRecord]:
         """
         Collect status metrics for all circuits at a site.
 
@@ -87,7 +87,7 @@ class StatusCollector:
 
         # Default time window: last hour
         if end_time is None:
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
         if start_time is None:
             start_time = end_time - timedelta(hours=1)
 
@@ -110,8 +110,8 @@ class StatusCollector:
         return records
 
     def _collect_device_status(
-        self, site_id: str, device_id: str, device: Dict[str, Any], time_window: TimeWindow
-    ) -> List[CircuitStatusRecord]:
+        self, site_id: str, device_id: str, device: dict[str, Any], time_window: TimeWindow
+    ) -> list[CircuitStatusRecord]:
         """
         Collect status metrics for a specific WAN edge device.
 
@@ -160,8 +160,8 @@ class StatusCollector:
         return records
 
     def _filter_events_for_port(
-        self, events: List[Dict[str, Any]], port_name: str
-    ) -> List[Dict[str, Any]]:
+        self, events: list[dict[str, Any]], port_name: str
+    ) -> list[dict[str, Any]]:
         """
         Filter events relevant to a specific port.
 
@@ -181,8 +181,8 @@ class StatusCollector:
         return filtered
 
     def _calculate_uptime_minutes(
-        self, events: List[Dict[str, Any]], current_status: str, time_window: TimeWindow
-    ) -> Tuple[int, int, int]:
+        self, events: list[dict[str, Any]], current_status: str, time_window: TimeWindow
+    ) -> tuple[int, int, int]:
         """
         Calculate up/down minutes and flap count from events.
 
@@ -206,8 +206,8 @@ class StatusCollector:
         return self._calculate_from_events(events, current_status, time_window)
 
     def _calculate_from_events(
-        self, events: List[Dict[str, Any]], current_status: str, time_window: TimeWindow
-    ) -> Tuple[int, int, int]:
+        self, events: list[dict[str, Any]], current_status: str, time_window: TimeWindow
+    ) -> tuple[int, int, int]:
         """
         Calculate uptime from sorted events.
 
@@ -268,7 +268,7 @@ class StatusCollector:
 
     def _create_status_record(
         self, record_input: StatusRecordInput, time_window: TimeWindow
-    ) -> Optional[CircuitStatusRecord]:
+    ) -> CircuitStatusRecord | None:
         """
         Create a CircuitStatusRecord from input data.
 
@@ -298,7 +298,7 @@ class StatusCollector:
                 up_minutes=up_minutes,
                 down_minutes=down_minutes,
                 flap_count=flap_count,
-                collected_at=datetime.now(timezone.utc),
+                collected_at=datetime.now(UTC),
             )
 
         except Exception as error:
@@ -308,8 +308,8 @@ class StatusCollector:
             return None
 
     def collect_for_org(
-        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
-    ) -> List[CircuitStatusRecord]:
+        self, start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[CircuitStatusRecord]:
         """
         Collect status metrics for all sites in the organization.
 

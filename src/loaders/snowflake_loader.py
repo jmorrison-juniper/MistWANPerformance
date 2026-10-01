@@ -6,8 +6,7 @@ Organized per 5-item rule into focused classes.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 
 # Handle optional snowflake dependency
 SNOWFLAKE_AVAILABLE = False
@@ -27,14 +26,13 @@ if TYPE_CHECKING:
     import snowflake.connector as snowflake_connector
     from snowflake.connector import DictCursor
 
-from src.utils.config import SnowflakeConfig
-from src.models.dimensions import DimSite, DimCircuit, DimTime
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
-    CircuitQualityRecord,
     AggregatedMetrics,
+    CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
 )
+from src.utils.config import SnowflakeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +99,7 @@ class SnowflakeConnection:
             self.connection = None
             logger.debug("Disconnected from Snowflake")
 
-    def execute(self, sql: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    def execute(self, sql: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """
         Execute SQL statement and return results.
 
@@ -125,12 +123,12 @@ class SnowflakeConnection:
             else:
                 cursor.execute(sql)
 
-            results: List[Dict[str, Any]] = cursor.fetchall()
+            results: list[dict[str, Any]] = cursor.fetchall()
             return results
         finally:
             cursor.close()
 
-    def execute_many(self, sql: str, data: List[Any]) -> int:
+    def execute_many(self, sql: str, data: list[Any]) -> int:
         """
         Execute SQL statement for multiple records.
 
@@ -224,7 +222,7 @@ class SnowflakeSchemaManager:
         self.connection.commit()
         logger.info("[OK] Schema initialized")
 
-    def _get_dimension_ddl(self) -> List[str]:
+    def _get_dimension_ddl(self) -> list[str]:
         """Return DDL statements for dimension tables."""
         dim_site_ddl = """
         CREATE TABLE IF NOT EXISTS dim_site (
@@ -279,7 +277,7 @@ class SnowflakeSchemaManager:
 
         return [dim_site_ddl, dim_circuit_ddl, dim_time_ddl]
 
-    def _get_fact_ddl(self) -> List[str]:
+    def _get_fact_ddl(self) -> list[str]:
         """Return DDL statements for fact tables."""
         fact_utilization_ddl = """
         CREATE TABLE IF NOT EXISTS fact_circuit_utilization (
@@ -333,7 +331,7 @@ class SnowflakeSchemaManager:
 
         return [fact_utilization_ddl, fact_status_ddl, fact_quality_ddl]
 
-    def _get_aggregate_ddl(self) -> List[str]:
+    def _get_aggregate_ddl(self) -> list[str]:
         """Return DDL statements for aggregate tables."""
         agg_circuit_daily_ddl = """
         CREATE TABLE IF NOT EXISTS agg_circuit_daily (
@@ -384,7 +382,7 @@ class SnowflakeFactLoader:
         """
         self.connection = connection
 
-    def load_utilization_records(self, records: List[CircuitUtilizationRecord]) -> int:
+    def load_utilization_records(self, records: list[CircuitUtilizationRecord]) -> int:
         """
         Load utilization records to fact table.
 
@@ -438,7 +436,7 @@ class SnowflakeFactLoader:
         logger.info(f"[OK] Loaded {count} utilization records")
         return count
 
-    def load_status_records(self, records: List[CircuitStatusRecord]) -> int:
+    def load_status_records(self, records: list[CircuitStatusRecord]) -> int:
         """
         Load status records to fact table.
 
@@ -492,7 +490,7 @@ class SnowflakeFactLoader:
         logger.info(f"[OK] Loaded {count} status records")
         return count
 
-    def load_quality_records(self, records: List[CircuitQualityRecord]) -> int:
+    def load_quality_records(self, records: list[CircuitQualityRecord]) -> int:
         """
         Load quality records to fact table.
 
@@ -560,7 +558,7 @@ class SnowflakeFactLoader:
         logger.info(f"[OK] Loaded {count} quality records")
         return count
 
-    def load_daily_aggregates(self, aggregates: List[AggregatedMetrics]) -> int:
+    def load_daily_aggregates(self, aggregates: list[AggregatedMetrics]) -> int:
         """
         Load daily aggregate records.
 
@@ -620,19 +618,19 @@ class SnowflakeLoader:
         """Create database schema."""
         self.schema_manager.initialize_schema()
 
-    def load_utilization_records(self, records: List[CircuitUtilizationRecord]) -> int:
+    def load_utilization_records(self, records: list[CircuitUtilizationRecord]) -> int:
         """Load utilization records."""
         return self.fact_loader.load_utilization_records(records)
 
-    def load_status_records(self, records: List[CircuitStatusRecord]) -> int:
+    def load_status_records(self, records: list[CircuitStatusRecord]) -> int:
         """Load status records."""
         return self.fact_loader.load_status_records(records)
 
-    def load_quality_records(self, records: List[CircuitQualityRecord]) -> int:
+    def load_quality_records(self, records: list[CircuitQualityRecord]) -> int:
         """Load quality records."""
         return self.fact_loader.load_quality_records(records)
 
-    def load_daily_aggregates(self, aggregates: List[AggregatedMetrics]) -> int:
+    def load_daily_aggregates(self, aggregates: list[AggregatedMetrics]) -> int:
         """Load daily aggregates."""
         return self.fact_loader.load_daily_aggregates(aggregates)
 

@@ -10,22 +10,16 @@ Dedicated page for viewing WAN port statistics including:
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
-from dash import dcc, html, dash_table, callback, Input, Output, State
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+from dash import dcc, html
 
 from src.dashboard.pages.shared import (
     COLORS,
     REFRESH_INTERVAL_MS,
     NavigationBar,
     StatusCards,
-    ChartBuilders,
-    LinkBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,7 +42,7 @@ class PortPage:
 
     PAGE_ID = "port-page"
 
-    def __init__(self, data_provider: Optional[Any] = None):
+    def __init__(self, data_provider: Any | None = None):
         """
         Initialize port page.
 
@@ -61,8 +55,8 @@ class PortPage:
         self,
         site_id: str,
         port_id: str,
-        gateway_id: Optional[str] = None,
-        data_provider: Optional[Any] = None,
+        gateway_id: str | None = None,
+        data_provider: Any | None = None,
     ) -> html.Div:
         """
         Build the port detail page layout.

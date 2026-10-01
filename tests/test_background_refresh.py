@@ -8,13 +8,11 @@ NASA/JPL Pattern: Comprehensive test coverage for safety-critical refresh logic.
 """
 
 import asyncio
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
-from typing import Dict, List, Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.cache.background_refresh import (
-    BackgroundRefreshWorker,
     AsyncBackgroundRefreshWorker,
+    BackgroundRefreshWorker,
     refresh_stale_sites_parallel,
 )
 

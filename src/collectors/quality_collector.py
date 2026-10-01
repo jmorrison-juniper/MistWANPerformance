@@ -5,9 +5,9 @@ Collects circuit quality metrics (loss, jitter, latency) from Mist WAN edge devi
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional
 import statistics
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.api.mist_client import MistAPIClient
 from src.models.facts import CircuitQualityRecord
@@ -39,9 +39,9 @@ class QualityCollector:
     def collect_for_site(
         self,
         site_id: str,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> List[CircuitQualityRecord]:
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[CircuitQualityRecord]:
         """
         Collect quality metrics for all circuits at a site.
 
@@ -57,7 +57,7 @@ class QualityCollector:
 
         # Default time window: last hour
         if end_time is None:
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
         if start_time is None:
             start_time = end_time - timedelta(hours=1)
 
@@ -84,10 +84,10 @@ class QualityCollector:
         self,
         site_id: str,
         device_id: str,
-        device: Dict[str, Any],
+        device: dict[str, Any],
         start_time: datetime,
         end_time: datetime,
-    ) -> List[CircuitQualityRecord]:
+    ) -> list[CircuitQualityRecord]:
         """
         Collect quality metrics for a specific WAN edge device.
 
@@ -136,10 +136,10 @@ class QualityCollector:
         self,
         site_id: str,
         device_id: str,
-        wan_if: Dict[str, Any],
+        wan_if: dict[str, Any],
         start_time: datetime,
         end_time: datetime,
-    ) -> Optional[CircuitQualityRecord]:
+    ) -> CircuitQualityRecord | None:
         """
         Create quality record from WAN interface data.
 
@@ -199,7 +199,7 @@ class QualityCollector:
                 latency_avg=latency_stats.get("avg"),
                 latency_max=latency_stats.get("max"),
                 latency_p95=latency_stats.get("p95"),
-                collected_at=datetime.now(timezone.utc),
+                collected_at=datetime.now(UTC),
             )
 
         except Exception as error:
@@ -211,10 +211,10 @@ class QualityCollector:
         site_id: str,
         device_id: str,
         port_name: str,
-        port_data: Dict[str, Any],
+        port_data: dict[str, Any],
         start_time: datetime,
         end_time: datetime,
-    ) -> Optional[CircuitQualityRecord]:
+    ) -> CircuitQualityRecord | None:
         """
         Create quality record from port statistics.
 
@@ -264,14 +264,14 @@ class QualityCollector:
                 latency_avg=None,
                 latency_max=None,
                 latency_p95=None,
-                collected_at=datetime.now(timezone.utc),
+                collected_at=datetime.now(UTC),
             )
 
         except Exception as error:
             logger.warning(f"[WARN] Failed to create quality record from port {port_name}: {error}")
             return None
 
-    def _calculate_statistics(self, samples: List[float]) -> Dict[str, Optional[float]]:
+    def _calculate_statistics(self, samples: list[float]) -> dict[str, float | None]:
         """
         Calculate statistical aggregates from samples.
 
@@ -303,8 +303,8 @@ class QualityCollector:
         return {"avg": avg_val, "max": max_val, "p95": p95_val}
 
     def collect_for_org(
-        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
-    ) -> List[CircuitQualityRecord]:
+        self, start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[CircuitQualityRecord]:
         """
         Collect quality metrics for all sites in the organization.
 

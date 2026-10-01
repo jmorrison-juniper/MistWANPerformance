@@ -4,24 +4,24 @@ MistWANPerformance - Data Models Package
 Pydantic models for dimensions and facts.
 """
 
-from src.models.dimensions import DimSite, DimCircuit, DimTime
+from src.models.dimensions import DimCircuit, DimSite, DimTime
 from src.models.facts import (
-    CircuitUtilizationRecord,
-    CircuitStatusRecord,
+    AggregatedMetrics,
     CircuitQualityRecord,
+    CircuitStatusRecord,
+    CircuitUtilizationRecord,
     FailoverEventRecord,
     RollingWindowMetrics,
-    AggregatedMetrics,
 )
 
 __all__ = [
-    "DimSite",
-    "DimCircuit",
-    "DimTime",
-    "CircuitUtilizationRecord",
-    "CircuitStatusRecord",
+    "AggregatedMetrics",
     "CircuitQualityRecord",
+    "CircuitStatusRecord",
+    "CircuitUtilizationRecord",
+    "DimCircuit",
+    "DimSite",
+    "DimTime",
     "FailoverEventRecord",
     "RollingWindowMetrics",
-    "AggregatedMetrics",
 ]
