@@ -202,7 +202,7 @@ class QualityCollector:
                 collected_at=datetime.now(UTC),
             )
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(f"[WARN] Failed to create quality record from WAN interface: {error}")
             return None
 
@@ -267,7 +267,7 @@ class QualityCollector:
                 collected_at=datetime.now(UTC),
             )
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(f"[WARN] Failed to create quality record from port {port_name}: {error}")
             return None
 

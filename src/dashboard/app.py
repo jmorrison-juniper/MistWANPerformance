@@ -2147,7 +2147,7 @@ class WANPerformanceDashboard:
                         disconnected_macs.add(mac)
 
             return disconnected_macs
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Error getting disconnected gateway MACs: {error}")
             return set()
 
@@ -2506,7 +2506,7 @@ class WANPerformanceDashboard:
 
             return cache.get_site_sle_cache_status(site_ids, max_age_seconds=3600)
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Error getting SLE cache status: {error}")
             return None
 
@@ -3016,14 +3016,7 @@ class WANPerformanceDashboard:
                     else:
                         refresh_activity = "Collectors: Waiting..."
 
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as error:
+                except Exception as error:
                     logger.debug(f"Status bar error: {error}")
                     cache_status = "Cache: Error"
 
@@ -3053,14 +3046,7 @@ class WANPerformanceDashboard:
                     if site.get("id")
                 ]
                 return options
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.debug(f"Error populating site selector: {error}")
                 return []
 
@@ -3106,14 +3092,7 @@ class WANPerformanceDashboard:
 
                 return self._build_gateway_bandwidth_chart(timeseries_data, site_name)
 
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.warning(f"Error loading gateway bandwidth time-series: {error}")
                 return self._build_gateway_bandwidth_chart([], f"Error: {error}")
 
@@ -3159,14 +3138,7 @@ class WANPerformanceDashboard:
 
                 return self._build_vpn_quality_chart(timeseries_data, site_name)
 
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.warning(f"Error loading VPN quality time-series: {error}")
                 return self._build_vpn_quality_chart([], f"Error: {error}")
 

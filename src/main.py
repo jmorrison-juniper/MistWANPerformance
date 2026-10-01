@@ -183,7 +183,7 @@ def main() -> int:
     try:
         config = Config()
         logger.info("[OK] Configuration loaded")
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+    except Exception as error:
         logger.error(f"[ERROR] Failed to load configuration: {error}")
         return 1
 
@@ -218,8 +218,10 @@ def main() -> int:
         logger.warning("[WARN] Operation interrupted by user")
         return 130
 
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
-        logger.error(f"[ERROR] Operation failed: {error}")
+    except Exception as error:
+        logger.exception(
+            f"[ERROR] Operation failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+        )
         return 1
 
     logger.info("=" * 60)

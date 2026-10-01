@@ -298,15 +298,10 @@ class AsyncDashboardPrecomputer:
                 # No delay - stay busy, immediately start next cycle
             except asyncio.CancelledError:
                 break
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
-                logger.error(f"[ERROR] Async precompute failed: {error}")
+            except Exception as error:
+                logger.exception(
+                    f"[ERROR] Async precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 await asyncio.sleep(0.1)
 
@@ -463,8 +458,10 @@ class AsyncDashboardPrecomputer:
                     f"{self._last_duration_ms:.0f}ms"
                 )
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
-            logger.error(f"[ERROR] Async precompute failed: {error}")
+        except Exception as error:
+            logger.exception(
+                f"[ERROR] Async precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+            )
 
     def _compute_active_alerts(self) -> list[dict[str, Any]]:
         """Compute active alerts."""
@@ -536,8 +533,9 @@ class AsyncDashboardPrecomputer:
                     "paths_down": down,
                     "health_percentage": round(health_pct, 1),
                 }
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError):
-            pass
+        except Exception as error:
+            logger.debug(f"Could not build VPN health summary: {error}")
+            pass  # noqa: PIE790 - Keep main pass flow after debug log.
 
         return {"total_peers": 0, "paths_up": 0, "paths_down": 0, "health_percentage": 0}
 
@@ -577,7 +575,7 @@ class AsyncDashboardPrecomputer:
         try:
             if hasattr(self.cache, "client") and self.cache.client:
                 self.cache.client.set(full_key, json.dumps(data), ex=2678400)  # 31 days minimum TTL
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(f"[WARN] Failed to store precomputed {key}: {error}")
 
     def get_precomputed(self, key: str) -> dict[str, Any] | None:
@@ -589,7 +587,7 @@ class AsyncDashboardPrecomputer:
                 data = self.cache.client.get(full_key)
                 if data:
                     return json.loads(data)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(f"[WARN] Failed to get precomputed {key}: {error}")
 
         return None
@@ -674,15 +672,10 @@ class AsyncSitePrecomputer:
                 # No delay - stay busy, immediately start next cycle
             except asyncio.CancelledError:
                 break
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
-                logger.error(f"[ERROR] Async site precompute failed: {error}")
+            except Exception as error:
+                logger.exception(
+                    f"[ERROR] Async site precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 await asyncio.sleep(0.1)
 
@@ -750,7 +743,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
             # Store in Redis
             await asyncio.to_thread(self._store_precomputed, site_id, sle_data)
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to precompute SLE for {site_id[:8]}: {error}")
 
     def _compute_site_sle_details(self, site_id: str) -> dict[str, Any]:
@@ -785,7 +778,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
                 "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             return {"available": False, "error": str(error)}
 
     def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
@@ -795,7 +788,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
         try:
             if hasattr(self.cache, "client") and self.cache.client:
                 self.cache.client.set(key, json.dumps(data), ex=2678400)  # 31 days minimum TTL
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id[:8]}: {error}")
 
     def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
@@ -807,7 +800,7 @@ class AsyncSiteSlePrecomputer(AsyncSitePrecomputer):
                 data = self.cache.client.get(key)
                 if data:
                     return json.loads(data)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to get site SLE {site_id[:8]}: {error}")
 
         return None
@@ -825,7 +818,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
             # Store in Redis
             await asyncio.to_thread(self._store_precomputed, site_id, vpn_data)
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to precompute VPN for {site_id[:8]}: {error}")
 
     def _compute_site_vpn_data(self, site_id: str) -> dict[str, Any]:
@@ -866,7 +859,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
                 "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             return {"available": False, "peers": [], "error": str(error)}
 
     def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
@@ -876,7 +869,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
         try:
             if hasattr(self.cache, "client") and self.cache.client:
                 self.cache.client.set(key, json.dumps(data), ex=2678400)  # 31 days minimum TTL
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id[:8]}: {error}")
 
     def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
@@ -888,7 +881,7 @@ class AsyncSiteVpnPrecomputer(AsyncSitePrecomputer):
                 data = self.cache.client.get(key)
                 if data:
                     return json.loads(data)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to get site VPN {site_id[:8]}: {error}")
 
         return None

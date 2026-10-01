@@ -83,7 +83,7 @@ class SnowflakeConnection:
             logger.info("[OK] Connected to Snowflake")
             logger.debug(f"Database: {self.config.database}, Schema: {self.config.schema}")
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"[ERROR] Failed to connect to Snowflake: {error}")
             raise
 
@@ -165,7 +165,7 @@ class SnowflakeConnection:
             logger.info("[OK] Snowflake connection test successful")
             self.disconnect()
             return True
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"[ERROR] Snowflake connection test failed: {error}")
             return False
 

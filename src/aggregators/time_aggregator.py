@@ -835,14 +835,7 @@ def aggregate_daily_to_weekly_parallel(
                 try:
                     result_dict = future.result()
                     weekly_aggregates.append(AggregatedMetrics(**result_dict))
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as error:
+                except Exception as error:
                     logger.error(f"Error merging weekly aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -850,14 +843,7 @@ def aggregate_daily_to_weekly_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 weekly_aggregates.append(AggregatedMetrics(**result_dict))
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error merging weekly aggregate: {error}")
 
     logger.info(f"[OK] Created {len(weekly_aggregates)} weekly aggregates")
@@ -924,14 +910,7 @@ def aggregate_daily_to_monthly_parallel(
                 try:
                     result_dict = future.result()
                     monthly_aggregates.append(AggregatedMetrics(**result_dict))
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as error:
+                except Exception as error:
                     logger.error(f"Error merging monthly aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -939,14 +918,7 @@ def aggregate_daily_to_monthly_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 monthly_aggregates.append(AggregatedMetrics(**result_dict))
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error merging monthly aggregate: {error}")
 
     logger.info(f"[OK] Created {len(monthly_aggregates)} monthly aggregates")
@@ -1014,14 +986,7 @@ def aggregate_to_region_parallel(
                 try:
                     result_dict = future.result()
                     region_aggregates.append(AggregatedMetrics(**result_dict))
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as error:
+                except Exception as error:
                     logger.error(f"Error merging region aggregate: {error}")
     else:
         # Single-threaded for small datasets
@@ -1029,14 +994,7 @@ def aggregate_to_region_parallel(
             try:
                 result_dict = _merge_aggregates_worker(inp)
                 region_aggregates.append(AggregatedMetrics(**result_dict))
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error merging region aggregate: {error}")
 
     logger.info(f"[OK] Created {len(region_aggregates)} region aggregates")

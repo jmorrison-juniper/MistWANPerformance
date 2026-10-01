@@ -83,15 +83,10 @@ class SiteSlePrecomputer:
                 self._process_batch()
                 # No delay - stay busy, immediately process next batch
 
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
-                logger.error(f"[ERROR] Site SLE precompute failed: {error}")
+            except Exception as error:
+                logger.exception(
+                    f"[ERROR] Site SLE precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -134,7 +129,7 @@ class SiteSlePrecomputer:
             # Store in Redis
             self._store_precomputed(site_id, sle_data)
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to precompute SLE for {site_id}: {error}")
 
     def _compute_site_sle_details(self, site_id: str) -> dict[str, Any]:
@@ -169,7 +164,7 @@ class SiteSlePrecomputer:
                 "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             return {"available": False, "error": str(error)}
 
     def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
@@ -179,7 +174,7 @@ class SiteSlePrecomputer:
         try:
             if hasattr(self.cache, "client") and self.cache.client:
                 self.cache.client.set(key, json.dumps(data), ex=2678400)  # 31 days minimum TTL
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to store site SLE {site_id}: {error}")
 
     def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
@@ -191,7 +186,7 @@ class SiteSlePrecomputer:
                 data = self.cache.client.get(key)
                 if data:
                     return json.loads(data)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to get site SLE {site_id}: {error}")
 
         return None
@@ -268,15 +263,10 @@ class SiteVpnPrecomputer:
                 self._process_batch()
                 # No delay - stay busy, immediately process next batch
 
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
-                logger.error(f"[ERROR] Site VPN precompute failed: {error}")
+            except Exception as error:
+                logger.exception(
+                    f"[ERROR] Site VPN precompute failed: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Brief yield to prevent CPU spin on repeated errors
                 time.sleep(0.1)
 
@@ -319,7 +309,7 @@ class SiteVpnPrecomputer:
             # Store in Redis
             self._store_precomputed(site_id, vpn_data)
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to precompute VPN for {site_id}: {error}")
 
     def _compute_site_vpn_data(self, site_id: str) -> dict[str, Any]:
@@ -363,7 +353,7 @@ class SiteVpnPrecomputer:
                 "precomputed_at": datetime.now(UTC).isoformat(),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             return {"available": False, "peers": [], "error": str(error)}
 
     def _store_precomputed(self, site_id: str, data: dict[str, Any]) -> None:
@@ -373,7 +363,7 @@ class SiteVpnPrecomputer:
         try:
             if hasattr(self.cache, "client") and self.cache.client:
                 self.cache.client.set(key, json.dumps(data), ex=2678400)  # 31 days minimum TTL
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to store site VPN {site_id}: {error}")
 
     def get_precomputed(self, site_id: str) -> dict[str, Any] | None:
@@ -385,7 +375,7 @@ class SiteVpnPrecomputer:
                 data = self.cache.client.get(key)
                 if data:
                     return json.loads(data)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.debug(f"Failed to get site VPN {site_id}: {error}")
 
         return None

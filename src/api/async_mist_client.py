@@ -139,14 +139,7 @@ class AsyncMistConnection:
 
             except RateLimitError:
                 raise  # Don't retry 429 errors, propagate immediately
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 last_error = error
                 logger.warning(
                     f"[WARN] {operation} failed (attempt {attempt}/{self.ops_config.max_retries}): {error}"
@@ -260,14 +253,7 @@ class AsyncMistStatsOperations:
         if on_batch and first_batch:
             try:
                 on_batch(first_batch, batch_count, next_cursor)
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as callback_error:
+            except Exception as callback_error:
                 logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
         # Continue with parallel fetches if more data exists
@@ -288,14 +274,7 @@ class AsyncMistStatsOperations:
             if on_batch and batch:
                 try:
                     on_batch(batch, batch_count, next_cursor)
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as callback_error:
+                except Exception as callback_error:
                     logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
             # Update first_batch length for loop condition

@@ -418,7 +418,7 @@ def shape_gateway_detail(provider: Any, context: dict[str, Any] | None) -> dict[
             "bandwidth_figure": _gateway_bandwidth(provider, site_id, gateway_id, ports),
             "device_metrics_figure": _device_metrics(provider, site_id, gateway_id, gateway),
         }
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+    except Exception as error:
         logger.warning("Error shaping gateway detail page: %s", error)
         return _gateway_empty(gateway_id, site_id, "Unable to load gateway data")
 
@@ -526,7 +526,7 @@ def shape_port_detail(
             "rx_crc": _fmt_int(_first(port, "rx_crc", "rx_crc_errors", default=0), "0"),
             "tx_crc": _fmt_int(_first(port, "tx_crc", "tx_crc_errors", default=0), "0"),
         }
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+    except Exception as error:
         logger.warning("Error shaping port detail page: %s", error)
         return _port_empty(site_id, port_id, gateway_id, "Unable to load port data")
 
@@ -641,7 +641,7 @@ def shape_vpn_peer_detail(
             "tx_packets": _fmt_int(_first(peer, "tx_pkts", "tx_packets", default=0), "0"),
             "rx_packets": _fmt_int(_first(peer, "rx_pkts", "rx_packets", default=0), "0"),
         }
-    except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+    except Exception as error:
         logger.warning("Error shaping VPN peer detail page: %s", error)
         return _vpn_empty(site_id, peer_id, "Unable to load VPN peer data")
 

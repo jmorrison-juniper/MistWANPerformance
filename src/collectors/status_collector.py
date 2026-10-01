@@ -306,7 +306,7 @@ class StatusCollector:
                 collected_at=datetime.now(UTC),
             )
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(
                 f"[WARN] Failed to create status record for {record_input.port_name}: {error}"
             )

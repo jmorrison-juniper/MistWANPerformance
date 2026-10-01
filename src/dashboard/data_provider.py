@@ -219,8 +219,10 @@ class DashboardDataProvider:
             )
             return True
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
-            logger.error(f"[REFRESH] Failed to refresh from cache: {error}")
+        except Exception as error:
+            logger.exception(
+                f"[REFRESH] Failed to refresh from cache: {error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+            )
             return False
 
     def update_status(self, records: list[CircuitStatusRecord]):
@@ -495,7 +497,7 @@ class DashboardDataProvider:
                 "cache_fresh": self.redis_cache.is_site_sle_cache_fresh(site_id),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.warning(f"Failed to get site SLE details for {site_id}: {error}")
             return {"available": False, "error": str(error)}
 
@@ -777,14 +779,7 @@ class DashboardDataProvider:
                 if trends and len(trends) > 1:
                     logger.debug(f"[TRENDS] Loaded {len(trends)} historical points from Redis")
                     return trends
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.warning(f"[TRENDS] Redis trends unavailable: {error}")
 
         # Fallback: Use current snapshot grouped by hour_key
@@ -828,14 +823,7 @@ class DashboardDataProvider:
                         f"[THROUGHPUT] Loaded {len(throughput)} historical points from Redis"
                     )
                     return throughput
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.warning(f"[THROUGHPUT] Redis throughput unavailable: {error}")
 
         # Fallback: Return current snapshot totals as single point
@@ -914,7 +902,7 @@ class DashboardDataProvider:
                 )
 
             return success
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"[TRENDS] Failed to store snapshot: {error}")
             return False
 
@@ -1315,7 +1303,7 @@ class DashboardDataProvider:
                     "health_percentage": round(health_pct, 1),
                     "timestamp": summary.get("timestamp", 0),
                 }
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error getting VPN peer summary: {error}")
 
         return {
@@ -1348,7 +1336,7 @@ class DashboardDataProvider:
         try:
             if hasattr(self, "redis_cache") and self.redis_cache is not None:
                 return self.redis_cache.get_site_vpn_peers(site_id)
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error getting VPN peers for site {site_id}: {error}")
 
         return []
@@ -1420,7 +1408,7 @@ class DashboardDataProvider:
 
             return table_data
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error getting VPN peer table data: {error}")
             return []
 
@@ -1489,14 +1477,7 @@ class DashboardDataProvider:
                     )
 
                 return result.get("results", [])
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error fetching gateway port time-series: {error}")
 
         return []
@@ -1555,14 +1536,7 @@ class DashboardDataProvider:
                     self.redis_cache.save_vpn_peer_timeseries(site_id, device_mac, peer_mac, result)
 
                 return result.get("results", [])
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error fetching VPN peer time-series: {error}")
 
         return []
@@ -1623,14 +1597,7 @@ class DashboardDataProvider:
                     )
 
                 return result.get("results", [])
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 logger.error(f"Error fetching device metrics time-series: {error}")
 
         return []

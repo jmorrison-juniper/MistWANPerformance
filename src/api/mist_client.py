@@ -223,7 +223,7 @@ class MistConnection:
                 host=self.config.api_host, apitoken=self.config.api_token
             )
             logger.debug("Mist API session initialized successfully")
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"[ERROR] Failed to initialize Mist API session: {error}")
             raise
 
@@ -269,14 +269,7 @@ class MistConnection:
                 self.apply_rate_limit()
                 response = api_call(*args, **kwargs)
                 return response
-            except (
-                RuntimeError,
-                ValueError,
-                TypeError,
-                KeyError,
-                AttributeError,
-                OSError,
-            ) as error:
+            except Exception as error:
                 last_error = error
                 # Check for 429 rate limit error
                 if self._is_rate_limit_error(error):
@@ -361,7 +354,7 @@ class MistSiteOperations:
             logger.info("[OK] Mist API connection successful")
             logger.debug(f"Organization: {result.data.get('name', 'Unknown')}")
             return True
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"[ERROR] Mist API connection failed: {error}")
             return False
 
@@ -600,14 +593,7 @@ class MistStatsOperations:
             if on_batch and batch:
                 try:
                     on_batch(batch, batch_count, next_cursor)
-                except (
-                    RuntimeError,
-                    ValueError,
-                    TypeError,
-                    KeyError,
-                    AttributeError,
-                    OSError,
-                ) as callback_error:
+                except Exception as callback_error:
                     logger.warning(f"[WARN] Batch callback failed: {callback_error}")
 
             if not next_cursor or len(batch) < 1000:
@@ -1131,7 +1117,7 @@ class MistInsightsOperations:
                 "total_peers": len(all_results),
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error fetching VPN peer stats: {error}")
             return {
                 "success": False,
@@ -1291,7 +1277,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error fetching gateway port time-series: {error}")
             return {
                 "start": start_time,
@@ -1395,7 +1381,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error fetching VPN peer metrics time-series: {error}")
             return {
                 "start": start_time,
@@ -1484,7 +1470,7 @@ class MistInsightsOperations:
                 "results": results,
             }
 
-        except (RuntimeError, ValueError, TypeError, KeyError, AttributeError, OSError) as error:
+        except Exception as error:
             logger.error(f"Error fetching device metric {metric}: {error}")
             return {
                 "start": start_time,
