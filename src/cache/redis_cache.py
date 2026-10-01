@@ -2790,7 +2790,6 @@ class RedisCache:
             logger.debug("Redis connection closed")
         except Exception as error:
             logger.debug(f"Redis close failed: {error}")
-            pass  # noqa: PIE790 - Keep main pass flow after debug log.
 
 
 class NullCache:

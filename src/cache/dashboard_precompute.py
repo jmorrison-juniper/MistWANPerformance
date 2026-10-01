@@ -466,7 +466,6 @@ class DashboardPrecomputer:
                 cache_status = self.cache.get_cache_stats()
             except Exception as error:
                 logger.debug(f"Could not read cache status: {error}")
-                pass  # noqa: PIE790 - Keep main pass flow after debug log.
 
         # Worker statuses
         worker_statuses = {}

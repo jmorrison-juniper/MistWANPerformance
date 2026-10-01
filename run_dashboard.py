@@ -212,7 +212,6 @@ def _start_background_workers(config, api_client, cache, data_provider):
             site_ids = list({p.get("site_id") for p in port_stats if p.get("site_id")})
     except Exception as error:
         logger.debug(f"Could not load site IDs from cached port stats: {error}")
-        pass  # noqa: PIE790 - Keep main pass flow after debug log.
 
     # Start port stats refresh worker
     _background_worker = BackgroundRefreshWorker(

@@ -535,7 +535,6 @@ class AsyncDashboardPrecomputer:
                 }
         except Exception as error:
             logger.debug(f"Could not build VPN health summary: {error}")
-            pass  # noqa: PIE790 - Keep main pass flow after debug log.
 
         return {"total_peers": 0, "paths_up": 0, "paths_down": 0, "health_percentage": 0}
 

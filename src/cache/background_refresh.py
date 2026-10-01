@@ -359,7 +359,7 @@ async def refresh_stale_sites_parallel(
         # Count successful refreshes
         refreshed_count = sum(1 for task in tasks if task.result())
 
-    except* Exception as exception_group:
+    except ExceptionGroup as exception_group:
         # Handle any exceptions from the TaskGroup
         logger.error(f"[ERROR] TaskGroup exceptions: {len(exception_group.exceptions)} errors")
         for error in exception_group.exceptions[:3]:  # Log first 3 errors
@@ -715,9 +715,12 @@ class SLEBackgroundWorker:
 
                 self._run_inner_loop(sle_collector)
 
-            except Exception:
+            except Exception as fatal_error:
                 restart_count += 1
-                logger.error(f"[ERROR] SLE worker crashed (restart {restart_count}/{max_restarts})")
+                logger.exception(
+                    f"[ERROR] SLE worker crashed (restart {restart_count}/{max_restarts}): "
+                    f"{fatal_error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Wait before restart to avoid rapid cycling
                 time.sleep(5)
                 logger.info("[...] SLE worker restarting after crash...")
@@ -1004,9 +1007,12 @@ class VPNPeerBackgroundWorker:
             try:
                 self._run_inner_vpn_loop()
 
-            except Exception:
+            except Exception as fatal_error:
                 restart_count += 1
-                logger.error(f"[ERROR] VPN worker crashed (restart {restart_count}/{max_restarts})")
+                logger.exception(
+                    f"[ERROR] VPN worker crashed (restart {restart_count}/{max_restarts}): "
+                    f"{fatal_error}"  # noqa: TRY401 - Preserve main log text while restoring traceback.
+                )
                 # Wait before restart to avoid rapid cycling
                 time.sleep(5)
                 logger.info("[...] VPN worker restarting after crash...")
