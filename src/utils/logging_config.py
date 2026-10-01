@@ -137,7 +137,7 @@ class LogContext:
         self.logger.setLevel(self.new_level)
         return self.logger
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, _exc_type, _exc_val, _exc_tb):
         """Exit context and restore original level."""
         self.logger.setLevel(self.original_level)
         return False
