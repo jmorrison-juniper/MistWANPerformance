@@ -6,12 +6,12 @@
 # Build: podman build -t mistwan-performance .
 # Run:   podman-compose up -d
 
-FROM python:3.13-slim AS builder
+FROM python:3.13.16-slim-bookworm AS builder
 
-# Configure apt to use local apt-cacher-ng proxy (Unraid at 192.168.1.78)
-# This caches Debian packages locally for faster rebuilds
-ARG APT_PROXY=http://192.168.1.78:3142
-RUN echo "Acquire::http::Proxy \"${APT_PROXY}\";" > /etc/apt/apt.conf.d/00proxy
+# Set APT_PROXY at build time to use an optional local package cache.
+ARG APT_PROXY=
+RUN if [ -n "${APT_PROXY}" ]; then \
+    echo "Acquire::http::Proxy \"${APT_PROXY}\";" > /etc/apt/apt.conf.d/00proxy; fi
 
 # Install build dependencies (uses apt-cacher-ng for caching)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,11 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Configure pip to use local devpi cache server with PyPI fallback
-# Devpi server at 192.168.1.73 (Unraid)
-ARG PIP_INDEX_URL=http://192.168.1.73:3141/root/pypi/+simple/
-ARG PIP_EXTRA_INDEX_URL=https://pypi.org/simple/
-ARG PIP_TRUSTED_HOST=192.168.1.73
+# Public defaults also support clean builds outside the deployment network.
+ARG PIP_INDEX_URL=https://pypi.org/simple/
+ARG PIP_EXTRA_INDEX_URL=
+ARG PIP_TRUSTED_HOST=
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
 ENV PIP_EXTRA_INDEX_URL=${PIP_EXTRA_INDEX_URL}
 ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
@@ -38,8 +37,19 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 
+# Offline validation uses the same runtime packages and Python base.
+FROM builder AS tests
+COPY requirements-dev.txt .
+RUN pip install --no-cache-dir -r requirements-dev.txt
+WORKDIR /app
+COPY src/ ./src/
+COPY tests/ ./tests/
+COPY run_dashboard.py wsgi.py gunicorn_config.py pyproject.toml ./
+CMD ["python", "-m", "pytest", "-q"]
+
+
 # Production stage
-FROM python:3.13-slim AS production
+FROM python:3.13.16-slim-bookworm AS production
 
 # Labels for container metadata
 LABEL org.opencontainers.image.title="MistWANPerformance"

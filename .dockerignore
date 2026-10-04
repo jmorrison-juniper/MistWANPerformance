@@ -41,10 +41,7 @@ documentation/
 !README.md
 LICENSE
 
-# Test files
-tests/
-test_*.py
-*_test.py
+# Tests are copied only into the offline validation stage, not production.
 
 # Build artifacts
 *.egg-info/
