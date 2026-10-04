@@ -36,6 +36,27 @@ jobs:
       pytest: true
       bandit: true
       pip-audit: true
+      pip-audit-args: -r requirements-dev.txt
+
+  containers:
+    name: Offline container tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the supported runtime and test dependencies
+        run: docker build --target tests -t mistwan-tests .
+      - name: Run without network access
+        run: docker run --rm --network none mistwan-tests
+      - name: Validate Redis persistence configuration
+        run: |
+          docker run --rm --network none \
+            -v "$PWD/redis.conf:/usr/local/etc/redis/redis.conf:ro" \
+            redis:7.4.11-alpine sh -ec '
+              redis-server /usr/local/etc/redis/redis.conf --daemonize yes
+              redis-cli ping | grep -x PONG
+              redis-cli CONFIG GET appendonly | grep -x yes
+              redis-cli shutdown save
+            '
 
   quality_gate_issues:
     name: "Sync quality-gate issues"

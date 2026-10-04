@@ -273,7 +273,58 @@ copy .env.example .env
 # Edit .env with your credentials
 ```
 
-### Configuration
+### Offline tests and dependency updates
+
+The dependency source is `pyproject.toml`. The committed `uv.lock` records exact
+versions. Both requirements files are generated, with hashes, from that lock.
+The runtime file has no test or code quality tools.
+
+```bash
+uv sync --frozen --extra dev --python 3.13
+# Activate .venv before you run the checks.
+# Windows: .venv\Scripts\Activate.ps1
+# macOS/Linux: source .venv/bin/activate
+python -m pytest -q
+ruff check .
+black --check .
+mypy .
+vulture src tests run_dashboard.py wsgi.py gunicorn_config.py --min-confidence 90
+bandit -r src run_dashboard.py wsgi.py gunicorn_config.py -ll
+pip-audit -r requirements-dev.txt
+```
+
+Tests block socket connections. They need no credentials, Mist access, Snowflake
+account, or Redis service. The suite covers calculations, missing data, retries,
+site pagination, cache errors, warehouse cursor cleanup, and dashboard responses.
+Port conversion tests cover zero ports and the 1000/1001-port parallel boundary.
+
+To refresh packages, edit the version ranges in `pyproject.toml`, then run:
+
+```bash
+uv lock --upgrade
+uv export --no-dev --no-emit-project --format requirements-txt --output-file requirements.txt
+uv export --extra dev --no-dev --no-emit-project --format requirements-txt --output-file requirements-dev.txt
+uv sync --frozen --extra dev --python 3.13
+```
+
+Run all checks before you commit the three generated files. Use
+`pip install -r requirements-dev.txt` if UV is not available.
+
+CI also builds the Linux test image and runs it with no network:
+
+```bash
+podman build --target tests -t mistwan-tests .
+podman run --rm --network none mistwan-tests
+```
+
+The Python image uses 3.13.16. Redis stays on the supported 7.4 line (7.4.11);
+this refresh does not migrate stored data to Redis 8. Package caches remain
+optional build arguments. Public package sources are the defaults.
+Dash 4 still supports the existing tables but warns that a future major release
+will remove them. No table redesign is part of this update. Live Mist and
+Snowflake service tests are not part of the offline checks.
+
+### Service configuration
 
 Edit `.env` with your credentials:
 
@@ -447,6 +498,20 @@ MistWANPerformance/
 
 ```json
 {
+  "26.10.04.14.48": {
+    "compatibility": [
+      "Lock all runtime and development packages from one manifest",
+      "Update Mist SDK to 0.64.0, Snowflake connector to 4.8.0, pandas to 3.0.6, NumPy to 2.5.3, Dash to 4.4.1, Plotly to 7.1.0, and Redis client to 8.1.0",
+      "Update Python container to 3.13.16 and Redis container to 7.4.11; use public package sources by default"
+    ],
+    "testing/validation": [
+      "Add 17 offline dependency boundary tests and block test network connections",
+      "Run the full suite in a Linux container in CI; audit development packages as well as runtime packages"
+    ],
+    "documentation": [
+      "Add lock refresh commands, test commands, and migration limits"
+    ]
+  },
   "26.02.03.17.30": {
     "feature-additions": [
       "Multi-page dashboard architecture with URL-based routing",

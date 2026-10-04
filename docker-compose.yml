@@ -69,7 +69,7 @@ services:
 
   # Redis cache with persistence
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine
     container_name: mistwan-redis
     restart: unless-stopped
     ports:

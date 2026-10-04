@@ -1,5 +1,17 @@
 version: 2
 updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      python:
+        patterns:
+          - "*"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
   # Keeps the actions and the misthelper-devtools workflow pins up to date.
   - package-ecosystem: "github-actions"
     directory: "/"
