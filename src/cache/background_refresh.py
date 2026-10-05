@@ -67,7 +67,7 @@ class AsyncBackgroundRefreshWorker:
             max_age_seconds: Cache age threshold for staleness (default: 1 hour)
             on_data_updated: Optional callback when data is refreshed
             parallel_site_limit: Max concurrent site refreshes (default: 5)
-            use_async_api: If True, api_client is AsyncMistAPIClient (default: False)
+            use_async_api: Legacy hint; the client type determines the actual API mode
         """
         self.cache = cache
         self.api_client = api_client
@@ -76,7 +76,9 @@ class AsyncBackgroundRefreshWorker:
         self.max_age_seconds = max_age_seconds
         self.on_data_updated = on_data_updated
         self.parallel_site_limit = parallel_site_limit
-        self.use_async_api = use_async_api
+        self.use_async_api = isinstance(api_client, AsyncMistAPIClient)
+        if use_async_api and not self.use_async_api:
+            logger.warning("[WARN] Sync client supplied; using sync-executor API mode")
 
         self._running = False
         self._task: asyncio.Task | None = None
@@ -222,13 +224,13 @@ class AsyncBackgroundRefreshWorker:
         """Fetch all port stats and cache them."""
         try:
             # Use true async API if available, otherwise fall back to executor
-            if self.use_async_api and isinstance(self.api_client, AsyncMistAPIClient):
+            if isinstance(self.api_client, AsyncMistAPIClient):
                 all_port_stats = await self.api_client.get_org_gateway_port_stats_async()
             else:
                 # Run blocking API call in thread pool to avoid blocking event loop
                 loop = asyncio.get_event_loop()
                 all_port_stats = await loop.run_in_executor(
-                    None, self.api_client.get_org_gateway_port_stats  # type: ignore[union-attr]  # possible bug, see #28
+                    None, self.api_client.get_org_gateway_port_stats
                 )
 
             if not all_port_stats:
