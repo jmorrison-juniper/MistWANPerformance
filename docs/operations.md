@@ -450,6 +450,7 @@ python run_dashboard.py --debug
 
 ```text
 MistWANPerformance/
+├── AGENTS.md
 ├── .github/
 │   └── copilot-instructions.md
 ├── src/
@@ -495,7 +496,6 @@ MistWANPerformance/
 │   ├── logs/
 │   ├── exports/
 │   └── cache/
-├── agents.md
 ├── README.md
 ├── requirements.txt
 ├── pyproject.toml
@@ -1072,7 +1072,7 @@ below are retained for reference.
   },
   "26.01.26.11.15": {
     "documentation": [
-      "Added autonomous agent workflow with 7-step process to agents.md and copilot-instructions.md",
+      "Added autonomous agent workflow with 7-step process to the agent instruction files",
       "Added Python 5-item rule for project hierarchy and function limits",
       "Added comprehensive safe_input pattern with EOF handling",
       "Added Dash 3.x API changes warning",
@@ -1087,16 +1087,16 @@ below are retained for reference.
       "Fixed kwargs naming conflicts and Union type hints"
     ],
     "documentation": [
-      "Added development environment section to agents.md",
-      "Added agent workflow requirements to agents.md",
-      "Added Mist API device type filtering note to agents.md",
+      "Added development environment guidance to the agent instruction files",
+      "Added agent workflow requirements to the agent instruction files",
+      "Added Mist API device type filtering note to the agent instruction files",
       "Enhanced coding style conventions with security and naming rules"
     ]
   },
   "26.01.26.00.00": {
     "feature-additions": [
       "Initial project structure created",
-      "Copilot instructions and agents.md configured",
+      "Agent instructions configured",
       "Data models defined for dimensions and facts",
       "KPI calculation framework established"
     ],

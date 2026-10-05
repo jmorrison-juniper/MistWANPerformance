@@ -42,4 +42,5 @@ See [scope and reporting questions](docs/operations.md#core-questions-this-solut
 For network operations engineers, network engineers, and operations leadership.
 Maintained in [jmorrison-juniper/MistWANPerformance](https://github.com/jmorrison-juniper/MistWANPerformance).
 Internal use only - Hewlett Packard Enterprise. Contributors should follow
-[the agent and maintainer guide](agents.md) and [offline checks](docs/operations.md#offline-tests-and-dependency-updates).
+[the repository agent instructions](.github/copilot-instructions.md) and
+[offline checks](docs/operations.md#offline-tests-and-dependency-updates).

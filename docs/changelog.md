@@ -5,6 +5,14 @@ The root README links here so its six-question introduction remains concise.
 
 ```json
 {
+  "version 26.10.05.05.06": {
+    "documentation": [
+      "Adopt the canonical generic AGENTS.md and the repository-specific Copilot instructions"
+    ],
+    "testing/validation": [
+      "Check the two-file instruction layout and grade both files with and without the STE dictionary"
+    ]
+  },
   "version 26.10.05.02.10": {
     "compatibility": [
       "Align package, runtime, container, and lock metadata with the UTC release version; keep dependency versions unchanged"
