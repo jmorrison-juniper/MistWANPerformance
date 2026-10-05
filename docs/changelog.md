@@ -5,6 +5,14 @@ The root README links here so its six-question introduction remains concise.
 
 ```json
 {
+  "version 26.10.05.17.45": {
+    "compatibility": [
+      "Move the builder, test, and production container images from Python 3.13.16 to 3.14.8 (Dependabot #31)"
+    ],
+    "testing/validation": [
+      "Run the offline container tests on the Python 3.14.8 image"
+    ]
+  },
   "version 26.10.05.17.25": {
     "security": [
       "Add CodeQL analysis for Python through the misthelper-devtools v0.6.2 reusable workflow; a run on main is never cancelled"
