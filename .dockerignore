@@ -39,7 +39,8 @@ data/
 documentation/
 *.md
 !README.md
-!agents.md
+!AGENTS.md
+!.github/copilot-instructions.md
 !docs/*.md
 LICENSE
 

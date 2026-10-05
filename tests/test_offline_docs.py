@@ -17,6 +17,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class TestOfflineDocumentation:
+    def test_agent_instructions_use_the_two_file_layout(self):
+        assert (ROOT / "AGENTS.md").is_file()
+        assert (ROOT / ".github" / "copilot-instructions.md").is_file()
+        assert "agents.md" not in {path.name for path in ROOT.iterdir()}
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        assert "](.github/copilot-instructions.md)" in readme
+
     def test_readme_has_only_six_questions(self):
         readme = (ROOT / "README.md").read_text()
         assert re.findall(r"^## (.+)$", readme, re.MULTILINE) == [

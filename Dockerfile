@@ -45,7 +45,8 @@ WORKDIR /app
 COPY src/ ./src/
 COPY tests/ ./tests/
 COPY docs/ ./docs/
-COPY README.md agents.md ./
+COPY README.md AGENTS.md ./
+COPY .github/copilot-instructions.md ./.github/copilot-instructions.md
 COPY run_dashboard.py wsgi.py gunicorn_config.py pyproject.toml uv.lock Dockerfile ./
 CMD ["python", "-m", "pytest", "-q"]
 
