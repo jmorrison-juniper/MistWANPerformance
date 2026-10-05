@@ -317,7 +317,7 @@ podman build --target tests -t mistwan-tests .
 podman run --rm --network none mistwan-tests
 ```
 
-The Python image uses 3.13.16. Redis stays on the supported 7.4 line (7.4.11);
+The Python image uses 3.14.8. Redis stays on the supported 7.4 line (7.4.11);
 this refresh does not migrate stored data to Redis 8. Package caches remain
 optional build arguments. Public package sources are the defaults.
 Dash 4 still supports the existing tables but warns that a future major release
