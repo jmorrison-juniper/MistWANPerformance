@@ -88,13 +88,28 @@ Use `podman-compose down` to stop the local services and keep their volumes.
 ## Git and GitHub in this repository
 
 Issue labels include `bug`, `documentation`, `enhancement`, and `ci`. Scope labels include
-`docker` and `python:uv`. The repository has no pull request template, CodeQL workflow, or
-`auto-merge` label.
+`docker` and `python:uv`. The repository has no pull request template or `auto-merge` label.
 
 The `CI` workflow runs on pull requests and pushes to `main`. A recent CI run took about six runner
 minutes. `STE lint` checks pull requests and pushes to `main`. A recent run took about one runner
 minute. `Stranded Branch Report` runs weekly and on request. A recent run took about one runner
 minute.
+
+| Workflow | File | Events | Check names |
+| - | - | - | - |
+| CI | `ci.yml` | Pull request, push to `main`, request | `gates / <gate>` and `Offline container tests` |
+| STE lint | `ste-lint.yml` | Pull request, push to `main` | `ste-lint / STE compliance` |
+| CodeQL | `codeql.yml` | Pull request, push to `main`, weekly, request | `codeql / Analyze (python)` |
+| Stranded Branch Report | `stranded-branch-report.yml` | Weekly, request | None |
+
+Branch protection on `main` requires each `gates` check and `Offline container tests`. After the
+first green CodeQL run on `main`, the owner adds `CodeQL` and `codeql / Analyze (python)`. The
+CodeQL workflow reads `.github/codeql/codeql-config.yml`. Do not rename `codeql.yml` or its
+`codeql` job, because code scanning keys each alert on them.
+
+Each `misthelper-devtools` pin names commit `da02d4c6a2163d1882f2ad25fce80b8ba38304d1` with the
+comment `# v0.6.2`. Change all pins together. `tests/test_workflow_contracts.py` checks the pins
+and the CodeQL values.
 
 For this repository, add one versioned JSON entry to `docs/changelog.md` for each code or
 documentation change. Use the key format `version YY.MM.DD.HH.MM` and put the newest entry first.
