@@ -44,6 +44,8 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 WORKDIR /app
 COPY src/ ./src/
 COPY tests/ ./tests/
+COPY docs/ ./docs/
+COPY README.md agents.md ./
 COPY run_dashboard.py wsgi.py gunicorn_config.py pyproject.toml ./
 CMD ["python", "-m", "pytest", "-q"]
 

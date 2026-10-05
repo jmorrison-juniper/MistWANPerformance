@@ -8,8 +8,13 @@ NASA/JPL Pattern: Comprehensive test coverage for safety-critical refresh logic.
 """
 
 import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from src.api.async_mist_client import AsyncMistAPIClient
+from src.api.mist_client import MistAPIClient, RateLimitError
 from src.cache.background_refresh import (
     AsyncBackgroundRefreshWorker,
     BackgroundRefreshWorker,
@@ -18,6 +23,73 @@ from src.cache.background_refresh import (
 
 # Configure pytest-asyncio mode
 pytest_plugins = ("pytest_asyncio",)
+
+
+class TestRefreshClientDispatch:
+    """Exercise client dispatch through caching and update notifications."""
+
+    @pytest.mark.parametrize("async_client", [True, False])
+    @pytest.mark.parametrize("use_async_api", [None, True, False])
+    def test_client_type_selects_fetch_and_reports_actual_mode(self, async_client, use_async_api):
+        client = MagicMock(spec=AsyncMistAPIClient if async_client else MistAPIClient)
+        ports = [{"site_id": "site-001", "port_id": "wan0"}]
+        fetch = (
+            client.get_org_gateway_port_stats_async
+            if async_client
+            else client.get_org_gateway_port_stats
+        )
+        fetch.return_value = ports
+        cache = MagicMock()
+        cache.set_bulk_site_port_stats.return_value = 1
+        callback = MagicMock()
+        options = {} if use_async_api is None else {"use_async_api": use_async_api}
+        worker = AsyncBackgroundRefreshWorker(
+            cache, client, ["site-001"], on_data_updated=callback, **options
+        )
+        asyncio.run(worker._fetch_and_cache_port_stats(time.time()))
+        fetch.assert_called_once_with()
+        if async_client:
+            fetch.assert_awaited_once_with()
+        cache.set_bulk_site_port_stats.assert_called_once_with(ports)
+        cache.force_save.assert_called_once_with()
+        callback.assert_called_once_with(ports)
+        assert worker._total_sites_refreshed == 1
+        assert worker._sites_with_data == {"site-001"}
+        assert worker.get_status()["api_mode"] == (
+            "async-http" if async_client else "sync-executor"
+        )
+
+    @pytest.mark.parametrize("async_client", [True, False])
+    def test_rate_limit_propagates_without_cache_mutation(self, async_client):
+        client = MagicMock(spec=AsyncMistAPIClient if async_client else MistAPIClient)
+        fetch = (
+            client.get_org_gateway_port_stats_async
+            if async_client
+            else client.get_org_gateway_port_stats
+        )
+        fetch.side_effect = RateLimitError("Synthetic rate limit")
+        cache = MagicMock()
+        worker = AsyncBackgroundRefreshWorker(cache, client, ["site-001"])
+        with pytest.raises(RateLimitError):
+            asyncio.run(worker._fetch_and_cache_port_stats(time.time()))
+        cache.set_bulk_site_port_stats.assert_not_called()
+        assert worker._total_sites_refreshed == 0
+
+    @pytest.mark.parametrize("async_client", [True, False])
+    def test_empty_response_does_not_cache_or_notify(self, async_client):
+        client = MagicMock(spec=AsyncMistAPIClient if async_client else MistAPIClient)
+        fetch = (
+            client.get_org_gateway_port_stats_async
+            if async_client
+            else client.get_org_gateway_port_stats
+        )
+        fetch.return_value = []
+        cache, callback = MagicMock(), MagicMock()
+        worker = AsyncBackgroundRefreshWorker(cache, client, [], on_data_updated=callback)
+        asyncio.run(worker._fetch_and_cache_port_stats(time.time()))
+        cache.set_bulk_site_port_stats.assert_not_called()
+        callback.assert_not_called()
+        assert worker._total_sites_refreshed == 0
 
 
 class TestAsyncBackgroundRefreshWorker:
