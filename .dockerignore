@@ -39,6 +39,8 @@ data/
 documentation/
 *.md
 !README.md
+!agents.md
+!docs/*.md
 LICENSE
 
 # Tests are copied only into the offline validation stage, not production.
