@@ -5,6 +5,20 @@ The root README links here so its six-question introduction remains concise.
 
 ```json
 {
+  "version 26.10.05.17.25": {
+    "security": [
+      "Add CodeQL analysis for Python through the misthelper-devtools v0.6.2 reusable workflow; a run on main is never cancelled"
+    ],
+    "compatibility": [
+      "Move every misthelper-devtools workflow pin to v0.6.2 (da02d4c6)"
+    ],
+    "testing/validation": [
+      "Check the devtools pins and the CodeQL triggers, permissions, inputs, and concurrency in a workflow contract test"
+    ],
+    "documentation": [
+      "List each workflow, its events, and its check names in the repository instructions"
+    ]
+  },
   "version 26.10.05.05.06": {
     "documentation": [
       "Adopt the canonical generic AGENTS.md and the repository-specific Copilot instructions"

@@ -1,0 +1,5 @@
+name: "MistWANPerformance CodeQL Configuration"
+
+# The offline dashboard fixture holds sample data for the tests only.
+paths-ignore:
+  - tests/fixtures
