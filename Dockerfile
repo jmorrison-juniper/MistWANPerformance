@@ -6,7 +6,7 @@
 # Build: podman build -t mistwan-performance .
 # Run:   podman-compose up -d
 
-FROM python:3.13.16-slim-bookworm AS builder
+FROM python:3.14.8-slim-bookworm AS builder
 
 # Set APT_PROXY at build time to use an optional local package cache.
 ARG APT_PROXY=
@@ -54,7 +54,7 @@ CMD ["python", "-m", "pytest", "-q"]
 
 
 # Production stage
-FROM python:3.13.16-slim-bookworm AS production
+FROM python:3.14.8-slim-bookworm AS production
 
 # Labels for container metadata
 LABEL org.opencontainers.image.title="MistWANPerformance"
