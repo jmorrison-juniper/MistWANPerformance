@@ -46,7 +46,7 @@ COPY src/ ./src/
 COPY tests/ ./tests/
 COPY docs/ ./docs/
 COPY README.md agents.md ./
-COPY run_dashboard.py wsgi.py gunicorn_config.py pyproject.toml ./
+COPY run_dashboard.py wsgi.py gunicorn_config.py pyproject.toml uv.lock Dockerfile ./
 CMD ["python", "-m", "pytest", "-q"]
 
 
@@ -56,7 +56,7 @@ FROM python:3.13.16-slim-bookworm AS production
 # Labels for container metadata
 LABEL org.opencontainers.image.title="MistWANPerformance"
 LABEL org.opencontainers.image.description="WAN Performance Dashboard for Juniper Mist"
-LABEL org.opencontainers.image.version="1.0.0"
+LABEL org.opencontainers.image.version="26.10.05.02.10"
 
 # Create non-root user for security
 RUN groupadd --gid 1000 appgroup && \

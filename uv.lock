@@ -1286,7 +1286,7 @@ wheels = [
 
 [[package]]
 name = "mistwan-performance"
-version = "26.1.26"
+version = "26.10.5.2.10"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

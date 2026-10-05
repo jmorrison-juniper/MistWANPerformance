@@ -5,6 +5,14 @@ The root README links here so its six-question introduction remains concise.
 
 ```json
 {
+  "version 26.10.05.02.10": {
+    "compatibility": [
+      "Align package, runtime, container, and lock metadata with the UTC release version; keep dependency versions unchanged"
+    ],
+    "testing/validation": [
+      "Check release version consistency and calendar format in local and offline container tests"
+    ]
+  },
   "version 26.10.04.20.31": {
     "bug-fixes": [
       "Select async refresh API mode from the actual client type and report that mode accurately"
