@@ -13,10 +13,19 @@ These are real application captures, not live network measurements.
 
 ## How
 
-Use Python 3.13 or newer and follow the [installation, configuration, and operating
-guide](docs/operations.md#installation). The [offline preview](docs/screens.md)
-needs no Mist, Snowflake, or Redis connection. For deployed collection, configure
-your own credentials privately; never commit them.
+With `uv` and Python 3.13 installed, run these commands from the repository root
+to install dependencies and start the [offline preview](docs/screens.md):
+
+```bash
+uv sync --frozen --extra dev --python 3.13
+uv run --no-sync python -m tests.fixtures.offline_dashboard
+```
+
+Open `http://127.0.0.1:8051`. Stop the preview with Ctrl+C.
+The preview uses synthetic data and needs no Mist, Snowflake, or Redis connection.
+For deployed collection, follow the [installation, configuration, and operating
+guide](docs/operations.md#installation). Configure your credentials privately.
+Never commit them.
 
 ## Where
 
